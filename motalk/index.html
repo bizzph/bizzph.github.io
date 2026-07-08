@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>Moto Talk Simple</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --text: #f9fafb;
+      --muted: #cbd5e1;
+      --accent: #22c55e;
+      --accent2: #38bdf8;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --border: rgba(255,255,255,.1);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body { display: flex; justify-content: center; align-items: stretch; }
+    main { width: min(760px, 100%); min-height: 100vh; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: linear-gradient(180deg, var(--panel), #0b1120); border: 1px solid var(--border); border-radius: 22px; padding: 18px; box-shadow: 0 16px 40px rgba(0,0,0,.28); }
+    h1 { margin: 4px 0 6px; font-size: clamp(28px, 8vw, 42px); line-height: 1; }
+    h2 { margin: 0 0 10px; font-size: 18px; }
+    p { margin: 8px 0; color: var(--muted); line-height: 1.45; }
+    label { color: var(--muted); font-size: 14px; line-height: 1.35; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row.tight { gap: 8px; }
+    button, input, select { width: 100%; border: 0; border-radius: 16px; font-size: 17px; padding: 15px 16px; }
+    button { background: var(--panel2); color: var(--text); font-weight: 750; cursor: pointer; touch-action: manipulation; }
+    button.primary { background: var(--accent); color: #052e16; }
+    button.blue { background: var(--accent2); color: #082f49; }
+    button.danger { background: var(--danger); color: #fff; }
+    button.muted { background: #334155; color: #e2e8f0; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input, select { background: #020617; color: var(--text); border: 1px solid rgba(255,255,255,.14); }
+    input.code-input { text-align: center; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; }
+    input[type="password"] { letter-spacing: normal; text-transform: none; font-weight: 500; text-align: left; }
+    input[type="checkbox"] { width: auto; transform: scale(1.25); margin-right: 8px; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .check { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; }
+    .split > * { flex: 1 1 190px; }
+    .hidden { display: none !important; }
+    .code { font-size: clamp(36px, 14vw, 72px); letter-spacing: .14em; font-weight: 900; text-align: center; padding: 18px 8px; background: #020617; border-radius: 18px; border: 1px dashed rgba(255,255,255,.28); color: #bbf7d0; }
+    .status { min-height: 30px; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.06); color: var(--muted); font-size: 15px; }
+    .status.good { color: #bbf7d0; }
+    .status.warn { color: #fde68a; }
+    .talk { height: min(44vh, 330px); border-radius: 999px; font-size: clamp(26px, 8vw, 52px); user-select: none; -webkit-user-select: none; box-shadow: inset 0 -9px 0 rgba(0,0,0,.16), 0 20px 48px rgba(34,197,94,.18); }
+    .talk.active { transform: translateY(2px); filter: brightness(1.12); box-shadow: inset 0 5px 0 rgba(0,0,0,.18), 0 12px 34px rgba(34,197,94,.2); }
+    .mute-toggle { height: min(32vh, 220px); border-radius: 34px; font-size: clamp(24px, 7vw, 44px); }
+    .mute-toggle.live { background: var(--accent); color: #052e16; }
+    .mute-toggle.muted-now { background: var(--warn); color: #451a03; }
+    .pill { display: inline-flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--muted); font-size: 13px; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--warn); }
+    .dot.on { background: var(--accent); }
+    .dot.bad { background: var(--danger); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .meter { padding: 9px 10px; border-radius: 12px; background: rgba(255,255,255,.055); color: var(--muted); font-size: 13px; line-height: 1.35; }
+    .meter strong { display: block; color: #e5e7eb; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+    details { margin-top: 12px; border: 1px solid var(--border); border-radius: 16px; padding: 12px; background: rgba(255,255,255,.035); }
+    summary { cursor: pointer; font-weight: 800; }
+    small { color: #94a3b8; line-height: 1.4; }
+    ol, ul { color: var(--muted); line-height: 1.55; padding-left: 20px; }
+    a { color: #7dd3fc; }
+    @media (max-width: 520px) {
+      main { padding: 14px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card">
+      <div class="pill"><span id="dot" class="dot"></span><span id="pillText">Not connected</span></div>
+      <h1>Moto Talk</h1>
+      <p>Two-phone WebRTC audio with push-to-talk or call-like mode for Bluetooth/helmet headsets.</p>
+      <div id="status" class="status">Choose Host on the first phone. Choose Join on the second phone.</div>
+      <div class="grid" aria-live="polite">
+        <div class="meter"><strong>Signal</strong><span id="signalState">Idle</span></div>
+        <div class="meter"><strong>Audio link</strong><span id="mediaState">Idle</span></div>
+        <div class="meter"><strong>Local mic</strong><span id="micState">Not requested</span></div>
+        <div class="meter"><strong>Wake lock</strong><span id="wakeState">Off</span></div>
+      </div>
+    </section>
+
+    <section id="settings" class="card">
+      <h2>Ride options</h2>
+      <div class="field">
+        <label for="talkMode">Talk mode</label>
+        <select id="talkMode">
+          <option value="ptt">Push-to-talk: hold button to talk</option>
+          <option value="call">Call-like: mic stays open, use mute button</option>
+        </select>
+      </div>
+      <div class="check">
+        <input id="wakeToggle" type="checkbox" checked />
+        <label for="wakeToggle">Keep screen awake while connected. This uses the browser Wake Lock API when available.</label>
+      </div>
+    </section>
+
+    <section id="setup" class="card">
+      <div class="row split">
+        <button id="hostBtn" class="primary">Host / Create Code</button>
+        <button id="showJoinBtn" class="blue">Join Code</button>
+      </div>
+      <div id="hostBox" class="hidden">
+        <p>Share this code with the second phone:</p>
+        <div id="roomCode" class="code">------</div>
+        <p id="incomingNote">Waiting for the second phone...</p>
+        <button id="acceptBtn" class="primary hidden">Accept Connection</button>
+      </div>
+      <div id="joinBox" class="hidden">
+        <p>Enter the host code:</p>
+        <input id="joinCode" class="code-input" maxlength="8" placeholder="MTABC123" autocomplete="off" autocapitalize="characters" />
+        <button id="joinBtn" class="primary">Join</button>
+      </div>
+    </section>
+
+    <section id="talkBox" class="card hidden">
+      <button id="talkBtn" class="talk primary">HOLD TO TALK</button>
+      <button id="muteBtn" class="mute-toggle muted-now hidden">MUTED</button>
+      <p id="talkHelp">Release to mute. Keep both phones unlocked for best reliability.</p>
+      <div class="row split">
+        <button id="reconnectBtn" class="blue">Reconnect</button>
+        <button id="disconnectBtn" class="danger">Disconnect</button>
+      </div>
+    </section>
+
+  </main>
+
+  <audio id="remoteAudio" autoplay playsinline></audio>
+
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const hostBtn = $('hostBtn');
+    const showJoinBtn = $('showJoinBtn');
+    const joinBtn = $('joinBtn');
+    const acceptBtn = $('acceptBtn');
+    const reconnectBtn = $('reconnectBtn');
+    const disconnectBtn = $('disconnectBtn');
+    const talkBtn = $('talkBtn');
+    const muteBtn = $('muteBtn');
+    const hostBox = $('hostBox');
+    const joinBox = $('joinBox');
+    const setup = $('setup');
+    const talkBox = $('talkBox');
+    const statusBox = $('status');
+    const dot = $('dot');
+    const pillText = $('pillText');
+    const signalState = $('signalState');
+    const mediaState = $('mediaState');
+    const micState = $('micState');
+    const wakeState = $('wakeState');
+    const roomCodeEl = $('roomCode');
+    const joinCodeEl = $('joinCode');
+    const incomingNote = $('incomingNote');
+    const remoteAudio = $('remoteAudio');
+    const talkMode = $('talkMode');
+    const wakeToggle = $('wakeToggle');
+    const talkHelp = $('talkHelp');
+
+    const STORAGE_KEY = 'motoTalkSettingsV3';
+    const RECONNECT_BASE_MS = 1200;
+    const RECONNECT_MAX_MS = 12000;
+    const STREAM_TIMEOUT_MS = 20000;
+
+    let peer = null;
+    let call = null;
+    let pendingCall = null;
+    let localStream = null;
+    let role = null;
+    let hostCode = null;
+    let targetCode = null;
+    let acceptedOnce = false;
+    let audioConnected = false;
+    let talking = false;
+    let muted = true;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    let streamTimer = null;
+    let intentionalClose = false;
+    let wakeLock = null;
+
+    function setStatus(message, mode = '') {
+      statusBox.textContent = message;
+      statusBox.className = 'status ' + mode;
+    }
+
+    function setPill(text, mode = '') {
+      dot.className = 'dot' + (mode === 'good' ? ' on' : '') + (mode === 'bad' ? ' bad' : '');
+      pillText.textContent = text;
+    }
+
+    function setSignal(text) { signalState.textContent = text; }
+    function setMedia(text) { mediaState.textContent = text; }
+    function setMicState(text) { micState.textContent = text; }
+    function setWakeState(text) { wakeState.textContent = text; }
+
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        if (saved.talkMode) talkMode.value = saved.talkMode;
+        if (typeof saved.wake === 'boolean') wakeToggle.checked = saved.wake;
+      } catch (_) {}
+      updateSignalIdle();
+      updateTalkUi();
+    }
+
+    function updateSignalIdle() {
+      if (!peer || peer.destroyed) setSignal('LAN direct mode');
+    }
+
+    function makeCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = 'MT';
+      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      return code;
+    }
+
+    function buildIceConfig() {
+      // Empty ICE server list keeps WebRTC focused on local host candidates.
+      // This is best for two devices on the same hotspot/LAN and avoids external ICE servers.
+      return { iceServers: [] };
+    }
+
+    async function getMic() {
+      if (localStream) return localStream;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('This browser does not support microphone access. Use Chrome on Android.');
+      }
+
+      setMicState('Requesting permission');
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      localStream.getAudioTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          setMicState('Microphone stopped');
+          setStatus('Microphone stopped. Reconnect to request it again.', 'warn');
+        });
+      });
+
+      muted = talkMode.value !== 'call';
+      setLocalMuted(muted);
+      applyAudioMode();
+      return localStream;
+    }
+
+    function stopMic() {
+      if (!localStream) return;
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+      talking = false;
+      muted = true;
+      setMicState('Not requested');
+    }
+
+    function setLocalMuted(shouldMute) {
+      muted = shouldMute;
+      if (localStream) {
+        localStream.getAudioTracks().forEach(track => track.enabled = !shouldMute);
+      }
+      setMicState(localStream ? (shouldMute ? 'Muted' : 'Live') : 'Not requested');
+      updateTalkUi();
+    }
+
+    function updateTalkUi() {
+      const isCallMode = talkMode.value === 'call';
+      talkBtn.classList.toggle('hidden', isCallMode);
+      muteBtn.classList.toggle('hidden', !isCallMode);
+      talkBtn.disabled = !audioConnected;
+      muteBtn.disabled = !localStream;
+
+      if (isCallMode) {
+        muteBtn.textContent = muted ? 'MUTED' : 'MIC LIVE';
+        muteBtn.classList.toggle('live', !muted);
+        muteBtn.classList.toggle('muted-now', muted);
+        talkHelp.textContent = 'Call-like mode is best with Bluetooth or a helmet headset. Tap the button to mute or unmute.';
+      } else {
+        talkBtn.textContent = talking ? 'TALKING' : 'HOLD TO TALK';
+        talkHelp.textContent = 'Release to mute. Keep both phones unlocked for best reliability.';
+      }
+    }
+
+    function applyAudioMode() {
+      if (talkMode.value === 'call') {
+        talking = false;
+        talkBtn.classList.remove('active');
+        if (localStream) setLocalMuted(muted);
+      } else {
+        talking = false;
+        talkBtn.classList.remove('active');
+        if (localStream) setLocalMuted(true);
+      }
+      updateTalkUi();
+    }
+
+    async function requestWakeLock() {
+      if (!wakeToggle.checked) {
+        setWakeState('Off');
+        return;
+      }
+      if (!('wakeLock' in navigator)) {
+        setWakeState('Not supported');
+        return;
+      }
+      if (document.hidden || wakeLock) return;
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        setWakeState('On');
+        wakeLock.addEventListener('release', () => {
+          wakeLock = null;
+          setWakeState(wakeToggle.checked ? 'Released' : 'Off');
+        });
+      } catch (err) {
+        setWakeState('Blocked');
+      }
+    }
+
+    async function releaseWakeLock() {
+      if (!wakeLock) {
+        setWakeState(wakeToggle.checked ? 'Ready' : 'Off');
+        return;
+      }
+      try { await wakeLock.release(); } catch (_) {}
+      wakeLock = null;
+      setWakeState(wakeToggle.checked ? 'Ready' : 'Off');
+    }
+
+    function createPeer(id) {
+      const options = {
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
+        debug: 0,
+        config: buildIceConfig()
+      };
+      return new Peer(id || undefined, options);
+    }
+
+    function attachPeerEvents(activePeer) {
+      activePeer.on('open', id => {
+        setSignal('Signaling ready: ' + id);
+        setPill(audioConnected ? 'Connected' : 'Ready', audioConnected ? 'good' : '');
+      });
+
+      activePeer.on('disconnected', () => {
+        setSignal(audioConnected ? 'Signaling offline; audio can stay local' : 'Signaling disconnected');
+        if (audioConnected) return;
+        if (!intentionalClose && activePeer && !activePeer.destroyed) {
+          try {
+            activePeer.reconnect();
+            setSignal('Reconnecting signaling');
+          } catch (_) {}
+        }
+      });
+
+      activePeer.on('close', () => {
+        if (!intentionalClose) setSignal('Signaling closed');
+      });
+
+      activePeer.on('error', err => {
+        const message = err && err.message ? err.message : String(err);
+        setSignal(audioConnected ? 'Signaling error; audio can stay local' : 'Error');
+        if (audioConnected) {
+          setStatus('Signaling server is unavailable, but the local audio link is still active.', 'good');
+          return;
+        }
+        if (role === 'join' && !intentionalClose) {
+          setStatus('Connection problem: ' + message + '. Retrying...', 'warn');
+          scheduleReconnect('signaling error');
+        } else {
+          setStatus('Connection setup failed: ' + message, 'warn');
+          hostBtn.disabled = false;
+          showJoinBtn.disabled = false;
+          joinBtn.disabled = false;
+        }
+      });
+    }
+
+    function cleanupCallOnly() {
+      clearTimeout(streamTimer);
+      streamTimer = null;
+      if (call) {
+        try { call.close(); } catch (_) {}
+      }
+      call = null;
+      remoteAudio.srcObject = null;
+      audioConnected = false;
+      setMedia('Idle');
+      setPill('Not connected');
+      setLocalMuted(talkMode.value === 'call' ? muted : true);
+      updateTalkUi();
+    }
+
+    function bindCall(activeCall, label = 'call') {
+      cleanupCallOnly();
+      call = activeCall;
+      audioConnected = false;
+      setup.classList.add('hidden');
+      talkBox.classList.remove('hidden');
+      setPill('Connecting');
+      setMedia('Connecting audio');
+      setStatus(label === 'reconnect' ? 'Reconnecting audio...' : 'Connecting audio...', 'warn');
+      updateTalkUi();
+
+      streamTimer = setTimeout(() => {
+        if (!audioConnected && call === activeCall && !intentionalClose) {
+          setMedia('No remote audio yet');
+          if (role === 'join') scheduleReconnect('audio timeout');
+          else setStatus('No audio yet. Waiting for the other phone to reconnect.', 'warn');
+        }
+      }, STREAM_TIMEOUT_MS);
+
+      activeCall.on('stream', stream => {
+        if (call !== activeCall) return;
+        clearTimeout(streamTimer);
+        streamTimer = null;
+        remoteAudio.srcObject = stream;
+        remoteAudio.play().catch(() => {
+          setStatus('Connected. Tap once if audio does not start automatically.', 'warn');
+        });
+        audioConnected = true;
+        reconnectAttempts = 0;
+        setPill('Connected', 'good');
+        setMedia('Audio connected');
+        applyAudioMode();
+        setStatus(talkMode.value === 'call' ? 'Connected. Use mute when needed.' : 'Connected. Hold the green button to talk.', 'good');
+      });
+
+      activeCall.on('close', () => {
+        if (call !== activeCall || intentionalClose) return;
+        handleCallLost('call closed');
+      });
+
+      activeCall.on('error', err => {
+        if (call !== activeCall || intentionalClose) return;
+        const message = err && err.message ? err.message : String(err);
+        setStatus('Call error: ' + message, 'warn');
+        handleCallLost('call error');
+      });
+
+      watchPeerConnection(activeCall);
+    }
+
+    function watchPeerConnection(activeCall, attempt = 0) {
+      const pc = activeCall.peerConnection || activeCall._pc;
+      if (!pc) {
+        if (attempt < 20) setTimeout(() => watchPeerConnection(activeCall, attempt + 1), 250);
+        return;
+      }
+
+      const updateFromPc = () => {
+        if (call !== activeCall || intentionalClose) return;
+        const ice = pc.iceConnectionState || 'unknown';
+        const connection = pc.connectionState || 'unknown';
+        setMedia('ICE ' + ice + ' / Peer ' + connection);
+
+        if (ice === 'connected' || ice === 'completed' || connection === 'connected') {
+          audioConnected = true;
+          setPill('Connected', 'good');
+          updateTalkUi();
+          return;
+        }
+
+        if (ice === 'failed' || connection === 'failed' || connection === 'closed') {
+          handleCallLost('audio link failed');
+          return;
+        }
+
+        if (ice === 'disconnected' || connection === 'disconnected') {
+          setTimeout(() => {
+            if (call === activeCall && !intentionalClose) handleCallLost('audio link disconnected');
+          }, 3500);
+        }
+      };
+
+      pc.addEventListener('iceconnectionstatechange', updateFromPc);
+      pc.addEventListener('connectionstatechange', updateFromPc);
+      updateFromPc();
+    }
+
+    function handleCallLost(reason) {
+      if (intentionalClose) return;
+      audioConnected = false;
+      talking = false;
+      talkBtn.classList.remove('active');
+      setLocalMuted(talkMode.value === 'call' ? muted : true);
+      setPill('Reconnecting', 'bad');
+      setMedia('Lost: ' + reason);
+      updateTalkUi();
+
+      if (role === 'join') {
+        scheduleReconnect(reason);
+      } else if (role === 'host') {
+        setStatus('Audio lost. Keep this page open; the second phone will reconnect automatically.', 'warn');
+      }
+    }
+
+    function scheduleReconnect(reason) {
+      if (role !== 'join' || intentionalClose || !targetCode) return;
+      clearTimeout(reconnectTimer);
+      reconnectAttempts += 1;
+      const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(1.6, reconnectAttempts - 1));
+      const seconds = Math.round(delay / 1000);
+      setPill('Reconnecting', 'bad');
+      setStatus('Connection lost (' + reason + '). Reconnect attempt ' + reconnectAttempts + ' in ' + seconds + 's.', 'warn');
+      reconnectTimer = setTimeout(() => reconnectJoin(), delay);
+    }
+
+    function reconnectJoin() {
+      if (role !== 'join' || intentionalClose || !targetCode) return;
+      try { if (call) call.close(); } catch (_) {}
+      try { if (peer) peer.destroy(); } catch (_) {}
+      call = null;
+      peer = null;
+      audioConnected = false;
+      setMedia('Reconnecting');
+      setSignal('Creating new signaling peer');
+      startJoinPeer(true);
+    }
+
+    function manualReconnect() {
+      if (role === 'join') {
+        reconnectAttempts = 0;
+        reconnectJoin();
+      } else if (role === 'host') {
+        setStatus('Host is waiting. Reconnect from the second phone or press Disconnect and create a new code.', 'warn');
+      }
+    }
+
+    async function startHost() {
+      try {
+        intentionalClose = false;
+        role = 'host';
+        targetCode = null;
+        acceptedOnce = false;
+        hostBtn.disabled = true;
+        showJoinBtn.disabled = true;
+        saveSettingsSilently();
+        setStatus('Requesting microphone...');
+        await getMic();
+        await requestWakeLock();
+
+        hostCode = makeCode();
+        roomCodeEl.textContent = hostCode;
+        hostBox.classList.remove('hidden');
+        joinBox.classList.add('hidden');
+        setStatus('Creating room code...');
+        setSignal('Starting signaling');
+
+        peer = createPeer(hostCode);
+        attachPeerEvents(peer);
+        peer.on('open', () => setStatus('Room is ready. Ask the second phone to join code ' + hostCode + '.', 'good'));
+        peer.on('call', incoming => {
+          if (acceptedOnce) {
+            setStatus('Second phone is reconnecting. Accepting automatically...', 'warn');
+            incoming.answer(localStream);
+            bindCall(incoming, 'reconnect');
+            return;
+          }
+          pendingCall = incoming;
+          incomingNote.textContent = 'Second phone is trying to connect.';
+          acceptBtn.classList.remove('hidden');
+          setStatus('Incoming connection. Tap Accept Connection.', 'warn');
+        });
+      } catch (err) {
+        setStatus(err.message || String(err), 'warn');
+        hostBtn.disabled = false;
+        showJoinBtn.disabled = false;
+      }
+    }
+
+    async function joinRoom() {
+      const code = joinCodeEl.value.trim().toUpperCase();
+      if (!code) {
+        setStatus('Enter the host code first.', 'warn');
+        return;
+      }
+      try {
+        intentionalClose = false;
+        role = 'join';
+        targetCode = code;
+        hostCode = null;
+        reconnectAttempts = 0;
+        joinBtn.disabled = true;
+        saveSettingsSilently();
+        setStatus('Requesting microphone...');
+        await getMic();
+        await requestWakeLock();
+        startJoinPeer(false);
+      } catch (err) {
+        setStatus(err.message || String(err), 'warn');
+        joinBtn.disabled = false;
+      }
+    }
+
+    function startJoinPeer(isReconnect) {
+      setStatus((isReconnect ? 'Rejoining ' : 'Joining ') + targetCode + '...', 'warn');
+      setSignal('Starting signaling');
+      peer = createPeer();
+      attachPeerEvents(peer);
+      peer.on('open', () => {
+        if (!peer || peer.destroyed || !localStream) return;
+        setSignal('Calling host ' + targetCode);
+        const outgoing = peer.call(targetCode, localStream, {
+          metadata: { reconnect: isReconnect, mode: talkMode.value }
+        });
+        if (!outgoing) {
+          scheduleReconnect('call could not start');
+          return;
+        }
+        bindCall(outgoing, isReconnect ? 'reconnect' : 'call');
+      });
+    }
+
+    function acceptIncoming() {
+      if (!pendingCall || !localStream) return;
+      acceptedOnce = true;
+      pendingCall.answer(localStream);
+      bindCall(pendingCall, 'call');
+      pendingCall = null;
+      acceptBtn.classList.add('hidden');
+      incomingNote.textContent = 'Connected. Future reconnects will be accepted automatically.';
+    }
+
+    function startTalking(ev) {
+      if (ev) ev.preventDefault();
+      if (talkMode.value !== 'ptt' || !audioConnected) return;
+      talking = true;
+      talkBtn.classList.add('active');
+      setLocalMuted(false);
+    }
+
+    function stopTalking(ev) {
+      if (ev) ev.preventDefault();
+      if (talkMode.value !== 'ptt') return;
+      talking = false;
+      talkBtn.classList.remove('active');
+      setLocalMuted(true);
+    }
+
+    function toggleMute() {
+      if (talkMode.value !== 'call') return;
+      setLocalMuted(!muted);
+    }
+
+    function saveSettingsSilently() {
+      const settings = {
+        talkMode: talkMode.value,
+        wake: wakeToggle.checked
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      updateSignalIdle();
+    }
+
+    function reset(message) {
+      intentionalClose = true;
+      clearTimeout(reconnectTimer);
+      clearTimeout(streamTimer);
+      reconnectTimer = null;
+      streamTimer = null;
+      try { if (call) call.close(); } catch (_) {}
+      try { if (peer) peer.destroy(); } catch (_) {}
+      call = null;
+      peer = null;
+      pendingCall = null;
+      role = null;
+      hostCode = null;
+      targetCode = null;
+      acceptedOnce = false;
+      reconnectAttempts = 0;
+      audioConnected = false;
+      talking = false;
+      stopMic();
+      releaseWakeLock();
+      remoteAudio.srcObject = null;
+      setPill('Not connected');
+      setSignal('LAN direct mode');
+      setMedia('Idle');
+      setup.classList.remove('hidden');
+      talkBox.classList.add('hidden');
+      hostBox.classList.add('hidden');
+      joinBox.classList.add('hidden');
+      acceptBtn.classList.add('hidden');
+      hostBtn.disabled = false;
+      showJoinBtn.disabled = false;
+      joinBtn.disabled = false;
+      incomingNote.textContent = 'Waiting for the second phone...';
+      setStatus(message || 'Disconnected.');
+      setTimeout(() => { intentionalClose = false; }, 250);
+    }
+
+    hostBtn.addEventListener('click', startHost);
+    showJoinBtn.addEventListener('click', () => {
+      hostBox.classList.add('hidden');
+      joinBox.classList.toggle('hidden');
+      joinCodeEl.focus();
+    });
+    joinBtn.addEventListener('click', joinRoom);
+    acceptBtn.addEventListener('click', acceptIncoming);
+    reconnectBtn.addEventListener('click', manualReconnect);
+    disconnectBtn.addEventListener('click', () => reset('Disconnected.'));
+    talkMode.addEventListener('change', () => {
+      saveSettingsSilently();
+      applyAudioMode();
+    });
+    wakeToggle.addEventListener('change', async () => {
+      saveSettingsSilently();
+      if (wakeToggle.checked) await requestWakeLock();
+      else await releaseWakeLock();
+    });
+    talkBtn.addEventListener('pointerdown', startTalking);
+    talkBtn.addEventListener('pointerup', stopTalking);
+    talkBtn.addEventListener('pointercancel', stopTalking);
+    talkBtn.addEventListener('pointerleave', () => { if (talking) stopTalking(); });
+    muteBtn.addEventListener('click', toggleMute);
+    window.addEventListener('blur', () => { if (talkMode.value === 'ptt') stopTalking(); });
+    document.addEventListener('visibilitychange', async () => {
+      if (document.hidden) {
+        if (talkMode.value === 'ptt') stopTalking();
+        return;
+      }
+      if ((role || call) && wakeToggle.checked) await requestWakeLock();
+    });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+
+    loadSettings();
+  </script>
+</body>
+</html>
