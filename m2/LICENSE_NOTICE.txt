@@ -1,0 +1,6 @@
+This package includes QRCode for JavaScript by Kazuhiko Arase.
+
+Copyright (c) 2009 Kazuhiko Arase
+Licensed under the MIT License.
+
+The word "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
