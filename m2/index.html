@@ -4,128 +4,146 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
-  <title>Moto Talk QR Offline</title>
+  <title>Moto Talk Text Offline</title>
   <style>
     :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #f8fafc; background: #0b1220; }
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: #0b1220; }
     body { display: flex; justify-content: center; }
-    main { width: min(560px, 100%); min-height: 100vh; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .card { background: #111827; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; padding: 16px; box-shadow: 0 18px 46px rgba(0,0,0,.2); }
-    h1 { margin: 2px 0 4px; font-size: clamp(28px, 10vw, 44px); line-height: .95; }
-    p { margin: 8px 0; color: #cbd5e1; line-height: 1.42; }
+    main { width: min(520px, 100%); min-height: 100vh; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .card { background: #111827; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; padding: 14px; box-shadow: 0 18px 46px rgba(0,0,0,.2); }
+    h1 { margin: 0 0 10px; font-size: clamp(32px, 10vw, 48px); line-height: .95; }
     button, textarea { width: 100%; border: 0; border-radius: 14px; font: inherit; }
-    button { padding: 15px 16px; font-size: 18px; font-weight: 800; color: #e5e7eb; background: #334155; touch-action: manipulation; }
+    button { padding: 15px 14px; font-size: 17px; font-weight: 850; color: #e5e7eb; background: #334155; touch-action: manipulation; }
     button.primary { background: #22c55e; color: #052e16; }
     button.blue { background: #38bdf8; color: #082f49; }
     button.red { background: #ef4444; color: white; }
+    button.active { outline: 3px solid rgba(255,255,255,.35); filter: brightness(1.12); }
     button:disabled { opacity: .45; }
-    textarea { min-height: 120px; padding: 12px; color: #e5e7eb; background: #020617; border: 1px solid rgba(255,255,255,.12); resize: vertical; font-size: 13px; }
+    textarea { min-height: 190px; padding: 12px; color: #e5e7eb; background: #020617; border: 1px solid rgba(255,255,255,.12); resize: vertical; font-size: 12px; line-height: 1.35; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .hidden { display: none !important; }
-    #status { padding: 10px 12px; border-radius: 12px; color: #dbeafe; background: rgba(56,189,248,.12); }
+    #status { padding: 10px 12px; border-radius: 12px; color: #dbeafe; background: rgba(56,189,248,.12); font-weight: 750; }
     #status.good { color: #bbf7d0; background: rgba(34,197,94,.13); }
     #status.warn { color: #fde68a; background: rgba(245,158,11,.13); }
-    #qrCanvas { display: block; max-width: 100%; margin: 10px auto; background: white; border-radius: 10px; }
-    .talk { height: min(46vh, 340px); border-radius: 999px; font-size: clamp(26px, 8vw, 48px); }
+    .talk { height: min(45vh, 330px); border-radius: 999px; font-size: clamp(26px, 8vw, 48px); }
     .talk.on { filter: brightness(1.15); transform: translateY(2px); }
-    video { width: 100%; border-radius: 14px; background: #020617; }
-    details { margin-top: 10px; color: #cbd5e1; }
-    summary { cursor: pointer; font-weight: 800; }
-    small { display: block; margin-top: 8px; color: #94a3b8; line-height: 1.35; }
-    @media (max-width: 440px) { .row { grid-template-columns: 1fr; } main { padding: 12px; } }
+    @media (max-width: 440px) { .row { grid-template-columns: 1fr; } main { padding: 10px; } }
   </style>
 </head>
 <body>
   <main>
     <section class="card">
       <h1>Moto Talk</h1>
-      <p>Offline QR pairing for two phones on the same hotspot.</p>
-      <div id="status">Choose what this phone will do.</div>
+      <div id="status">Ready</div>
     </section>
 
-    <section id="choose" class="card">
+    <section id="pairCard" class="card">
       <div class="row">
-        <button id="hostBtn" class="primary">Phone A<br>Create QR</button>
-        <button id="joinBtn" class="blue">Phone B<br>Scan QR</button>
+        <button id="pttModeBtn" class="primary active">Push-to-talk</button>
+        <button id="callModeBtn">Call + mute</button>
       </div>
-    </section>
-
-    <section id="signalCard" class="card hidden">
-      <p id="stepText"></p>
-      <canvas id="qrCanvas" class="hidden"></canvas>
-      <div id="scanBox" class="hidden">
-        <video id="scanVideo" playsinline muted></video>
-        <small>Point the camera at the QR shown on the other phone.</small>
-      </div>
+      <br>
       <div class="row">
-        <button id="scanBtn" class="blue">Scan QR</button>
-        <button id="copyBtn">Copy Text</button>
+        <button id="offerBtn" class="blue">Make offer</button>
+        <button id="useTextBtn" class="primary">Use text</button>
       </div>
-      <details>
-        <summary>Manual text</summary>
-        <textarea id="signalText" placeholder="Paste signal text here"></textarea>
-        <button id="useTextBtn" class="primary">Use Pasted Text</button>
-      </details>
+      <br>
+      <textarea id="signalText" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste text here"></textarea>
+      <br><br>
+      <button id="copyBtn">Copy text</button>
     </section>
 
     <section id="talkCard" class="card hidden">
       <button id="talkBtn" class="talk primary">HOLD TO TALK</button>
-      <p>Release to mute. Keep both phones on this page.</p>
+      <br><br>
       <button id="hangupBtn" class="red">Disconnect</button>
     </section>
 
     <audio id="remoteAudio" autoplay playsinline></audio>
   </main>
 
-  <script src="qrcode-browser.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     const statusEl = $('status');
-    const choose = $('choose');
-    const signalCard = $('signalCard');
+    const pairCard = $('pairCard');
     const talkCard = $('talkCard');
-    const stepText = $('stepText');
-    const qrCanvas = $('qrCanvas');
-    const scanBox = $('scanBox');
-    const scanVideo = $('scanVideo');
     const signalText = $('signalText');
     const remoteAudio = $('remoteAudio');
     const talkBtn = $('talkBtn');
+    const pttModeBtn = $('pttModeBtn');
+    const callModeBtn = $('callModeBtn');
+    const offerBtn = $('offerBtn');
+    const useTextBtn = $('useTextBtn');
+    const copyBtn = $('copyBtn');
+    const hangupBtn = $('hangupBtn');
 
     let pc = null;
     let localStream = null;
-    let scanStream = null;
-    let scanTimer = null;
     let role = '';
-    let currentSignal = '';
+    let mode = 'ptt';
+    let muted = true;
 
-    function setStatus(text, mode = '') {
+    function setStatus(text, state = '') {
       statusEl.textContent = text;
-      statusEl.className = mode;
+      statusEl.className = state;
     }
 
     function show(el) { el.classList.remove('hidden'); }
     function hide(el) { el.classList.add('hidden'); }
 
+    function setMode(nextMode) {
+      mode = nextMode;
+      pttModeBtn.classList.toggle('active', mode === 'ptt');
+      callModeBtn.classList.toggle('active', mode === 'call');
+      applyMicMode();
+    }
+
     async function ensureMic() {
       if (localStream) return localStream;
       if (!window.isSecureContext) {
-        throw new Error('Microphone needs HTTPS, localhost, or a previously installed/cached secure app page.');
+        throw new Error('Needs HTTPS or localhost');
       }
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false
       });
-      setMic(false);
+      applyMicMode();
       return localStream;
     }
 
-    function setMic(on) {
+    function setTrackEnabled(on) {
       if (!localStream) return;
       localStream.getAudioTracks().forEach(track => { track.enabled = on; });
+    }
+
+    function applyMicMode() {
+      if (mode === 'ptt') {
+        muted = true;
+        setTrackEnabled(false);
+        talkBtn.textContent = 'HOLD TO TALK';
+        talkBtn.classList.remove('on');
+      } else {
+        muted = false;
+        setTrackEnabled(true);
+        talkBtn.textContent = 'MUTE';
+        talkBtn.classList.add('on');
+      }
+    }
+
+    function setPushTalk(on) {
+      if (mode !== 'ptt') return;
+      setTrackEnabled(on);
       talkBtn.textContent = on ? 'TALKING' : 'HOLD TO TALK';
       talkBtn.classList.toggle('on', on);
+    }
+
+    function toggleMute() {
+      if (mode !== 'call') return;
+      muted = !muted;
+      setTrackEnabled(!muted);
+      talkBtn.textContent = muted ? 'UNMUTE' : 'MUTE';
+      talkBtn.classList.toggle('on', !muted);
     }
 
     function createPeer() {
@@ -142,13 +160,14 @@
     function updateConnectionState() {
       const state = pc ? (pc.connectionState || pc.iceConnectionState) : 'closed';
       if (state === 'connected') {
-        setStatus('Connected. Hold the button to talk.', 'good');
-        hide(signalCard);
+        setStatus('Connected', 'good');
+        hide(pairCard);
         show(talkCard);
+        applyMicMode();
       } else if (state === 'failed' || state === 'disconnected') {
-        setStatus('Connection lost. Re-pair with QR.', 'warn');
+        setStatus('Connection lost', 'warn');
       } else if (state) {
-        setStatus('Connecting: ' + state);
+        setStatus(state);
       }
     }
 
@@ -175,19 +194,19 @@
         writer.write(bytes);
         writer.close();
         const compressed = new Uint8Array(await new Response(cs.readable).arrayBuffer());
-        return 'MTQR1G.' + base64Url(compressed);
+        return 'MTTX1G.' + base64Url(compressed);
       }
-      return 'MTQR1J.' + base64Url(bytes);
+      return 'MTTX1J.' + base64Url(bytes);
     }
 
     async function unpack(text) {
       const raw = (text || '').trim();
-      if (!raw.startsWith('MTQR1')) throw new Error('This is not a Moto Talk QR signal.');
-      const mode = raw.slice(5, 6);
+      if (!raw.startsWith('MTTX1')) throw new Error('Invalid text');
+      const modeChar = raw.slice(5, 6);
       const data = fromBase64Url(raw.slice(7));
       let bytes = data;
-      if (mode === 'G') {
-        if (!('DecompressionStream' in window)) throw new Error('This browser cannot read compressed QR text. Use manual text from a browser that supports it.');
+      if (modeChar === 'G') {
+        if (!('DecompressionStream' in window)) throw new Error('Unsupported browser');
         const ds = new DecompressionStream('gzip');
         const writer = ds.writable.getWriter();
         writer.write(data);
@@ -213,114 +232,45 @@
       return bytes;
     }
 
-    function showSignal(text, instruction) {
-      currentSignal = text;
-      signalText.value = text;
-      stepText.textContent = instruction;
-      show(signalCard);
-      hide(scanBox);
-      show(qrCanvas);
-      try {
-        MotoQR.draw(qrCanvas, text);
-      } catch (err) {
-        hide(qrCanvas);
-        setStatus('Signal is too large for QR. Use Manual text instead.', 'warn');
-      }
-    }
-
     async function makeOffer() {
       role = 'host';
-      choose.hidden = true;
-      setStatus('Creating offer QR...');
+      setStatus('Making offer');
       await ensureMic();
       createPeer();
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
       await pc.setLocalDescription(await pc.createOffer({ offerToReceiveAudio: true }));
       await waitIceComplete(pc);
-      const text = await pack({ v: 1, t: 'offer', s: pc.localDescription.sdp });
-      showSignal(text, 'Phone B: scan this QR. Then Phone A scans Phone B\'s answer QR.');
-      setStatus('Offer ready. Show this QR to Phone B.');
-    }
-
-    async function startJoin() {
-      role = 'join';
-      choose.hidden = true;
-      stepText.textContent = 'Scan Phone A\'s offer QR.';
-      signalText.value = '';
-      show(signalCard);
-      hide(qrCanvas);
-      await startScan();
+      signalText.value = await pack({ v: 1, t: 'offer', s: pc.localDescription.sdp });
+      setStatus('Offer ready', 'good');
     }
 
     async function processIncoming(text) {
       const msg = await unpack(text);
       if (msg.t === 'offer') return answerOffer(msg.s);
       if (msg.t === 'answer') return acceptAnswer(msg.s);
-      throw new Error('Unknown signal type.');
+      throw new Error('Invalid text');
     }
 
     async function answerOffer(offerSdp) {
-      stopScan();
       role = 'join';
-      setStatus('Creating answer QR...');
+      setStatus('Making answer');
       await ensureMic();
       createPeer();
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
       await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       await pc.setLocalDescription(await pc.createAnswer());
       await waitIceComplete(pc);
-      const text = await pack({ v: 1, t: 'answer', s: pc.localDescription.sdp });
-      showSignal(text, 'Phone A: scan this answer QR to connect.');
-      setStatus('Answer ready. Show this QR to Phone A.');
+      signalText.value = await pack({ v: 1, t: 'answer', s: pc.localDescription.sdp });
+      setStatus('Answer ready', 'good');
     }
 
     async function acceptAnswer(answerSdp) {
-      if (!pc || role !== 'host') throw new Error('This phone is not waiting for an answer.');
-      stopScan();
+      if (!pc || role !== 'host') throw new Error('Make offer first');
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-      setStatus('Answer received. Connecting...');
-    }
-
-    async function startScan() {
-      stopScan();
-      hide(qrCanvas);
-      show(scanBox);
-      if (!('BarcodeDetector' in window)) {
-        setStatus('QR scanning is not available in this browser. Paste the Manual text instead.', 'warn');
-        return;
-      }
-      try {
-        scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        scanVideo.srcObject = scanStream;
-        await scanVideo.play();
-        const detector = new BarcodeDetector({ formats: ['qr_code'] });
-        scanTimer = setInterval(async () => {
-          try {
-            const codes = await detector.detect(scanVideo);
-            if (!codes.length) return;
-            await processIncoming(codes[0].rawValue);
-          } catch (err) {
-            setStatus(err.message || 'Could not read QR.', 'warn');
-          }
-        }, 700);
-        setStatus('Scanning QR...');
-      } catch (err) {
-        setStatus('Camera unavailable. Paste the Manual text instead.', 'warn');
-      }
-    }
-
-    function stopScan() {
-      clearInterval(scanTimer);
-      scanTimer = null;
-      if (scanStream) scanStream.getTracks().forEach(track => track.stop());
-      scanStream = null;
-      scanVideo.srcObject = null;
-      hide(scanBox);
+      setStatus('Connecting');
     }
 
     function hangup() {
-      stopScan();
-      setMic(false);
       if (pc) pc.close();
       pc = null;
       if (localStream) localStream.getTracks().forEach(track => track.stop());
@@ -328,19 +278,26 @@
       location.reload();
     }
 
-    $('hostBtn').addEventListener('click', () => makeOffer().catch(err => setStatus(err.message, 'warn')));
-    $('joinBtn').addEventListener('click', () => startJoin().catch(err => setStatus(err.message, 'warn')));
-    $('scanBtn').addEventListener('click', () => startScan());
-    $('copyBtn').addEventListener('click', async () => {
-      if (!currentSignal) return;
-      try { await navigator.clipboard.writeText(currentSignal); setStatus('Copied.'); }
-      catch (_) { signalText.select(); document.execCommand('copy'); setStatus('Copied.'); }
+    offerBtn.addEventListener('click', () => makeOffer().catch(err => setStatus(err.message, 'warn')));
+    useTextBtn.addEventListener('click', () => processIncoming(signalText.value).catch(err => setStatus(err.message, 'warn')));
+    copyBtn.addEventListener('click', async () => {
+      if (!signalText.value.trim()) return;
+      try {
+        await navigator.clipboard.writeText(signalText.value.trim());
+        setStatus('Copied');
+      } catch (_) {
+        signalText.select();
+        document.execCommand('copy');
+        setStatus('Copied');
+      }
     });
-    $('useTextBtn').addEventListener('click', () => processIncoming(signalText.value).catch(err => setStatus(err.message, 'warn')));
-    $('hangupBtn').addEventListener('click', hangup);
+    hangupBtn.addEventListener('click', hangup);
+    pttModeBtn.addEventListener('click', () => setMode('ptt'));
+    callModeBtn.addEventListener('click', () => setMode('call'));
 
-    const talkOn = ev => { ev.preventDefault(); setMic(true); };
-    const talkOff = ev => { ev.preventDefault(); setMic(false); };
+    talkBtn.addEventListener('click', () => toggleMute());
+    const talkOn = ev => { ev.preventDefault(); setPushTalk(true); };
+    const talkOff = ev => { ev.preventDefault(); setPushTalk(false); };
     talkBtn.addEventListener('pointerdown', talkOn);
     talkBtn.addEventListener('pointerup', talkOff);
     talkBtn.addEventListener('pointercancel', talkOff);

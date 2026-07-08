@@ -1,20 +1,18 @@
-# Moto Talk QR Offline
+# Moto Talk Text Offline
 
-Minimal browser-based two-phone audio app using offline QR signaling.
+Minimal browser-based two-phone audio app using manual text signaling.
 
-## How to pair
+## Pairing
 
 1. Put both phones on the same hotspot/Wi-Fi.
-2. Open the app on both phones while the page is available. For microphone access, the page must be served from HTTPS, localhost, or already installed/cached from HTTPS.
-3. Phone A: tap **Create QR**.
-4. Phone B: tap **Scan QR** and scan Phone A's QR.
-5. Phone B shows an answer QR.
-6. Phone A: tap **Scan QR** and scan Phone B's answer QR.
-7. Hold **HOLD TO TALK** to speak.
+2. Open the app on both phones.
+3. Phone A: choose a mode, tap Make offer, copy the text.
+4. Phone B: paste the offer text, tap Use text, copy the answer text.
+5. Phone A: paste the answer text, tap Use text.
 
-## Notes
+## Modes
 
-- No CDN and no public signaling server are used.
-- The QR codes exchange WebRTC setup data only. Audio then tries to travel directly between the phones over the hotspot/LAN.
-- Some hotspots block phone-to-phone traffic. If that happens, the browser app cannot bypass it.
-- QR scanning uses the browser BarcodeDetector API when available. If unavailable, use **Manual text** copy/paste.
+- Push-to-talk: hold the talk button to speak.
+- Call + mute: mic stays on; tap MUTE/UNMUTE.
+
+No CDN, QR generation, or camera access is used.

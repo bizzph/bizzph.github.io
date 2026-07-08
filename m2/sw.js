@@ -1,5 +1,5 @@
-const CACHE = 'moto-talk-qr-offline-v1';
-const FILES = ['./', './index.html', './qrcode-browser.js', './sw.js'];
+const CACHE = 'moto-talk-text-offline-v1';
+const FILES = ['./', './index.html', './sw.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });
