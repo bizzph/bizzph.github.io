@@ -3,24 +3,32 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#090b10" />
-  <meta name="description" content="A browser-based camera preview with gyroscope-assisted electronic stabilization." />
+  <meta name="theme-color" content="#080b10" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+  <meta name="description" content="Private, on-device gyro-assisted camera stabilization." />
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
   <title>Gyro Steady Camera</title>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow">BROWSER CAMERA LAB</p>
-        <h1>Gyro Steady</h1>
-      </div>
+      <h1><span aria-hidden="true">◎</span> Gyro Steady</h1>
       <div class="status-pill" id="sensorStatus" role="status" aria-live="polite">
         <span class="status-dot" aria-hidden="true"></span>
         <span>Ready</span>
       </div>
     </header>
+
+    <div class="privacy-strip" aria-label="Privacy summary">
+      <span>On-device</span>
+      <span>No uploads</span>
+      <span>No microphone</span>
+    </div>
 
     <section class="viewer" id="viewer" aria-label="Camera preview">
       <canvas id="outputCanvas" aria-label="Stabilized camera output"></canvas>
@@ -28,90 +36,105 @@
 
       <div class="empty-state" id="emptyState">
         <div class="camera-icon" aria-hidden="true">◎</div>
-        <h2>Steady handheld preview</h2>
-        <p>Start the rear camera, allow motion access, then enable stabilization.</p>
-        <button class="primary big" id="startButton" type="button">Start camera</button>
-        <p class="secure-note">Camera and motion access require HTTPS or localhost.</p>
+        <h2 id="emptyTitle">Steady your camera</h2>
+        <p id="emptyNote">Best in Safari or Chrome over HTTPS.</p>
+        <button class="primary start-button" id="startButton" type="button">Start camera</button>
+      </div>
+
+      <div class="blocked-state" id="blockedState" hidden role="alert">
+        <h2>Cannot start here</h2>
+        <p id="blockedMessage">Open this page directly in Safari or Chrome.</p>
       </div>
 
       <div class="hud" id="hud" hidden>
-        <div class="hud-item"><span>Yaw</span><strong id="yawValue">0.0°</strong></div>
-        <div class="hud-item"><span>Pitch</span><strong id="pitchValue">0.0°</strong></div>
-        <div class="hud-item"><span>Roll</span><strong id="rollValue">0.0°</strong></div>
-        <div class="hud-item"><span>Sensor</span><strong id="sensorValue">Waiting</strong></div>
+        <span>Y <strong id="yawValue">0.0°</strong></span>
+        <span>P <strong id="pitchValue">0.0°</strong></span>
+        <span>R <strong id="rollValue">0.0°</strong></span>
+        <span id="sensorValue">Waiting</span>
       </div>
 
-      <div class="record-indicator" id="recordIndicator" hidden>
-        <span aria-hidden="true"></span> REC
+      <div class="record-indicator" id="recordIndicator" hidden aria-live="polite">
+        <span class="record-dot" aria-hidden="true"></span>
+        <strong id="recordTimer">0:00</strong>
+        <small id="recordSize">0 MB</small>
       </div>
     </section>
 
     <section class="control-panel" aria-label="Camera controls">
-      <div class="main-actions">
-        <button class="primary" id="stabilizeButton" type="button" disabled aria-pressed="false">
-          Stabilization off
+      <div class="quick-actions">
+        <button class="primary steady-button" id="stabilizeButton" type="button" disabled aria-pressed="false">
+          Steady off
         </button>
-        <button class="secondary" id="recenterButton" type="button" disabled>Recenter</button>
-        <button class="secondary icon-button" id="switchButton" type="button" disabled aria-label="Switch camera" title="Switch camera">↺</button>
-        <button class="secondary icon-button" id="fullscreenButton" type="button" disabled aria-label="Open fullscreen" title="Fullscreen">⛶</button>
+        <button class="secondary" id="recenterButton" type="button" disabled>Center</button>
+        <button class="secondary compact" id="switchButton" type="button" disabled aria-label="Switch camera">Flip</button>
+        <button class="secondary compact" id="fullscreenButton" type="button" disabled aria-label="Open fullscreen">Full</button>
+        <button class="danger compact" id="stopButton" type="button" disabled aria-label="Stop camera">Stop</button>
       </div>
 
-      <div class="controls-grid">
-        <label class="control-card" for="cropZoom">
-          <span class="control-heading"><span>Stabilization crop</span><output id="cropZoomOutput">1.20×</output></span>
-          <input id="cropZoom" type="range" min="1.05" max="1.80" value="1.20" step="0.01" />
-          <small>More crop gives the correction more room.</small>
-        </label>
+      <section class="record-card" aria-label="Recording">
+        <button class="record-button" id="recordButton" type="button" disabled>
+          <span aria-hidden="true">●</span> Record
+        </button>
 
-        <label class="control-card" for="strength">
-          <span class="control-heading"><span>Strength</span><output id="strengthOutput">72%</output></span>
-          <input id="strength" type="range" min="0" max="100" value="72" step="1" />
-          <small>Higher values remove more fast rotation.</small>
-        </label>
+        <div class="record-result" id="recordResult" hidden>
+          <span id="recordResultText">Recording ready</span>
+          <div>
+            <button class="primary small" id="saveButton" type="button">Save / share</button>
+            <button class="secondary small" id="deleteButton" type="button">Delete</button>
+          </div>
+        </div>
 
-        <label class="control-card" for="fieldOfView">
-          <span class="control-heading"><span>Estimated field of view</span><output id="fieldOfViewOutput">65°</output></span>
-          <input id="fieldOfView" type="range" min="40" max="100" value="65" step="1" />
-          <small>Adjust if compensation looks too weak or too strong.</small>
-        </label>
+        <p class="record-hint" id="recordHint">Local only · 3 minute / 150 MB limit</p>
+      </section>
 
-        <label class="control-card hardware-zoom" id="hardwareZoomCard" for="hardwareZoom" hidden>
-          <span class="control-heading"><span>Camera zoom</span><output id="hardwareZoomOutput">1.0×</output></span>
-          <input id="hardwareZoom" type="range" min="1" max="1" value="1" step="0.1" />
-          <small>Uses the camera's browser-exposed zoom control.</small>
-        </label>
-      </div>
+      <details class="settings-card">
+        <summary>Settings</summary>
 
-      <div class="toggle-row">
-        <label class="switch-label">
-          <input id="horizonLock" type="checkbox" checked />
-          <span class="switch" aria-hidden="true"></span>
-          Horizon lock
-        </label>
-        <label class="switch-label">
-          <input id="showRaw" type="checkbox" />
-          <span class="switch" aria-hidden="true"></span>
-          Raw picture-in-picture
-        </label>
-        <label class="switch-label">
-          <input id="showTelemetry" type="checkbox" />
-          <span class="switch" aria-hidden="true"></span>
-          Motion telemetry
-        </label>
-      </div>
+        <div class="settings-grid">
+          <label class="control-card" for="cropZoom">
+            <span><b>Crop</b><output id="cropZoomOutput">1.20×</output></span>
+            <input id="cropZoom" type="range" min="1.05" max="1.80" value="1.20" step="0.01" />
+          </label>
 
-      <div class="record-row">
-        <button class="secondary" id="recordButton" type="button" disabled>Record stabilized video</button>
-        <a id="downloadLink" class="download-link" hidden>Download recording</a>
-      </div>
+          <label class="control-card" for="strength">
+            <span><b>Strength</b><output id="strengthOutput">72%</output></span>
+            <input id="strength" type="range" min="0" max="100" value="72" step="1" />
+          </label>
 
-      <details class="help-card">
-        <summary>How this works and its limits</summary>
-        <p>The app reads angular motion from the phone, estimates the smooth camera path, and renders the live video into a cropped canvas with compensating translation and rotation.</p>
-        <p>It mainly corrects rotational shake. Walking bounce and sideways translation cannot be measured accurately from a gyroscope alone. Browser sensor timing and camera latency also vary by phone.</p>
+          <label class="control-card" for="fieldOfView">
+            <span><b>Lens</b><output id="fieldOfViewOutput">65°</output></span>
+            <input id="fieldOfView" type="range" min="40" max="100" value="65" step="1" />
+          </label>
+
+          <label class="control-card" id="hardwareZoomCard" for="hardwareZoom" hidden>
+            <span><b>Zoom</b><output id="hardwareZoomOutput">1.0×</output></span>
+            <input id="hardwareZoom" type="range" min="1" max="1" value="1" step="0.1" />
+          </label>
+        </div>
+
+        <div class="toggle-grid">
+          <label class="switch-label">
+            <input id="horizonLock" type="checkbox" checked />
+            <span class="switch" aria-hidden="true"></span>
+            Horizon
+          </label>
+          <label class="switch-label">
+            <input id="showRaw" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+            Raw view
+          </label>
+          <label class="switch-label">
+            <input id="showTelemetry" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+            Motion data
+          </label>
+        </div>
       </details>
+
+      <p class="privacy-note">Camera stops when this page is hidden. Unsaved recordings disappear when the page closes.</p>
     </section>
 
+    <a id="downloadLink" hidden></a>
     <p class="sr-only" id="announcer" aria-live="assertive"></p>
   </main>
 

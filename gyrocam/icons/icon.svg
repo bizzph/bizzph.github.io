@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gyro Steady icon">
+  <rect width="512" height="512" rx="112" fill="#080b10"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#66efbd" stroke-width="34"/>
+  <circle cx="256" cy="256" r="58" fill="#66efbd"/>
+  <path d="M256 72v54M256 386v54M72 256h54M386 256h54" stroke="#f7f9fc" stroke-width="28" stroke-linecap="round"/>
+</svg>
