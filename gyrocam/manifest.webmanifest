@@ -1,0 +1,11 @@
+{
+  "name": "Gyro Steady Camera",
+  "short_name": "Gyro Steady",
+  "description": "Gyroscope-assisted electronic camera stabilization in the browser.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#090b10",
+  "theme_color": "#090b10",
+  "orientation": "any",
+  "icons": []
+}
