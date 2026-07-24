@@ -14,5 +14,7 @@
   };
 */
 window.CEBU_PROPERTY_CONFIG = {
-  feeds: []
+  feeds: [
+    "https://trellistate.com/api/v1/listings"
+  ]
 };
