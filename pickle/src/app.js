@@ -27,7 +27,9 @@
     trophy: '<path d="M8 4h8v4a4 4 0 0 1-8 0ZM8 6H4v2a4 4 0 0 0 4 4M16 6h4v2a4 4 0 0 1-4 4M12 12v5M8 21h8M9 17h6"/>',
     x: '<path d="m6 6 12 12M18 6 6 18"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
-    external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>'
+    external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>',
+    fullscreen: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>',
+    fullscreenExit: '<path d="M8 8H3V3M16 8h5V3M8 16H3v5M16 16h5v5"/>'
   };
 
   function icon(name, className = '') {
@@ -45,6 +47,17 @@
 
   function formatDuration(ms) {
     const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    return hours
+      ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function formatCountdown(ms) {
+    const value = Math.max(0, Number(ms) || 0);
+    const total = value === 0 ? 0 : Math.ceil(value / 1000);
     const hours = Math.floor(total / 3600);
     const minutes = Math.floor((total % 3600) / 60);
     const seconds = total % 60;
@@ -93,6 +106,7 @@
       this.boundSubmit = this.onSubmit.bind(this);
       this.boundChange = this.onChange.bind(this);
       this.boundNetwork = this.onNetworkChange.bind(this);
+      this.boundFullscreen = this.onFullscreenChange.bind(this);
     }
 
     connectedCallback() {
@@ -101,13 +115,22 @@
       this.addEventListener('change', this.boundChange);
       window.addEventListener('online', this.boundNetwork);
       window.addEventListener('offline', this.boundNetwork);
+      document.addEventListener('fullscreenchange', this.boundFullscreen);
+      document.addEventListener('webkitfullscreenchange', this.boundFullscreen);
       if (navigator.connection && navigator.connection.addEventListener) {
         navigator.connection.addEventListener('change', this.boundNetwork);
       }
       this.render();
       this.clock = window.setInterval(() => {
         const game = this.mode === 'display' ? this.remoteGame : this.state.currentGame;
-        if (game && game.timer && game.timer.running) this.render();
+        if (!game || !game.timer || !game.timer.running) return;
+        const now = Date.now();
+        if (this.mode === 'controller' && Engine.getRemainingMs(game, now) <= 0) {
+          this.setCurrentGame(Engine.expireTimer(game, now));
+          this.showToast('Time');
+          return;
+        }
+        this.render();
       }, 1000);
       if (this.mode === 'display') this.startViewer();
       this.registerServiceWorker();
@@ -117,6 +140,8 @@
       window.clearInterval(this.clock);
       window.removeEventListener('online', this.boundNetwork);
       window.removeEventListener('offline', this.boundNetwork);
+      document.removeEventListener('fullscreenchange', this.boundFullscreen);
+      document.removeEventListener('webkitfullscreenchange', this.boundFullscreen);
       if (navigator.connection && navigator.connection.removeEventListener) {
         navigator.connection.removeEventListener('change', this.boundNetwork);
       }
@@ -131,8 +156,8 @@
         if (!parsed || typeof parsed !== 'object') return fallback;
         return {
           schemaVersion: Engine.SCHEMA_VERSION,
-          currentGame: parsed.currentGame || null,
-          games: Array.isArray(parsed.games) ? parsed.games : [],
+          currentGame: parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null,
+          games: Array.isArray(parsed.games) ? parsed.games.map((game) => Engine.normalizeGame(game)) : [],
           lastSavedAt: parsed.lastSavedAt || null
         };
       } catch (_error) {
@@ -164,6 +189,33 @@
       this.render();
     }
 
+    onFullscreenChange() {
+      if (this.mode === 'display') this.render();
+    }
+
+    isFullscreen() {
+      return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    async toggleFullscreen() {
+      try {
+        if (this.isFullscreen()) {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (exit) await exit.call(document);
+          return;
+        }
+        const root = document.documentElement;
+        const request = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (!request) {
+          this.showToast('Fullscreen unavailable');
+          return;
+        }
+        await request.call(root);
+      } catch (_error) {
+        this.showToast('Fullscreen unavailable');
+      }
+    }
+
     registerServiceWorker() {
       if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
         navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -185,7 +237,7 @@
       if (previous && previous.status === 'active' && game && game.status === 'complete') {
         this.state.games.unshift(Engine.snapshotForSave(game, Date.now()));
       }
-      this.state.currentGame = game;
+      this.state.currentGame = game ? Engine.normalizeGame(game) : null;
       this.persist();
       if (broadcast && this.liveController) this.liveController.broadcast();
       this.render();
@@ -315,7 +367,8 @@
         teamBName: '',
         teamBPlayer1: data.get('teamBPlayer1'),
         teamBPlayer2: data.get('teamBPlayer2'),
-        startingTeam: Number(data.get('startingTeam'))
+        startingTeam: Number(data.get('startingTeam')),
+        durationMinutes: Number(data.get('durationMinutes')) || 15
       });
       this.view = 'game';
       this.setCurrentGame(game);
@@ -428,6 +481,10 @@
         }
         return;
       }
+      if (action === 'toggle-fullscreen') {
+        await this.toggleFullscreen();
+        return;
+      }
       if (action === 'leave-display') {
         const url = new URL(location.href);
         url.search = '';
@@ -517,11 +574,12 @@
             <div class="setup-options">
               <label><span>To</span><select name="target"><option>11</option><option>15</option><option>21</option></select></label>
               <label><span>Serve</span><select name="startingTeam"><option value="0">A</option><option value="1">B</option></select></label>
+              <label><span>Timer</span><select name="durationMinutes"><option value="10">10m</option><option value="15" selected>15m</option><option value="20">20m</option><option value="30">30m</option></select></label>
             </div>
 
             <button class="start-btn" type="submit">${icon('play')}<span>Start</span></button>
           </form>
-          <p class="microcopy">Side-out · win by 2 · auto-saved</p>
+          <p class="microcopy">P1 starts right · side-out · win by 2</p>
         </section>
       `;
     }
@@ -530,8 +588,8 @@
       return `
         <fieldset class="team-fields team-${letter.toLowerCase()}">
           <legend>${letter}</legend>
-          <label><span class="sr-only">Team ${letter} player 1</span><input name="team${letter}Player1" placeholder="Player 1" required autocomplete="off"></label>
-          <label class="doubles-only"><span class="sr-only">Team ${letter} player 2</span><input name="team${letter}Player2" placeholder="Player 2" autocomplete="off"></label>
+          <label><span class="sr-only">Team ${letter} right-side starter</span><input name="team${letter}Player1" placeholder="P1 · Right" required autocomplete="off"></label>
+          <label class="doubles-only"><span class="sr-only">Team ${letter} left-side starter</span><input name="team${letter}Player2" placeholder="P2 · Left" autocomplete="off"></label>
         </fieldset>
       `;
     }
@@ -555,18 +613,19 @@
     renderGame() {
       const game = this.state.currentGame;
       if (!game) return `<section class="empty-view"><div class="empty-symbol">${icon('ball')}</div><h1>No match</h1><button class="start-btn" data-action="view" data-view="setup">${icon('plus')}<span>New</span></button></section>`;
-      const elapsed = Engine.getElapsedMs(game, Date.now());
+      const remaining = Engine.getRemainingMs(game, Date.now());
+      const serve = Engine.serviceDetails(game);
       return `
         <section class="game-view">
           ${this.renderLiveBar()}
           <div class="game-meta">
             <button class="timer-btn" type="button" data-action="toggle-timer" ${game.status === 'complete' ? 'disabled' : ''} aria-label="${game.timer.running ? 'Pause timer' : 'Start timer'}">
-              ${icon(game.timer.running ? 'pause' : 'play')}<time>${formatDuration(elapsed)}</time>
+              ${icon(game.timer.running ? 'pause' : 'play')}<time class="${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
             </button>
             <div class="serve-call ${game.status === 'complete' ? 'complete' : ''}">
               ${game.status === 'complete' ? icon('trophy') : '<span class="serve-pip"></span>'}
-              <strong>${game.status === 'complete' ? 'Final' : escapeHtml(Engine.spokenScore(game))}</strong>
-              <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${game.servingTeam === 0 ? 'A' : 'B'} · ${escapeHtml(Engine.serviceCourt(game).replace(' court', ''))}`}</span>
+              <strong>${game.status === 'complete' ? 'Final' : escapeHtml(serve.playerName)}</strong>
+              <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
             </div>
             <button class="icon-btn subtle" type="button" data-action="reset-timer" aria-label="Reset timer" title="Reset timer">${icon('reset')}</button>
           </div>
@@ -636,13 +695,17 @@
     renderDisplay() {
       const game = this.remoteGame;
       const live = this.remoteStatus.phase === 'live';
+      const fullscreen = this.isFullscreen();
       const statusLabel = live ? 'Live' : this.remoteStatus.phase === 'error' ? 'Error' : 'Connecting';
       return `
-        <div class="display-shell ${game ? '' : 'waiting'}">
+        <div class="display-shell ${game ? '' : 'waiting'} ${fullscreen ? 'is-fullscreen' : ''}">
           <header class="display-topbar">
             <span class="display-brand">${icon('ball')}<b>PicklePulse</b></span>
             <span class="display-status ${live ? 'live' : ''}"><i></i>${escapeHtml(statusLabel)} · ${escapeHtml(this.watchRoom)}</span>
-            <button class="icon-btn ghost" type="button" data-action="leave-display" aria-label="Exit display mode" title="Exit">${icon('x')}</button>
+            <div class="display-actions">
+              <button class="icon-btn ghost fullscreen-btn" type="button" data-action="toggle-fullscreen" aria-label="${fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}" title="${fullscreen ? 'Exit fullscreen' : 'Fullscreen'}">${icon(fullscreen ? 'fullscreenExit' : 'fullscreen')}</button>
+              <button class="icon-btn ghost leave-display" type="button" data-action="leave-display" aria-label="Exit display mode" title="Exit">${icon('x')}</button>
+            </div>
           </header>
           ${game ? this.renderRemoteGame(game) : `
             <main class="display-wait">
@@ -657,15 +720,16 @@
     }
 
     renderRemoteGame(game) {
-      const elapsed = Engine.getElapsedMs(game, Date.now());
+      const remaining = Engine.getRemainingMs(game, Date.now());
+      const serve = Engine.serviceDetails(game);
       return `
         <main class="remote-scoreboard">
           <div class="remote-meta">
-            <time>${formatDuration(elapsed)}</time>
+            <time class="${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
             <div class="remote-call">
               ${game.status === 'complete' ? icon('trophy') : '<span class="serve-pip"></span>'}
-              <strong>${game.status === 'complete' ? 'Final' : escapeHtml(Engine.spokenScore(game))}</strong>
-              <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${game.servingTeam === 0 ? 'A' : 'B'} serving · ${escapeHtml(Engine.serviceCourt(game).replace(' court', ''))}`}</span>
+              <strong>${game.status === 'complete' ? 'Final' : escapeHtml(serve.playerName)}</strong>
+              <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
             </div>
           </div>
           <div class="remote-grid">

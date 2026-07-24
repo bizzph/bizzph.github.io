@@ -255,3 +255,31 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* v3: countdown, automated server call, spectator fullscreen */
+.setup-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.timer-low { color: var(--danger) !important; }
+.display-actions { justify-self: end; display: flex; align-items: center; gap: 4px; }
+.display-shell.is-fullscreen { width: 100%; min-height: 100dvh; }
+.display-shell.is-fullscreen .display-topbar {
+  display: block;
+  position: absolute;
+  z-index: 30;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.display-shell.is-fullscreen .display-brand,
+.display-shell.is-fullscreen .display-status,
+.display-shell.is-fullscreen .leave-display { display: none; }
+.display-shell.is-fullscreen .fullscreen-btn { background: rgb(255 255 255 / 12%); }
+.display-shell.is-fullscreen .remote-scoreboard { min-height: 100dvh; padding-top: clamp(12px, 2.5vw, 28px); }
+.display-shell.is-fullscreen .display-wait { min-height: 100dvh; }
+
+@media (max-width: 620px) {
+  .setup-options { grid-template-columns: 1fr; }
+}

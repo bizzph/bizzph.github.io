@@ -5,7 +5,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPickleEngine() {
   'use strict';
 
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
+  const DEFAULT_TIMER_MS = 15 * 60 * 1000;
 
   function makeId(prefix) {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -23,17 +24,87 @@
     return text || fallback;
   }
 
-  function createGame(options) {
-    const now = options.now || Date.now();
-    const format = options.format === 'singles' ? 'singles' : 'doubles';
-    const target = [11, 15, 21].includes(Number(options.target)) ? Number(options.target) : 11;
-    const startingTeam = Number(options.startingTeam) === 1 ? 1 : 0;
+  function timerDurationMs(game) {
+    const duration = Number(game && game.timer && game.timer.durationMs);
+    return Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_TIMER_MS;
+  }
 
-    const teamAPlayers = [normalizeName(options.teamAPlayer1, 'Player 1')];
-    const teamBPlayers = [normalizeName(options.teamBPlayer1, 'Player 2')];
+  function rightPlayerIndex(game, teamIndex) {
+    if (!game || game.format !== 'doubles') return 0;
+    const score = Number(game.teams && game.teams[teamIndex] && game.teams[teamIndex].score) || 0;
+    return score % 2 === 0 ? 0 : 1;
+  }
+
+  function courtSideForPlayer(game, teamIndex, playerIndex) {
+    if (!game || game.format !== 'doubles') {
+      const score = Number(game && game.teams && game.teams[teamIndex] && game.teams[teamIndex].score) || 0;
+      return score % 2 === 0 ? 'Right' : 'Left';
+    }
+    return Number(playerIndex) === rightPlayerIndex(game, teamIndex) ? 'Right' : 'Left';
+  }
+
+  function replayServiceState(game) {
+    const format = game && game.format === 'singles' ? 'singles' : 'doubles';
+    const scores = [0, 0];
+    let servingTeam = Number(game && game.startingTeam) === 1 ? 1 : 0;
+    let serverNumber = format === 'doubles' ? 2 : 1;
+    let servingPlayer = 0;
+    const rallies = Array.isArray(game && game.rallies) ? game.rallies : [];
+
+    rallies.forEach((rally) => {
+      const winner = Number(rally && rally.winnerTeam);
+      if (![0, 1].includes(winner)) return;
+      if (winner === servingTeam) {
+        scores[winner] += 1;
+      } else if (format === 'doubles' && serverNumber === 1) {
+        serverNumber = 2;
+        servingPlayer = servingPlayer === 0 ? 1 : 0;
+      } else {
+        servingTeam = winner;
+        serverNumber = 1;
+        servingPlayer = format === 'doubles' ? (scores[winner] % 2 === 0 ? 0 : 1) : 0;
+      }
+    });
+
+    return { servingTeam, serverNumber, servingPlayer };
+  }
+
+  function servingPlayerIndex(game) {
+    if (!game || game.format !== 'doubles') return 0;
+    const stored = Number(game.servingPlayer);
+    if ([0, 1].includes(stored)) return stored;
+    return replayServiceState(game).servingPlayer;
+  }
+
+  function normalizeGame(game) {
+    const next = clone(game);
+    next.schemaVersion = SCHEMA_VERSION;
+    next.timer = next.timer || {};
+    next.timer.durationMs = timerDurationMs(next);
+    next.timer.elapsedMs = Math.max(0, Math.min(next.timer.durationMs, Number(next.timer.elapsedMs) || 0));
+    next.timer.running = Boolean(next.timer.running) && next.timer.elapsedMs < next.timer.durationMs;
+    next.timer.startedAt = next.timer.running && next.timer.startedAt != null && Number.isFinite(Number(next.timer.startedAt))
+      ? Number(next.timer.startedAt)
+      : null;
+    if (next.format === 'doubles') next.servingPlayer = servingPlayerIndex(next);
+    else next.servingPlayer = 0;
+    return next;
+  }
+
+  function createGame(options) {
+    const safeOptions = options || {};
+    const now = safeOptions.now || Date.now();
+    const format = safeOptions.format === 'singles' ? 'singles' : 'doubles';
+    const target = [11, 15, 21].includes(Number(safeOptions.target)) ? Number(safeOptions.target) : 11;
+    const startingTeam = Number(safeOptions.startingTeam) === 1 ? 1 : 0;
+    const durationMinutes = Math.max(1, Math.min(180, Number(safeOptions.durationMinutes) || 15));
+    const durationMs = durationMinutes * 60 * 1000;
+
+    const teamAPlayers = [normalizeName(safeOptions.teamAPlayer1, 'Player 1')];
+    const teamBPlayers = [normalizeName(safeOptions.teamBPlayer1, 'Player 2')];
     if (format === 'doubles') {
-      teamAPlayers.push(normalizeName(options.teamAPlayer2, 'Player 2'));
-      teamBPlayers.push(normalizeName(options.teamBPlayer2, 'Player 2'));
+      teamAPlayers.push(normalizeName(safeOptions.teamAPlayer2, 'Player 2'));
+      teamBPlayers.push(normalizeName(safeOptions.teamBPlayer2, 'Player 2'));
     }
 
     return {
@@ -49,21 +120,23 @@
       status: 'active',
       teams: [
         {
-          name: normalizeName(options.teamAName, format === 'singles' ? teamAPlayers[0] : 'Team A'),
+          name: normalizeName(safeOptions.teamAName, format === 'singles' ? teamAPlayers[0] : 'Team A'),
           players: teamAPlayers,
           score: 0
         },
         {
-          name: normalizeName(options.teamBName, format === 'singles' ? teamBPlayers[0] : 'Team B'),
+          name: normalizeName(safeOptions.teamBName, format === 'singles' ? teamBPlayers[0] : 'Team B'),
           players: teamBPlayers,
           score: 0
         }
       ],
       servingTeam: startingTeam,
       serverNumber: format === 'doubles' ? 2 : 1,
+      servingPlayer: 0,
       startingTeam,
       rallies: [],
       timer: {
+        durationMs,
         elapsedMs: 0,
         running: true,
         startedAt: now
@@ -73,26 +146,32 @@
 
   function getElapsedMs(game, now) {
     const safeNow = now || Date.now();
-    const elapsed = Number(game.timer && game.timer.elapsedMs) || 0;
-    if (!game.timer || !game.timer.running || !game.timer.startedAt) return elapsed;
-    return Math.max(0, elapsed + (safeNow - game.timer.startedAt));
+    const duration = timerDurationMs(game);
+    const elapsed = Number(game && game.timer && game.timer.elapsedMs) || 0;
+    if (!game || !game.timer || !game.timer.running || !game.timer.startedAt) {
+      return Math.max(0, Math.min(duration, elapsed));
+    }
+    return Math.max(0, Math.min(duration, elapsed + Math.max(0, safeNow - game.timer.startedAt)));
+  }
+
+  function getRemainingMs(game, now) {
+    return Math.max(0, timerDurationMs(game) - getElapsedMs(game, now));
   }
 
   function pauseTimer(game, now) {
-    const next = clone(game);
-    next.timer = next.timer || { elapsedMs: 0, running: false, startedAt: null };
-    next.timer.elapsedMs = getElapsedMs(game, now);
+    const safeNow = now || Date.now();
+    const next = normalizeGame(game);
+    next.timer.elapsedMs = getElapsedMs(game, safeNow);
     next.timer.running = false;
     next.timer.startedAt = null;
-    next.updatedAt = new Date(now || Date.now()).toISOString();
+    next.updatedAt = new Date(safeNow).toISOString();
     return next;
   }
 
   function startTimer(game, now) {
-    if (game.status === 'complete' || (game.timer && game.timer.running)) return clone(game);
     const safeNow = now || Date.now();
-    const next = clone(game);
-    next.timer = next.timer || { elapsedMs: 0, running: false, startedAt: null };
+    const next = normalizeGame(game);
+    if (next.status === 'complete' || next.timer.running || getRemainingMs(next, safeNow) <= 0) return next;
     next.timer.running = true;
     next.timer.startedAt = safeNow;
     next.updatedAt = new Date(safeNow).toISOString();
@@ -101,12 +180,21 @@
 
   function resetTimer(game, now) {
     const safeNow = now || Date.now();
-    const next = clone(game);
-    next.timer = {
-      elapsedMs: 0,
-      running: game.status === 'active',
-      startedAt: game.status === 'active' ? safeNow : null
-    };
+    const next = normalizeGame(game);
+    next.timer.elapsedMs = 0;
+    next.timer.running = next.status === 'active';
+    next.timer.startedAt = next.status === 'active' ? safeNow : null;
+    next.updatedAt = new Date(safeNow).toISOString();
+    return next;
+  }
+
+  function expireTimer(game, now) {
+    const safeNow = now || Date.now();
+    const next = normalizeGame(game);
+    if (!next.timer.running || getRemainingMs(next, safeNow) > 0) return next;
+    next.timer.elapsedMs = timerDurationMs(next);
+    next.timer.running = false;
+    next.timer.startedAt = null;
     next.updatedAt = new Date(safeNow).toISOString();
     return next;
   }
@@ -122,6 +210,7 @@
       scores: game.teams.map((team) => team.score),
       servingTeam: game.servingTeam,
       serverNumber: game.serverNumber,
+      servingPlayer: servingPlayerIndex(game),
       status: game.status,
       completedAt: game.completedAt,
       timer: clone(game.timer)
@@ -129,17 +218,17 @@
   }
 
   function recordRally(game, winnerTeam, now) {
-    if (game.status !== 'active') return clone(game);
+    if (game.status !== 'active') return normalizeGame(game);
     if (![0, 1].includes(Number(winnerTeam))) throw new Error('winnerTeam must be 0 or 1');
 
     const safeNow = now || Date.now();
     const winner = Number(winnerTeam);
-    const next = clone(game);
+    const next = normalizeGame(game);
     next.rallies.push({
       id: makeId('rally'),
       at: new Date(safeNow).toISOString(),
       winnerTeam: winner,
-      before: stateSnapshot(game)
+      before: stateSnapshot(next)
     });
 
     if (winner === next.servingTeam) {
@@ -153,9 +242,11 @@
       }
     } else if (next.format === 'doubles' && next.serverNumber === 1) {
       next.serverNumber = 2;
+      next.servingPlayer = next.servingPlayer === 0 ? 1 : 0;
     } else {
       next.servingTeam = winner;
       next.serverNumber = 1;
+      next.servingPlayer = rightPlayerIndex(next, winner);
     }
 
     next.updatedAt = new Date(safeNow).toISOString();
@@ -163,9 +254,9 @@
   }
 
   function undoLastRally(game, now) {
-    if (!game.rallies || game.rallies.length === 0) return clone(game);
+    if (!game.rallies || game.rallies.length === 0) return normalizeGame(game);
     const safeNow = now || Date.now();
-    const next = clone(game);
+    const next = normalizeGame(game);
     const rally = next.rallies.pop();
     const before = rally.before;
 
@@ -173,9 +264,13 @@
     next.teams[1].score = before.scores[1];
     next.servingTeam = before.servingTeam;
     next.serverNumber = before.serverNumber;
+    next.servingPlayer = [0, 1].includes(Number(before.servingPlayer))
+      ? Number(before.servingPlayer)
+      : replayServiceState(next).servingPlayer;
     next.status = before.status;
     next.completedAt = before.completedAt;
     next.timer = clone(before.timer);
+    next.timer.durationMs = timerDurationMs(next);
 
     if (next.status === 'active' && next.timer.running) {
       const priorElapsed = getElapsedMs({ timer: before.timer }, safeNow);
@@ -198,7 +293,7 @@
 
   function snapshotForSave(game, now) {
     const safeNow = now || Date.now();
-    const snapshot = clone(game);
+    const snapshot = normalizeGame(game);
     snapshot.snapshotId = makeId('save');
     snapshot.savedAt = new Date(safeNow).toISOString();
     snapshot.timer.elapsedMs = getElapsedMs(game, safeNow);
@@ -208,8 +303,48 @@
   }
 
   function serviceCourt(game) {
-    const score = game.teams[game.servingTeam].score;
-    return score % 2 === 0 ? 'Right court' : 'Left court';
+    const teamIndex = Number(game.servingTeam) === 1 ? 1 : 0;
+    return `${courtSideForPlayer(game, teamIndex, servingPlayerIndex(game))} court`;
+  }
+
+  function serviceDetails(game) {
+    const teamIndex = Number(game.servingTeam) === 1 ? 1 : 0;
+    const playerIndex = servingPlayerIndex(game);
+    const team = game.teams && game.teams[teamIndex] ? game.teams[teamIndex] : { players: [] };
+    const fallback = game.format === 'singles' ? `Player ${teamIndex + 1}` : `Player ${playerIndex + 1}`;
+    return {
+      teamIndex,
+      playerIndex,
+      playerName: normalizeName(team.players && team.players[playerIndex], fallback),
+      side: courtSideForPlayer(game, teamIndex, playerIndex),
+      serverNumber: game.format === 'doubles' ? Number(game.serverNumber) || 1 : 1
+    };
+  }
+
+  function nextServiceAfterFault(game) {
+    const normalized = normalizeGame(game);
+    let teamIndex;
+    let playerIndex;
+    let serverNumber;
+
+    if (normalized.format === 'doubles' && normalized.serverNumber === 1) {
+      teamIndex = normalized.servingTeam;
+      playerIndex = servingPlayerIndex(normalized) === 0 ? 1 : 0;
+      serverNumber = 2;
+    } else {
+      teamIndex = normalized.servingTeam === 0 ? 1 : 0;
+      playerIndex = normalized.format === 'doubles' ? rightPlayerIndex(normalized, teamIndex) : 0;
+      serverNumber = 1;
+    }
+
+    const team = normalized.teams[teamIndex];
+    return {
+      teamIndex,
+      playerIndex,
+      playerName: normalizeName(team.players && team.players[playerIndex], `Player ${playerIndex + 1}`),
+      side: courtSideForPlayer(normalized, teamIndex, playerIndex),
+      serverNumber
+    };
   }
 
   function spokenScore(game) {
@@ -229,21 +364,30 @@
       return game && Array.isArray(game.teams) && game.teams.length === 2 && game.teams.every((team) => typeof team.score === 'number');
     });
     if (validGames.length === 0) throw new Error('No valid pickleball games were found.');
-    return validGames.map(clone);
+    return validGames.map(normalizeGame);
   }
 
   return {
     SCHEMA_VERSION,
+    DEFAULT_TIMER_MS,
     createGame,
+    normalizeGame,
+    timerDurationMs,
     getElapsedMs,
+    getRemainingMs,
     pauseTimer,
     startTimer,
     resetTimer,
+    expireTimer,
     recordRally,
     undoLastRally,
     endGame,
     snapshotForSave,
+    rightPlayerIndex,
+    servingPlayerIndex,
     serviceCourt,
+    serviceDetails,
+    nextServiceAfterFault,
     spokenScore,
     validateImport
   };

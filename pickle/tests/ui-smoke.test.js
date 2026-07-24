@@ -22,7 +22,11 @@ global.localStorage = {
 };
 global.navigator = { onLine: true };
 global.location = { protocol: 'file:', search: '', href: 'file:///app/index.html' };
-global.document = { addEventListener() {}, visibilityState: 'visible' };
+global.document = {
+  addEventListener() {}, removeEventListener() {},
+  visibilityState: 'visible', fullscreenElement: null, webkitFullscreenElement: null,
+  documentElement: {}
+};
 global.window = {
   addEventListener() {}, removeEventListener() {},
   setInterval() { return 1; }, clearInterval() {},
@@ -34,27 +38,50 @@ require('../src/game-engine.js');
 require('../src/live-sync.js');
 require('../src/app.js');
 
-test('minimal setup view renders', () => {
+test('minimal setup view renders a fifteen-minute default', () => {
   const app = new global.PickleballAppForTest();
   app.connectedCallback();
   assert.match(app.innerHTML, /PicklePulse/);
-  assert.match(app.innerHTML, /Player 1/);
+  assert.match(app.innerHTML, /P1 · Right/);
+  assert.match(app.innerHTML, /value="15" selected/);
   assert.match(app.innerHTML, />Start</);
 });
 
-test('scoreboard renders an active game and live action', () => {
+test('scoreboard renders countdown and named server guidance', () => {
   const app = new global.PickleballAppForTest();
   app.state.currentGame = global.PickleEngine.createGame({
-    format: 'doubles', target: 11,
+    format: 'doubles', target: 11, durationMinutes: 15,
     teamAName: 'Kitchen Kings', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben',
     teamBName: 'Dink Squad', teamBPlayer1: 'Cora', teamBPlayer2: 'Drew',
-    startingTeam: 0
+    startingTeam: 0, now: Date.now()
   });
   app.view = 'game';
   app.render();
   assert.match(app.innerHTML, /Kitchen Kings/);
-  assert.match(app.innerHTML, /0 - 0 - 2/);
+  assert.match(app.innerHTML, /15:00/);
+  assert.match(app.innerHTML, />Ava</);
+  assert.match(app.innerHTML, /Right · 0 - 0 - 2/);
   assert.match(app.innerHTML, />Live</);
+});
+
+test('watch mode renders a fullscreen control', () => {
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  app.watchRoom = 'ABC234';
+  app.remoteStatus = { phase: 'connecting', room: 'ABC234', detail: '' };
+  app.render();
+  assert.match(app.innerHTML, /data-action="toggle-fullscreen"/);
+  assert.match(app.innerHTML, /Waiting for controller/);
+});
+
+test('fullscreen action requests browser fullscreen', async () => {
+  let requested = 0;
+  global.document.documentElement.requestFullscreen = async () => { requested += 1; };
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  await app.toggleFullscreen();
+  assert.equal(requested, 1);
+  delete global.document.documentElement.requestFullscreen;
 });
 
 test('a completed game is automatically added to history', () => {
