@@ -1,28 +1,31 @@
 # PicklePulse
 
-A minimalist, responsive pickleball scorekeeper with an optional PeerJS spectator display.
+A minimal, responsive pickleball scorekeeper that works locally and can broadcast a live, read-only scoreboard to another browser with PeerJS.
 
-No account, database, API key, build step, or credit card is required.
+No account, API key, database, build step, or credit card is required.
 
-## Features
+## Highlights
 
-- Phone-first controller with large scoring targets
-- Read-only `?watch=ROOM` display for another phone, tablet, laptop, or TV
-- PeerJS/WebRTC live updates with automatic reconnect
-- 15-minute countdown timer by default; optional 10, 20, or 30 minutes
-- Pause, resume, reset, and automatic stop at `00:00`
-- Automatic serving-player and court-side guidance
-- Correct doubles opening call: `0–0–2`
+- Phone-friendly controller with large score targets
+- Separate spectator display for a laptop, tablet, phone, or TV browser
+- Short six-character live room codes
+- Native Share button with copy-link fallback
+- Multiple spectator displays per controller
 - Singles and doubles side-out scoring
+- Correct doubles opening call: `0–0–2`
 - Games to 11, 15, or 21, win by two
-- Undo, manual game end, local recovery, JSON import/export
-- Fullscreen button in spectator mode
+- Player names, 15-minute countdown, in-game time adjustment, undo, and manual game end
+- Automatic `localStorage` recovery
+- Saved games plus JSON import/export
 - Offline app shell and installable PWA metadata
-- Responsive layouts from small phones to landscape displays
+- Responsive layouts tested from 320 px phone widths through desktop and TV sizes
+- Light and dark themes based on the device setting
+- Custom Team A/Team B score colors with presets and high-contrast mode
+- Color preferences saved locally and synchronized to live spectator displays
 
-## Run locally
+## Quick test
 
-Extract the ZIP, then start a local web server.
+Extract the ZIP and run a local server.
 
 ### macOS / Linux
 
@@ -44,113 +47,105 @@ Open:
 http://localhost:4173
 ```
 
-Opening `index.html` directly is enough for local scoring, but live mode, service workers, and fullscreen behavior are best tested over HTTP or HTTPS.
+Scoring also works by opening `index.html` directly. Live mode and service workers work best over HTTP or HTTPS.
 
-## Controller and spectator test
+## Test live controller + display mode
 
-1. Open the app on the scoring phone.
-2. Enter the players. In doubles, **P1 starts on the right** and **P2 starts on the left**.
-3. Select the timer duration; 15 minutes is selected by default.
-4. Start the match.
-5. Tap the Live radio icon and share the generated link.
-6. Open the link in another browser or device.
-7. Use the expand icon on the spectator screen to enter fullscreen.
+1. Open the app on the controller browser.
+2. Enter player names and start a match.
+3. Tap the **Live** radio icon.
+4. Share or copy the generated display link.
+5. Open that link in a second browser or device.
+6. Tap either team on the controller and watch the display update.
+7. Tap the clock-adjust icon, change the remaining time, and confirm the spectator updates.
+8. Tap the palette icon, choose colors, and confirm the spectator changes too.
 
-Example spectator URL:
+A display URL looks like:
 
 ```text
-https://username.github.io/pickleball-scorekeeper/?watch=K7M4Q2
+https://example.github.io/pickleball-scorekeeper/?watch=K7M4Q2
 ```
 
-Browsers require fullscreen to begin from a user action, so the spectator must tap the fullscreen icon. Some iPhone browser versions restrict page fullscreen; installed PWAs and other modern browsers generally provide better fullscreen support.
+For a one-computer simulation, use Chrome for the controller and Firefox or a private window for the display.
 
-## Serving rotation
+## Adjusting time during a game
 
-The scoring engine stores the exact serving player and calculates their current court side.
+Tap the clock-adjust icon beside the countdown. The panel provides quick corrections for `-5m`, `-1m`, `-10s`, `+10s`, `+1m`, and `+5m`, plus exact minute and second fields.
 
-Doubles behavior:
+- A running clock keeps running after an adjustment.
+- A paused clock stays paused after an adjustment.
+- Reducing the clock to `00:00` stops it.
+- Remaining time is capped at three hours.
+- Every adjustment is saved to `localStorage` and sent immediately to connected `?watch=` displays.
 
-- P1 begins on the right and P2 begins on the left.
-- The opening serving team starts at server 2 (`0–0–2`).
-- The serving player remains the same after scoring and switches court sides.
-- A server-1 fault moves service to the partner on that partner's current side.
-- A server-2 fault causes a side-out.
-- At a side-out, the receiving team's player currently on the right becomes server 1.
+## Score colors and visibility
 
-The controller and spectator show the next server's name, court side, and spoken score automatically after every rally.
+Tap the palette icon in the controller header to open the score-color panel. You can:
 
-## Countdown timer
+- Pick separate colors for Team A and Team B
+- Use one of four quick presets
+- Turn on high-contrast score cards for bright courts or distant displays
+- Reset to the device-aware light/dark defaults
 
-Timer data uses timestamps rather than a once-per-second counter. This keeps it accurate through browser throttling and between devices.
+The preference is saved in the controller browser. While live mode is active, the chosen colors and high-contrast setting are sent with the game state so every `?watch=` display uses the same scoreboard colors. Spectator browsers remain read-only.
 
-```js
-{
-  durationMs: 900000,
-  elapsedMs: 0,
-  running: true,
-  startedAt: 1784980800000
-}
-```
+## How PeerJS is used
 
-The app renders `durationMs - elapsedMs`, stops at `00:00`, saves the timer locally, and broadcasts timer state to connected spectators.
+PeerJS wraps WebRTC data channels. The controller creates a deterministic peer ID from the room code, and spectator browsers connect to that peer. The controller sends the complete current game after each change. Spectator messages are ignored, so display mode is read-only.
 
-## PeerJS live mode
+The PeerJS client is loaded only when live mode is requested, using the pinned `1.5.5` browser build from jsDelivr with an unpkg fallback. The free public PeerServer handles signaling. Normal scoring, local saves, history, and JSON files do not need PeerJS or an internet connection.
 
-The controller creates a deterministic peer ID from the room code. Spectator browsers connect over a WebRTC data channel. The controller sends the complete current game after each change and ignores all incoming spectator data, keeping displays read-only.
+Live mode limitations:
 
-PeerJS `1.5.5` is loaded only when live mode is used:
-
-1. jsDelivr
-2. unpkg fallback
-
-Core scoring and local saves work without PeerJS. Live mode requires internet access for signaling and may be blocked by restrictive networks.
-
-Important limitations:
-
-- The controller browser must remain open.
-- There is no cloud copy of the room.
-- Refreshing the controller creates a new room.
-- The public PeerServer is appropriate for casual games and prototypes, not guaranteed tournament infrastructure.
+- Both controller and display browsers must stay open.
+- Internet access is required for signaling and live connectivity.
+- Some restrictive school, corporate, carrier, or guest networks may block WebRTC.
+- There is no cloud copy of the live game.
+- Refreshing the controller creates a new live room.
+- The public PeerServer is suitable for casual use and prototypes, not guaranteed tournament infrastructure.
 
 ## GitHub Pages
 
 1. Create a GitHub repository.
-2. Put this folder's contents at the repository root.
-3. Push to `main`.
+2. Put the contents of this folder at the repository root.
+3. Push to the `main` branch.
 4. Open **Settings → Pages**.
-5. Select **Deploy from a branch**.
-6. Choose `main` and `/ (root)`.
+5. Choose **Deploy from a branch**.
+6. Select `main` and `/ (root)`.
+7. Save and wait for the published URL.
 
-All local paths and generated `?watch=` links support GitHub Pages project subdirectories.
+All asset paths and generated spectator links work from a GitHub Pages project subdirectory.
 
-## Local storage and JSON
+## Offline and weak-signal behavior
 
-The current game and saved-game history are written to browser `localStorage` after each mutation. A weak or lost network does not prevent scoring.
+The active match and history are written to `localStorage` after each scoring action. If live connectivity drops, the controller remains usable and keeps saving locally. Spectators show a reconnecting state and retry automatically.
 
-JSON exports use schema version 2 and include timer duration plus serving-player state:
+When connectivity returns, the display reconnects and receives the controller's latest complete state. This is latest-state recovery, not a server-backed event queue.
+
+## JSON backups
+
+Use the history icon, then the download icon, to export saved games. The upload icon imports a previous backup.
+
+Exports are readable JSON:
 
 ```json
 {
   "app": "PicklePulse",
   "schemaVersion": 2,
+  "exportedAt": "2026-07-25T00:00:00.000Z",
+  "appearance": { "teamA": "#ffd400", "teamB": "#00d9ff", "highContrast": true },
   "games": [
     {
       "format": "doubles",
-      "servingTeam": 0,
-      "serverNumber": 1,
-      "servingPlayer": 1,
-      "timer": {
-        "durationMs": 900000,
-        "elapsedMs": 125000,
-        "running": false,
-        "startedAt": null
-      }
+      "target": 11,
+      "teams": [
+        { "name": "Team A", "players": ["Ava", "Ben"], "score": 11 },
+        { "name": "Team B", "players": ["Cora", "Drew"], "score": 8 }
+      ]
     }
   ]
 }
 ```
-
-Older version-1 saves are migrated automatically with a 15-minute timer and best-effort serving-player reconstruction from rally history.
 
 ## Tests
 
@@ -160,7 +155,7 @@ Node.js 18 or newer:
 npm test
 ```
 
-The suite covers countdown behavior, expiry, serving-player rotation, court-side changes, side-outs, undo, legacy migration, room generation, PeerJS state transfer, clock-skew correction, fullscreen controls, and UI smoke rendering.
+The suite covers scoring rules, win-by-two, undo, room generation, spectator URLs, a mocked controller-to-viewer PeerJS transfer, countdown behavior, exact and quick time adjustments, live timer synchronization, color persistence, live color synchronization, and UI smoke rendering.
 
 ## Project structure
 
@@ -181,14 +176,15 @@ pickleball-scorekeeper/
 │   ├── game-engine.test.js
 │   ├── live-sync.test.js
 │   └── ui-smoke.test.js
-├── assets/icon.svg
+├── assets/
+│   └── icon.svg
 ├── README.md
 └── AI_HANDOFF.md
 ```
 
 ## Privacy
 
-Player names and saved games remain in the controller browser unless JSON is exported. Live state is sent only to connected spectator peers. There is no analytics code.
+Player names and saved games remain in the controller browser unless the user exports JSON. Live state is sent directly to connected spectator peers for the duration of the room. There is no analytics code.
 
 ## License
 

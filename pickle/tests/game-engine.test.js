@@ -48,6 +48,36 @@ test('countdown pauses, resumes, resets, and expires at zero', () => {
   assert.equal(g.timer.running, false);
 });
 
+test('remaining time can be set exactly while running or paused', () => {
+  let g = Engine.setRemainingMs(game(), 90 * 1000, 10000);
+  assert.equal(Engine.getRemainingMs(g, 10000), 90 * 1000);
+  assert.equal(g.timer.running, true);
+  assert.equal(Engine.getRemainingMs(g, 40000), 60 * 1000);
+
+  g = Engine.pauseTimer(g, 40000);
+  g = Engine.setRemainingMs(g, 5 * 60 * 1000, 50000);
+  assert.equal(Engine.getRemainingMs(g, 90000), 5 * 60 * 1000);
+  assert.equal(g.timer.running, false);
+});
+
+test('quick timer adjustments preserve state and stop at zero', () => {
+  let g = Engine.adjustTimer(game(), 60 * 1000, 61000);
+  assert.equal(Engine.getRemainingMs(g, 61000), 15 * 60 * 1000);
+  assert.equal(g.timer.running, true);
+
+  g = Engine.adjustTimer(g, -5 * 60 * 1000, 61000);
+  assert.equal(Engine.getRemainingMs(g, 61000), 10 * 60 * 1000);
+
+  g = Engine.adjustTimer(g, -20 * 60 * 1000, 61000);
+  assert.equal(Engine.getRemainingMs(g, 61000), 0);
+  assert.equal(g.timer.running, false);
+});
+
+test('timer adjustments are capped at three hours', () => {
+  const g = Engine.setRemainingMs(game(), 999 * 60 * 1000, 1000);
+  assert.equal(Engine.getRemainingMs(g, 1000), Engine.MAX_TIMER_MS);
+});
+
 test('serving player stays the same and moves sides after scoring', () => {
   const g = Engine.recordRally(game(), 0, 2000);
   assert.equal(g.teams[0].score, 1);

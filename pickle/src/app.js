@@ -4,6 +4,13 @@
   const Engine = globalThis.PickleEngine;
   const Live = globalThis.PickleLive;
   const STORAGE_KEY = 'picklepulse-state-v1';
+  const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
+  const COLOR_PRESETS = Object.freeze([
+    { id: 'classic', label: 'Classic', teamA: '#1e7350', teamB: '#4e5f8d' },
+    { id: 'bright', label: 'Bright', teamA: '#00c875', teamB: '#3b82f6' },
+    { id: 'sunset', label: 'Sunset', teamA: '#e85d3f', teamB: '#8b5cf6' },
+    { id: 'max', label: 'Maximum contrast', teamA: '#ffd400', teamB: '#00d9ff', highContrast: true }
+  ]);
 
   const ICONS = {
     ball: '<circle cx="12" cy="12" r="8"/><path d="M7.2 6.5c3.1 1.9 6.4 5.2 8.3 8.4M16.8 6.5c-3.1 1.9-6.4 5.2-8.3 8.4"/>',
@@ -29,7 +36,9 @@
     chevron: '<path d="m9 18 6-6-6-6"/>',
     external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>',
     fullscreen: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>',
-    fullscreenExit: '<path d="M8 8H3V3M16 8h5V3M8 16H3v5M16 16h5v5"/>'
+    fullscreenExit: '<path d="M8 8H3V3M16 8h5V3M8 16H3v5M16 16h5v5"/>',
+    palette: '<path d="M12 3a9 9 0 1 0 0 18h1.5a1.8 1.8 0 0 0 0-3.6H12a1.6 1.6 0 0 1 0-3.2h2.7A6.3 6.3 0 0 0 21 7.9C21 5.2 17 3 12 3Z"/><circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="9" r="1" fill="currentColor" stroke="none"/>',
+    clockAdjust: '<circle cx="10" cy="12" r="7"/><path d="M10 8v4l2.5 1.5M18 13v7M14.5 16.5h7"/>'
   };
 
   function icon(name, className = '') {
@@ -86,6 +95,36 @@
     return new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z');
   }
 
+
+  function normalizeHex(value) {
+    const text = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : '';
+  }
+
+  function normalizeAppearance(value) {
+    const source = value && typeof value === 'object' ? value : DEFAULT_APPEARANCE;
+    return {
+      teamA: normalizeHex(source.teamA),
+      teamB: normalizeHex(source.teamB),
+      highContrast: Boolean(source.highContrast)
+    };
+  }
+
+  function appearanceStyle(value) {
+    const appearance = normalizeAppearance(value);
+    const declarations = [];
+    if (appearance.teamA) declarations.push(`--team-a:${appearance.teamA}`, `--team-a-soft:color-mix(in srgb, ${appearance.teamA} 15%, var(--surface))`);
+    if (appearance.teamB) declarations.push(`--team-b:${appearance.teamB}`, `--team-b-soft:color-mix(in srgb, ${appearance.teamB} 15%, var(--surface))`);
+    return declarations.join(';');
+  }
+
+  function presetIsActive(preset, appearance) {
+    const value = normalizeAppearance(appearance);
+    return value.teamA === preset.teamA.toLowerCase()
+      && value.teamB === preset.teamB.toLowerCase()
+      && value.highContrast === Boolean(preset.highContrast);
+  }
+
   class PickleballApp extends HTMLElement {
     constructor() {
       super();
@@ -96,6 +135,8 @@
       this.view = this.state.currentGame ? 'game' : 'setup';
       this.network = this.readNetwork();
       this.toast = '';
+      this.showColors = false;
+      this.showTimerAdjust = false;
       this.live = { phase: 'off', room: '', viewers: 0, detail: '' };
       this.liveController = null;
       this.remoteGame = null;
@@ -126,10 +167,12 @@
         if (!game || !game.timer || !game.timer.running) return;
         const now = Date.now();
         if (this.mode === 'controller' && Engine.getRemainingMs(game, now) <= 0) {
+          this.showTimerAdjust = false;
           this.setCurrentGame(Engine.expireTimer(game, now));
           this.showToast('Time');
           return;
         }
+        if (this.mode === 'controller' && this.showTimerAdjust) return;
         this.render();
       }, 1000);
       if (this.mode === 'display') this.startViewer();
@@ -150,7 +193,7 @@
     }
 
     loadState() {
-      const fallback = { schemaVersion: Engine.SCHEMA_VERSION, currentGame: null, games: [], lastSavedAt: null };
+      const fallback = { schemaVersion: Engine.SCHEMA_VERSION, currentGame: null, games: [], lastSavedAt: null, appearance: normalizeAppearance(DEFAULT_APPEARANCE) };
       try {
         const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
         if (!parsed || typeof parsed !== 'object') return fallback;
@@ -158,7 +201,8 @@
           schemaVersion: Engine.SCHEMA_VERSION,
           currentGame: parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null,
           games: Array.isArray(parsed.games) ? parsed.games.map((game) => Engine.normalizeGame(game)) : [],
-          lastSavedAt: parsed.lastSavedAt || null
+          lastSavedAt: parsed.lastSavedAt || null,
+          appearance: normalizeAppearance(parsed.appearance)
         };
       } catch (_error) {
         return fallback;
@@ -283,7 +327,7 @@
         this.render();
         const controller = new Live.LiveController({
           room,
-          getState: () => this.state.currentGame,
+          getState: () => this.state.currentGame ? { ...this.state.currentGame, appearance: normalizeAppearance(this.state.appearance) } : null,
           onStatus: (status) => {
             this.live = status;
             this.render();
@@ -352,7 +396,20 @@
 
     onSubmit(event) {
       const form = event.target.closest('form');
-      if (!form || form.id !== 'new-game-form') return;
+      if (!form) return;
+      if (form.id === 'timer-adjust-form') {
+        event.preventDefault();
+        if (!this.state.currentGame) return;
+        const data = new FormData(form);
+        const minutes = Math.max(0, Math.min(180, Number(data.get('minutes')) || 0));
+        const seconds = Math.max(0, Math.min(59, Number(data.get('seconds')) || 0));
+        const remainingMs = (minutes * 60 + seconds) * 1000;
+        this.showTimerAdjust = false;
+        this.setCurrentGame(Engine.setRemainingMs(this.state.currentGame, remainingMs, Date.now()));
+        this.showToast('Time set');
+        return;
+      }
+      if (form.id !== 'new-game-form') return;
       event.preventDefault();
       const data = new FormData(form);
       if (this.state.currentGame && this.state.currentGame.status === 'active') {
@@ -375,6 +432,23 @@
     }
 
     onChange(event) {
+      if (event.target.dataset && event.target.dataset.colorKey) {
+        const key = event.target.dataset.colorKey;
+        if (key === 'teamA' || key === 'teamB') {
+          this.state.appearance = { ...normalizeAppearance(this.state.appearance), [key]: normalizeHex(event.target.value) };
+          this.persist();
+          if (this.liveController) this.liveController.broadcast();
+          this.render();
+        }
+        return;
+      }
+      if (event.target.id === 'score-high-contrast') {
+        this.state.appearance = { ...normalizeAppearance(this.state.appearance), highContrast: Boolean(event.target.checked) };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
       if (event.target.name === 'format') {
         const doubles = event.target.value === 'doubles';
         this.querySelectorAll('.doubles-only').forEach((element) => { element.hidden = !doubles; });
@@ -392,6 +466,51 @@
       if (action === 'view') {
         this.view = target.dataset.view;
         this.render();
+        return;
+      }
+      if (action === 'toggle-colors') {
+        this.showColors = !this.showColors;
+        if (this.showColors) this.showTimerAdjust = false;
+        this.render();
+        return;
+      }
+      if (action === 'close-colors') {
+        this.showColors = false;
+        this.render();
+        return;
+      }
+      if (action === 'color-preset') {
+        const preset = COLOR_PRESETS.find((item) => item.id === target.dataset.preset);
+        if (!preset) return;
+        this.state.appearance = normalizeAppearance(preset);
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'reset-colors') {
+        this.state.appearance = normalizeAppearance(DEFAULT_APPEARANCE);
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'toggle-time-adjust') {
+        if (!this.state.currentGame || this.state.currentGame.status === 'complete') return;
+        this.showTimerAdjust = !this.showTimerAdjust;
+        if (this.showTimerAdjust) this.showColors = false;
+        this.render();
+        return;
+      }
+      if (action === 'close-time-adjust') {
+        this.showTimerAdjust = false;
+        this.render();
+        return;
+      }
+      if (action === 'adjust-time') {
+        if (!this.state.currentGame) return;
+        const deltaMs = Number(target.dataset.ms) || 0;
+        this.setCurrentGame(Engine.adjustTimer(this.state.currentGame, deltaMs, Date.now()));
         return;
       }
       if (action === 'rally') {
@@ -497,7 +616,8 @@
         app: 'PicklePulse',
         schemaVersion: Engine.SCHEMA_VERSION,
         exportedAt: new Date().toISOString(),
-        games: this.state.games
+        games: this.state.games,
+        appearance: normalizeAppearance(this.state.appearance)
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -514,6 +634,7 @@
         const payload = JSON.parse(await file.text());
         const games = Engine.validateImport(payload);
         this.state.games = [...games, ...this.state.games];
+        if (payload && payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
         this.persist();
         this.view = 'history';
         this.showToast(`${games.length} imported`);
@@ -527,9 +648,12 @@
         this.innerHTML = this.renderDisplay();
         return;
       }
+      const appearance = normalizeAppearance(this.state.appearance);
       this.innerHTML = `
-        <div class="app-shell">
+        <div class="app-shell ${appearance.highContrast ? 'score-contrast' : ''}" style="${appearanceStyle(appearance)}">
           ${this.renderHeader()}
+          ${this.showColors ? this.renderColorPanel() : ''}
+          ${this.showTimerAdjust ? this.renderTimeAdjustPanel() : ''}
           <main class="main-content">
             ${this.view === 'setup' ? this.renderSetup() : this.view === 'history' ? this.renderHistory() : this.renderGame()}
           </main>
@@ -550,10 +674,75 @@
           <div class="top-actions">
             <span class="network-dot ${this.network.level}" title="${escapeHtml(this.network.label)}">${icon(this.network.level === 'offline' ? 'wifiOff' : 'wifi')}</span>
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
+            <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
             <button class="icon-btn ${this.view === 'history' ? 'active' : ''}" type="button" data-action="view" data-view="history" aria-label="Saved games" title="Saved games">${icon('history')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
           </div>
         </header>
+      `;
+    }
+
+    renderColorPanel() {
+      const appearance = normalizeAppearance(this.state.appearance);
+      const teamA = appearance.teamA || '#1e7350';
+      const teamB = appearance.teamB || '#4e5f8d';
+      return `
+        <div class="color-scrim" data-action="close-colors"></div>
+        <section class="color-panel" role="dialog" aria-modal="true" aria-label="Score colors">
+          <header>
+            <span>${icon('palette')}<b>Score colors</b></span>
+            <button class="icon-btn compact" type="button" data-action="close-colors" aria-label="Close colors">${icon('x')}</button>
+          </header>
+          <div class="color-preview" aria-hidden="true">
+            <span style="--preview:${teamA}">8</span><span style="--preview:${teamB}">7</span>
+          </div>
+          <div class="preset-row" aria-label="Color presets">
+            ${COLOR_PRESETS.map((preset) => `<button class="preset-pair ${presetIsActive(preset, appearance) ? 'active' : ''}" type="button" data-action="color-preset" data-preset="${preset.id}" aria-label="${preset.label}" title="${preset.label}"><i style="--swatch:${preset.teamA}"></i><i style="--swatch:${preset.teamB}"></i></button>`).join('')}
+          </div>
+          <div class="color-inputs">
+            <label><b>A</b><input type="color" value="${teamA}" data-color-key="teamA" aria-label="Team A score color"></label>
+            <label><b>B</b><input type="color" value="${teamB}" data-color-key="teamB" aria-label="Team B score color"></label>
+          </div>
+          <label class="contrast-toggle"><span>${icon('fullscreen')}<b>High contrast</b></span><input id="score-high-contrast" type="checkbox" ${appearance.highContrast ? 'checked' : ''}></label>
+          <button class="reset-colors" type="button" data-action="reset-colors">Reset</button>
+        </section>
+      `;
+    }
+
+    renderTimeAdjustPanel() {
+      const game = this.state.currentGame;
+      if (!game) return '';
+      const remaining = Engine.getRemainingMs(game, Date.now());
+      const totalSeconds = remaining === 0 ? 0 : Math.ceil(remaining / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      const steps = [
+        { label: '−5m', ms: -300000 },
+        { label: '−1m', ms: -60000 },
+        { label: '−10s', ms: -10000 },
+        { label: '+10s', ms: 10000 },
+        { label: '+1m', ms: 60000 },
+        { label: '+5m', ms: 300000 }
+      ];
+      return `
+        <div class="time-scrim" data-action="close-time-adjust"></div>
+        <section class="time-panel" role="dialog" aria-modal="true" aria-label="Adjust timer">
+          <header>
+            <span>${icon('clockAdjust')}<b>Adjust time</b></span>
+            <button class="icon-btn compact" type="button" data-action="close-time-adjust" aria-label="Close timer adjustment">${icon('x')}</button>
+          </header>
+          <time class="time-preview ${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
+          <div class="time-step-grid" aria-label="Quick time adjustments">
+            ${steps.map((step) => `<button type="button" data-action="adjust-time" data-ms="${step.ms}">${step.label}</button>`).join('')}
+          </div>
+          <form id="timer-adjust-form" class="time-exact-form">
+            <label><span>Min</span><input name="minutes" type="number" min="0" max="180" step="1" inputmode="numeric" value="${minutes}" required></label>
+            <i>:</i>
+            <label><span>Sec</span><input name="seconds" type="number" min="0" max="59" step="1" inputmode="numeric" value="${String(seconds).padStart(2, '0')}" required></label>
+            <button type="submit">Set</button>
+          </form>
+          <p>${game.timer.running ? 'Keeps running' : 'Stays paused'}</p>
+        </section>
       `;
     }
 
@@ -627,7 +816,10 @@
               <strong>${game.status === 'complete' ? 'Final' : escapeHtml(serve.playerName)}</strong>
               <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
             </div>
-            <button class="icon-btn subtle" type="button" data-action="reset-timer" aria-label="Reset timer" title="Reset timer">${icon('reset')}</button>
+            <div class="timer-tools">
+              <button class="icon-btn subtle ${this.showTimerAdjust ? 'active' : ''}" type="button" data-action="toggle-time-adjust" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Adjust timer" title="Adjust timer">${icon('clockAdjust')}</button>
+              <button class="icon-btn subtle" type="button" data-action="reset-timer" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset timer" title="Reset timer">${icon('reset')}</button>
+            </div>
           </div>
 
           <div class="score-grid" aria-live="polite">
@@ -697,8 +889,9 @@
       const live = this.remoteStatus.phase === 'live';
       const fullscreen = this.isFullscreen();
       const statusLabel = live ? 'Live' : this.remoteStatus.phase === 'error' ? 'Error' : 'Connecting';
+      const appearance = normalizeAppearance(game && game.appearance);
       return `
-        <div class="display-shell ${game ? '' : 'waiting'} ${fullscreen ? 'is-fullscreen' : ''}">
+        <div class="display-shell ${game ? '' : 'waiting'} ${fullscreen ? 'is-fullscreen' : ''} ${appearance.highContrast ? 'score-contrast' : ''}" style="${appearanceStyle(appearance)}">
           <header class="display-topbar">
             <span class="display-brand">${icon('ball')}<b>PicklePulse</b></span>
             <span class="display-status ${live ? 'live' : ''}"><i></i>${escapeHtml(statusLabel)} · ${escapeHtml(this.watchRoom)}</span>

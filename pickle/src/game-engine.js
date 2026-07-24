@@ -7,6 +7,7 @@
 
   const SCHEMA_VERSION = 2;
   const DEFAULT_TIMER_MS = 15 * 60 * 1000;
+  const MAX_TIMER_MS = 180 * 60 * 1000;
 
   function makeId(prefix) {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -186,6 +187,27 @@
     next.timer.startedAt = next.status === 'active' ? safeNow : null;
     next.updatedAt = new Date(safeNow).toISOString();
     return next;
+  }
+
+  function setRemainingMs(game, remainingMs, now) {
+    const safeNow = now || Date.now();
+    const next = normalizeGame(game);
+    const wasRunning = next.status === 'active' && Boolean(next.timer.running);
+    const desired = Math.max(0, Math.min(MAX_TIMER_MS, Number(remainingMs) || 0));
+    const duration = Math.max(timerDurationMs(next), desired);
+
+    next.timer.durationMs = duration;
+    next.timer.elapsedMs = duration - desired;
+    next.timer.running = wasRunning && desired > 0;
+    next.timer.startedAt = next.timer.running ? safeNow : null;
+    next.updatedAt = new Date(safeNow).toISOString();
+    return next;
+  }
+
+  function adjustTimer(game, deltaMs, now) {
+    const safeNow = now || Date.now();
+    const remaining = getRemainingMs(game, safeNow);
+    return setRemainingMs(game, remaining + (Number(deltaMs) || 0), safeNow);
   }
 
   function expireTimer(game, now) {
@@ -370,6 +392,7 @@
   return {
     SCHEMA_VERSION,
     DEFAULT_TIMER_MS,
+    MAX_TIMER_MS,
     createGame,
     normalizeGame,
     timerDurationMs,
@@ -378,6 +401,8 @@
     pauseTimer,
     startTimer,
     resetTimer,
+    setRemainingMs,
+    adjustTimer,
     expireTimer,
     recordRally,
     undoLastRally,
