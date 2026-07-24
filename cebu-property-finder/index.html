@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A static Cebu property discovery demo for GitHub Pages." />
+  <title>Cebu Property Finder — Demo</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynh5LgnC5A2wE6YfktcGvJjMZlA=" crossorigin="" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="./" aria-label="Cebu Property Finder home">
+        <span class="brand-mark">CP</span>
+        <span>
+          <strong>Cebu Property Finder</strong>
+          <small>Discovery demo</small>
+        </span>
+      </a>
+      <div class="header-actions">
+        <button id="shareBtn" class="button button-ghost" type="button">Copy search link</button>
+        <button id="exportBtn" class="button button-primary" type="button">Export CSV</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <p class="eyebrow">Cebu-focused property discovery</p>
+          <h1>Find a better first view of properties around Cebu.</h1>
+          <p class="hero-copy">Search sample listings by location, budget, type and bedrooms. Every result keeps its source and freshness status visible.</p>
+        </div>
+        <aside class="notice-card" aria-label="Demo notice">
+          <strong>Testing mode</strong>
+          <p>This package uses fictional sample listings. It does not claim that any property is currently available.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="container search-shell" aria-label="Property filters">
+      <form id="filtersForm" class="filters">
+        <label class="field field-wide">
+          <span>Keywords</span>
+          <input id="query" name="query" type="search" placeholder="IT Park, beach, townhouse..." autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>City / municipality</span>
+          <select id="location" name="location">
+            <option value="">All Cebu areas</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Property type</span>
+          <select id="propertyType" name="propertyType">
+            <option value="">All types</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Minimum price</span>
+          <input id="minPrice" name="minPrice" type="number" min="0" step="100000" placeholder="₱0" />
+        </label>
+        <label class="field">
+          <span>Maximum price</span>
+          <input id="maxPrice" name="maxPrice" type="number" min="0" step="100000" placeholder="Any" />
+        </label>
+        <label class="field">
+          <span>Bedrooms</span>
+          <select id="bedrooms" name="bedrooms">
+            <option value="">Any</option>
+            <option value="0">Studio</option>
+            <option value="1">1+</option>
+            <option value="2">2+</option>
+            <option value="3">3+</option>
+            <option value="4">4+</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Sort by</span>
+          <select id="sort" name="sort">
+            <option value="relevance">Best match</option>
+            <option value="newest">Recently seen</option>
+            <option value="priceAsc">Price: low to high</option>
+            <option value="priceDesc">Price: high to low</option>
+            <option value="areaDesc">Floor area: largest</option>
+          </select>
+        </label>
+        <div class="filter-actions">
+          <button class="button button-primary" type="submit">Search</button>
+          <button id="resetBtn" class="button button-ghost" type="button">Reset</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="container summary-grid" aria-live="polite">
+      <article class="summary-card">
+        <span>Matches</span>
+        <strong id="matchCount">0</strong>
+      </article>
+      <article class="summary-card">
+        <span>Median price</span>
+        <strong id="medianPrice">—</strong>
+      </article>
+      <article class="summary-card">
+        <span>Average price / m²</span>
+        <strong id="avgPpsm">—</strong>
+      </article>
+      <article class="summary-card summary-card-wide">
+        <span>Search recap</span>
+        <strong id="searchRecap">Loading sample inventory…</strong>
+      </article>
+    </section>
+
+    <section class="container content-grid">
+      <div class="results-column">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Search results</p>
+            <h2>Available discoveries</h2>
+          </div>
+          <div class="view-switch" role="group" aria-label="View options">
+            <button id="listViewBtn" class="view-button active" type="button">List</button>
+            <button id="mapViewBtn" class="view-button" type="button">Map</button>
+          </div>
+        </div>
+        <div id="results" class="results-list"></div>
+        <div id="emptyState" class="empty-state" hidden>
+          <h3>No matching properties</h3>
+          <p>Try widening the price range or selecting another Cebu area.</p>
+        </div>
+      </div>
+
+      <aside class="side-column">
+        <div id="map" class="map-card" aria-label="Map of property results"></div>
+        <article class="info-card">
+          <h3>How this demo handles data</h3>
+          <ul>
+            <li>Each listing shows its source and last-seen date.</li>
+            <li>External feeds can be added in <code>config.js</code>.</li>
+            <li>Results should always be confirmed with the original provider.</li>
+          </ul>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <div id="compareTray" class="compare-tray" hidden>
+    <div>
+      <strong id="compareCount">0 selected</strong>
+      <span>Select up to three properties.</span>
+    </div>
+    <div>
+      <button id="clearCompareBtn" class="button button-ghost" type="button">Clear</button>
+      <button id="compareBtn" class="button button-primary" type="button">Compare</button>
+    </div>
+  </div>
+
+  <dialog id="compareDialog" class="compare-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">Side-by-side</p>
+        <h2>Property comparison</h2>
+      </div>
+      <button id="closeDialogBtn" class="icon-button" type="button" aria-label="Close comparison">×</button>
+    </div>
+    <div id="compareTableWrap" class="compare-table-wrap"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Demo only. Property details, prices and availability must be verified with the original source.</p>
+      <p>Map data © OpenStreetMap contributors.</p>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
