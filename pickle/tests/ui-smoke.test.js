@@ -22,6 +22,7 @@ global.localStorage = {
 };
 global.navigator = { onLine: true };
 global.location = { protocol: 'file:', search: '', href: 'file:///app/index.html' };
+global.history = { state: null, replaceState(value) { this.state = value; }, pushState(value) { this.state = value; }, go() {}, back() {} };
 global.document = {
   addEventListener() {}, removeEventListener() {},
   visibilityState: 'visible', fullscreenElement: null, webkitFullscreenElement: null,
@@ -35,16 +36,24 @@ global.window = {
 global.confirm = () => true;
 
 require('../src/game-engine.js');
-require('../src/live-sync.js');
+require('../src/player-data.js');
 require('../src/app.js');
 
 test('minimal setup view renders a fifteen-minute default', () => {
   const app = new global.PickleballAppForTest();
   app.connectedCallback();
   assert.match(app.innerHTML, /PicklePulse/);
-  assert.match(app.innerHTML, /P1 · Right/);
+  assert.match(app.innerHTML, /Add players first/);
+  assert.match(app.innerHTML, /Watch a live game/);
+  assert.match(app.innerHTML, /placeholder="ROOM CODE"/);
+  app.state.players = [
+    { id: 'p1', name: 'Ava' }, { id: 'p2', name: 'Ben' },
+    { id: 'p3', name: 'Cora' }, { id: 'p4', name: 'Drew' }
+  ];
+  app.render();
   assert.match(app.innerHTML, /value="15" selected/);
   assert.match(app.innerHTML, />Start</);
+  assert.match(app.innerHTML, /<select name="teamAPlayer1"/);
 });
 
 test('scoreboard renders countdown and named server guidance', () => {
@@ -169,4 +178,94 @@ test('quick time adjustment persists and broadcasts to live viewers', async () =
   assert.ok(remaining >= 16 * 60 * 1000 - 100 && remaining <= 16 * 60 * 1000);
   assert.equal(broadcasts, 1);
   assert.match(global.localStorage.value, /durationMs/);
+});
+
+test('active scoring requests the browser navigation warning', () => {
+  const app = new global.PickleballAppForTest();
+  app.state.currentGame = global.PickleEngine.createGame({ format: 'singles' });
+  let prevented = false;
+  const event = { preventDefault() { prevented = true; }, returnValue: undefined };
+  const result = app.onBeforeUnload(event);
+  assert.equal(prevented, true);
+  assert.equal(event.returnValue, '');
+  assert.equal(result, '');
+});
+
+test('live display emphasizes the current serving player', () => {
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  app.watchRoom = 'RCBZLH';
+  app.remoteGame = global.PickleEngine.createGame({
+    format: 'doubles', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben',
+    teamBPlayer1: 'Cora', teamBPlayer2: 'Drew'
+  });
+  app.remoteStatus = { phase: 'live', room: 'RCBZLH', detail: '' };
+  app.render();
+  assert.match(app.innerHTML, /Current serving/);
+  assert.match(app.innerHTML, /<strong>Ava<\/strong>/);
+  assert.match(app.innerHTML, /0 - 0 - 2 · Right side/);
+});
+
+test('queued positions prefill teams in 1-2 versus 3-4 order', () => {
+  global.localStorage.value = null;
+  const app = new global.PickleballAppForTest();
+  app.state.players = [
+    { id: 'p1', name: 'Ava' }, { id: 'p2', name: 'Ben' },
+    { id: 'p3', name: 'Cora' }, { id: 'p4', name: 'Drew' }
+  ];
+  app.state.queue = global.PicklePlayers.normalizeQueue({
+    waiting: ['p1', 'p2', 'p3', 'p4'],
+    pending: ['p1', 'p2', 'p3', 'p4']
+  }, app.state.players);
+  assert.deepEqual(app.pendingSelections(), {
+    teamAPlayer1: 'p1',
+    teamAPlayer2: 'p2',
+    teamBPlayer1: 'p3',
+    teamBPlayer2: 'p4'
+  });
+  app.view = 'setup';
+  app.render();
+  assert.match(app.innerHTML, /name="teamAPlayer1"[\s\S]*?value="p1" selected/);
+  assert.match(app.innerHTML, /name="teamAPlayer2"[\s\S]*?value="p2" selected/);
+  assert.match(app.innerHTML, /name="teamBPlayer1"[\s\S]*?value="p3" selected/);
+  assert.match(app.innerHTML, /name="teamBPlayer2"[\s\S]*?value="p4" selected/);
+  app.view = 'players';
+  app.render();
+  assert.match(app.innerHTML, /1 = A P1, 2 = A P2, 3 = B P1, 4 = B P2/);
+});
+
+test('watch mode loads the live module only when requested', async () => {
+  const originalCreateElement = global.document.createElement;
+  const originalHead = global.document.head;
+  let requestedScript = '';
+
+  class MockViewer {
+    constructor(options) { this.options = options; }
+    async start() { return this; }
+    stop() {}
+  }
+
+  global.document.createElement = () => ({
+    src: '', async: false, onload: null, onerror: null
+  });
+  global.document.head = {
+    appendChild(script) {
+      requestedScript = script.src;
+      global.PickleLive = {
+        LiveViewer: MockViewer,
+        adaptRemoteGame(game) { return game; }
+      };
+      script.onload();
+    }
+  };
+
+  const app = new global.PickleballAppForTest();
+  app.watchRoom = 'ABC234';
+  await app.startViewer();
+  assert.equal(requestedScript, 'src/live-sync.js');
+  assert.ok(app.viewer instanceof MockViewer);
+
+  global.document.createElement = originalCreateElement;
+  global.document.head = originalHead;
+  delete global.PickleLive;
 });

@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPickleEngine() {
   'use strict';
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
   const DEFAULT_TIMER_MS = 15 * 60 * 1000;
   const MAX_TIMER_MS = 180 * 60 * 1000;
 
@@ -87,6 +87,13 @@
     next.timer.startedAt = next.timer.running && next.timer.startedAt != null && Number.isFinite(Number(next.timer.startedAt))
       ? Number(next.timer.startedAt)
       : null;
+    next.teams = Array.isArray(next.teams) ? next.teams : [];
+    next.teams.forEach((team) => {
+      team.players = Array.isArray(team.players) ? team.players.map((name) => normalizeName(name, 'Player')) : [];
+      team.playerIds = Array.isArray(team.playerIds) ? team.playerIds.map((id) => String(id || '')) : [];
+      while (team.playerIds.length < team.players.length) team.playerIds.push('');
+      team.playerIds = team.playerIds.slice(0, team.players.length);
+    });
     if (next.format === 'doubles') next.servingPlayer = servingPlayerIndex(next);
     else next.servingPlayer = 0;
     return next;
@@ -103,9 +110,13 @@
 
     const teamAPlayers = [normalizeName(safeOptions.teamAPlayer1, 'Player 1')];
     const teamBPlayers = [normalizeName(safeOptions.teamBPlayer1, 'Player 2')];
+    const teamAPlayerIds = [String(safeOptions.teamAPlayer1Id || '')];
+    const teamBPlayerIds = [String(safeOptions.teamBPlayer1Id || '')];
     if (format === 'doubles') {
       teamAPlayers.push(normalizeName(safeOptions.teamAPlayer2, 'Player 2'));
       teamBPlayers.push(normalizeName(safeOptions.teamBPlayer2, 'Player 2'));
+      teamAPlayerIds.push(String(safeOptions.teamAPlayer2Id || ''));
+      teamBPlayerIds.push(String(safeOptions.teamBPlayer2Id || ''));
     }
 
     return {
@@ -123,11 +134,13 @@
         {
           name: normalizeName(safeOptions.teamAName, format === 'singles' ? teamAPlayers[0] : 'Team A'),
           players: teamAPlayers,
+          playerIds: teamAPlayerIds,
           score: 0
         },
         {
           name: normalizeName(safeOptions.teamBName, format === 'singles' ? teamBPlayers[0] : 'Team B'),
           players: teamBPlayers,
+          playerIds: teamBPlayerIds,
           score: 0
         }
       ],

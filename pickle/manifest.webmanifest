@@ -1,7 +1,7 @@
 {
   "name": "PicklePulse Pickleball Scorekeeper",
   "short_name": "PicklePulse",
-  "description": "Minimal offline pickleball scoring with a PeerJS live display.",
+  "description": "Fast local-first pickleball scoring with players, queue, standings, and an optional PeerJS live display.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0e110f",

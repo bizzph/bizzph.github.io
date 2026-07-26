@@ -169,5 +169,5 @@ test('legacy games gain countdown and serving-player data', () => {
   const migrated = Engine.normalizeGame(legacy);
   assert.equal(migrated.timer.durationMs, Engine.DEFAULT_TIMER_MS);
   assert.equal(migrated.servingPlayer, 0);
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 3);
 });

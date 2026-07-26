@@ -1,31 +1,30 @@
-# PicklePulse
+# PicklePulse v7
 
-A minimal, responsive pickleball scorekeeper that works locally and can broadcast a live, read-only scoreboard to another browser with PeerJS.
+PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scoring controller and an optional read-only live display powered by PeerJS. It needs no account, database, API key, package install, or build step.
 
-No account, API key, database, build step, or credit card is required.
+## What is included
 
-## Highlights
-
-- Phone-friendly controller with large score targets
-- Separate spectator display for a laptop, tablet, phone, or TV browser
-- Short six-character live room codes
-- Native Share button with copy-link fallback
-- Multiple spectator displays per controller
-- Singles and doubles side-out scoring
-- Correct doubles opening call: `0–0–2`
+- Local player roster stored in `localStorage`
+- Player dropdowns for singles and doubles setup
+- FIFO **four on, four off** player queue with fixed default mapping: 1 = Team A P1, 2 = Team A P2, 3 = Team B P1, 4 = Team B P2
+- Automatic requeue of all four players after a queued game ends
+- Local standings calculated from completed saved games
+- JSON backup and restore for roster, queue, current game, history, appearance, and settings
+- Room-code connect form, so spectators do not need to edit the URL manually
+- Protected scoring mode with back-navigation and refresh/close warnings
+- Persistent live room recovery after an accidental controller refresh
+- Large current-server callout on the spectator display
+- Optional spoken score, server, and court-side announcements
+- Side-out singles and doubles scoring, including the correct doubles opening call `0 - 0 - 2`
 - Games to 11, 15, or 21, win by two
-- Player names, 15-minute countdown, in-game time adjustment, undo, and manual game end
-- Automatic `localStorage` recovery
-- Saved games plus JSON import/export
+- 15-minute default countdown, timer corrections, undo, and manual game end
 - Offline app shell and installable PWA metadata
-- Responsive layouts tested from 320 px phone widths through desktop and TV sizes
-- Light and dark themes based on the device setting
-- Custom Team A/Team B score colors with presets and high-contrast mode
-- Color preferences saved locally and synchronized to live spectator displays
+- Custom team score colors and high-contrast mode synchronized to spectators
+- Faster startup through a single eager core bundle, lazy live-network loading, idle service-worker registration, and focused timer updates
 
-## Quick test
+## Run locally
 
-Extract the ZIP and run a local server.
+Extract the ZIP and start a local server.
 
 ### macOS / Linux
 
@@ -41,111 +40,122 @@ Double-click `start.bat`, or run:
 py -m http.server 4173
 ```
 
-Open:
+Then open:
 
 ```text
 http://localhost:4173
 ```
 
-Scoring also works by opening `index.html` directly. Live mode and service workers work best over HTTP or HTTPS.
+Basic local scoring also works when `index.html` is opened directly. PeerJS live mode and service workers work best over HTTP or HTTPS.
 
-## Test live controller + display mode
+## Typical workflow
 
-1. Open the app on the controller browser.
-2. Enter player names and start a match.
-3. Tap the **Live** radio icon.
-4. Share or copy the generated display link.
-5. Open that link in a second browser or device.
-6. Tap either team on the controller and watch the display update.
-7. Tap the clock-adjust icon, change the remaining time, and confirm the spectator updates.
-8. Tap the palette icon, choose colors, and confirm the spectator changes too.
+1. Open **Players** and add the local roster.
+2. Add waiting players to the queue.
+3. Tap **Next 4** to load the first four waiting players.
+4. The queue prefills positions 1–2 as Team A and 3–4 as Team B. Review or change the teams, then start scoring.
+5. When the game ends, those four players return to the back of the queue.
+6. Open **History** to see completed-game standings and saved games.
 
-A display URL looks like:
+The queue is deliberately simple and transparent: first in, first out, four players on, then all four off. Players can be moved up or down manually before the next game is loaded. The default assignment is always **1 = A P1, 2 = A P2, 3 = B P1, 4 = B P2**.
+
+## Live controller and spectator display
+
+### Start a live room
+
+1. Start a game on the controller.
+2. Tap **Live**.
+3. Share the generated link or room code.
+4. On the spectator device, either open the shared link or enter the code in the **Watch a live game** form.
+
+A direct spectator URL still works:
 
 ```text
-https://example.github.io/pickleball-scorekeeper/?watch=K7M4Q2
+https://example.github.io/pickleball-scorekeeper/?watch=RCBZLH
 ```
 
-For a one-computer simulation, use Chrome for the controller and Firefox or a private window for the display.
+The spectator display is read-only. It shows the current server prominently, the spoken serving score, the correct court side, timer, and both team scores.
 
-## Adjusting time during a game
+### Accidental navigation protection
 
-Tap the clock-adjust icon beside the countdown. The panel provides quick corrections for `-5m`, `-1m`, `-10s`, `+10s`, `+1m`, and `+5m`, plus exact minute and second fields.
+While an active game is being scored:
 
-- A running clock keeps running after an adjustment.
-- A paused clock stays paused after an adjustment.
-- Reducing the clock to `00:00` stops it.
-- Remaining time is capped at three hours.
-- Every adjustment is saved to `localStorage` and sent immediately to connected `?watch=` displays.
+- internal navigation asks for confirmation before leaving the scoring screen;
+- browser Back is intercepted and shows an in-app warning;
+- refresh, tab close, and external navigation trigger the browser's standard unsaved-work warning;
+- the current game and live room code are persisted locally after changes;
+- after refresh, the controller attempts to restore the same live room automatically.
 
-## Score colors and visibility
+Browsers control the exact wording of refresh/close warnings. They do not allow a web page to replace that prompt with custom text.
 
-Tap the palette icon in the controller header to open the score-color panel. You can:
+## Voice announcements
 
-- Pick separate colors for Team A and Team B
-- Use one of four quick presets
-- Turn on high-contrast score cards for bright courts or distant displays
-- Reset to the device-aware light/dark defaults
+Tap the speaker icon on either the controller or spectator display to enable voice. Announcements use the browser's built-in `speechSynthesis` API and include:
 
-The preference is saved in the controller browser. While live mode is active, the chosen colors and high-contrast setting are sent with the game state so every `?watch=` display uses the same scoreboard colors. Spectator browsers remain read-only.
+```text
+0, 0, 2. Ava serving from the right side.
+```
 
-## How PeerJS is used
+For doubles, the spoken score is always server score, receiver score, server number. Voice availability and the installed voice vary by browser and device. Audio is opt-in because many browsers require a user gesture before speech is allowed.
 
-PeerJS wraps WebRTC data channels. The controller creates a deterministic peer ID from the room code, and spectator browsers connect to that peer. The controller sends the complete current game after each change. Spectator messages are ignored, so display mode is read-only.
+## Standings
 
-The PeerJS client is loaded only when live mode is requested, using the pinned `1.5.5` browser build from jsDelivr with an unpkg fallback. The free public PeerServer handles signaling. Normal scoring, local saves, history, and JSON files do not need PeerJS or an internet connection.
+Standings are generated locally from the latest completed snapshot of each saved game. They show:
 
-Live mode limitations:
+- games played
+- wins and losses
+- win percentage
+- point differential
 
-- Both controller and display browsers must stay open.
-- Internet access is required for signaling and live connectivity.
-- Some restrictive school, corporate, carrier, or guest networks may block WebRTC.
-- There is no cloud copy of the live game.
-- Refreshing the controller creates a new live room.
-- The public PeerServer is suitable for casual use and prototypes, not guaranteed tournament infrastructure.
+Unfinished/manual mid-game saves are excluded. Player IDs are stored with game records so renamed or duplicate-looking names are less likely to corrupt the standings.
 
-## GitHub Pages
+## JSON backup and restore
 
-1. Create a GitHub repository.
-2. Put the contents of this folder at the repository root.
-3. Push to the `main` branch.
-4. Open **Settings → Pages**.
-5. Choose **Deploy from a branch**.
-6. Select `main` and `/ (root)`.
-7. Save and wait for the published URL.
-
-All asset paths and generated spectator links work from a GitHub Pages project subdirectory.
-
-## Offline and weak-signal behavior
-
-The active match and history are written to `localStorage` after each scoring action. If live connectivity drops, the controller remains usable and keeps saving locally. Spectators show a reconnecting state and retry automatically.
-
-When connectivity returns, the display reconnects and receives the controller's latest complete state. This is latest-state recovery, not a server-backed event queue.
-
-## JSON backups
-
-Use the history icon, then the download icon, to export saved games. The upload icon imports a previous backup.
-
-Exports are readable JSON:
+Use the download and upload buttons in **History**. Version 7 backups contain the complete local state:
 
 ```json
 {
   "app": "PicklePulse",
-  "schemaVersion": 2,
-  "exportedAt": "2026-07-25T00:00:00.000Z",
-  "appearance": { "teamA": "#ffd400", "teamB": "#00d9ff", "highContrast": true },
-  "games": [
-    {
-      "format": "doubles",
-      "target": 11,
-      "teams": [
-        { "name": "Team A", "players": ["Ava", "Ben"], "score": 11 },
-        { "name": "Team B", "players": ["Cora", "Drew"], "score": 8 }
-      ]
-    }
-  ]
+  "schemaVersion": 3,
+  "exportedAt": "2026-07-26T00:00:00.000Z",
+  "players": [
+    { "id": "player-...", "name": "Ava", "createdAt": "..." }
+  ],
+  "queue": {
+    "waiting": [],
+    "pending": [],
+    "onCourt": [],
+    "activeGameId": ""
+  },
+  "currentGame": null,
+  "games": [],
+  "appearance": {
+    "teamA": "#ffd400",
+    "teamB": "#00d9ff",
+    "highContrast": true
+  },
+  "settings": {
+    "voiceEnabled": false
+  }
 }
 ```
+
+Imports merge roster entries by normalized player name, remap player IDs in games, avoid duplicate saved snapshots, and append imported waiting players to the local queue. Imported `onCourt` state is intentionally not resumed automatically.
+
+## PeerJS notes
+
+PeerJS wraps WebRTC data channels. The controller creates a deterministic peer ID from the room code, while spectator browsers connect to that controller and receive complete state snapshots. Spectator messages are ignored.
+
+The local live-sync module is loaded only when live mode is requested. It then loads the pinned PeerJS `1.5.5` browser client from jsDelivr with an unpkg fallback. Core scoring, roster, queue, standings, history, and JSON backup do not need PeerJS or internet access.
+
+Live limitations:
+
+- controller and spectator browsers must remain open;
+- internet access is required for signaling and live connectivity;
+- restrictive networks may block WebRTC;
+- there is no cloud copy of a game;
+- same-room recovery after refresh is best effort and can fail while a stale peer ID is still registered;
+- the free public PeerServer is appropriate for casual use and prototypes, not guaranteed tournament infrastructure.
 
 ## Tests
 
@@ -155,7 +165,23 @@ Node.js 18 or newer:
 npm test
 ```
 
-The suite covers scoring rules, win-by-two, undo, room generation, spectator URLs, a mocked controller-to-viewer PeerJS transfer, countdown behavior, exact and quick time adjustments, live timer synchronization, color persistence, live color synchronization, and UI smoke rendering.
+The suite covers scoring rules, serving-player rotation, win-by-two, undo, timers, room generation, PeerJS controller-to-viewer transfer, queue rotation and team mapping, standings deduplication, unfinished-game exclusion, optimized loading, appearance synchronization, and UI smoke rendering.
+
+For syntax-only checks:
+
+```bash
+node --check src/game-engine.js
+node --check src/live-sync.js
+node --check src/player-data.js
+node --check src/app.js
+node --check src/picklepulse-core.js
+```
+
+After editing `game-engine.js`, `player-data.js`, or `app.js`, regenerate the checked-in browser bundle:
+
+```bash
+npm run build:core
+```
 
 ## Project structure
 
@@ -171,10 +197,16 @@ pickleball-scorekeeper/
 ├── src/
 │   ├── app.js
 │   ├── game-engine.js
-│   └── live-sync.js
+│   ├── live-sync.js
+│   ├── picklepulse-core.js
+│   └── player-data.js
+├── scripts/
+│   └── build-core.js
 ├── tests/
 │   ├── game-engine.test.js
 │   ├── live-sync.test.js
+│   ├── loading.test.js
+│   ├── player-data.test.js
 │   └── ui-smoke.test.js
 ├── assets/
 │   └── icon.svg
@@ -184,7 +216,7 @@ pickleball-scorekeeper/
 
 ## Privacy
 
-Player names and saved games remain in the controller browser unless the user exports JSON. Live state is sent directly to connected spectator peers for the duration of the room. There is no analytics code.
+Roster names, queue state, settings, current game, and history remain in the controller browser unless the user exports JSON. During live mode, the current game state and appearance are sent directly to connected spectator peers. There is no analytics code.
 
 ## License
 

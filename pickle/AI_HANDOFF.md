@@ -1,91 +1,64 @@
-# AI Handoff: PicklePulse v5
+# AI Handoff: PicklePulse v7
 
 Read this before modifying the project.
 
 ## Product intent
 
-PicklePulse is a court-side scoring controller with an optional separate live display. The controller must remain fast and usable on a small phone even when connectivity becomes weak. Local scoring and persistence take priority over networking.
+PicklePulse is a court-side scoring controller with an optional separate live display. It is local-first: scoring, roster, queue, standings, persistence, and backups must remain usable without network access. Networking is supplemental and must never block scoring.
 
-The interface is deliberately sparse: icon-first navigation, large team score targets, very little instructional text, and layouts that work from 320 px portrait phones to landscape TVs. A compact palette panel lets the controller choose Team A/Team B score colors and high-contrast cards. A separate timer panel supports quick and exact countdown corrections during play.
+The interface is icon-first and touch-oriented. Preserve large score targets, minimal scoring-screen text, and responsive behavior from narrow phones through TV displays.
 
 ## Architecture
 
-- UI: one browser-native custom element, `<pickleball-app>`
-- Rendering: escaped template strings in `src/app.js`
+- UI source: browser-native `<pickleball-app>` custom element in `src/app.js`
+- Browser entry: generated `src/picklepulse-core.js` containing game engine, player data, and app UI
 - Scoring domain: pure functions in `src/game-engine.js`
+- Player roster, queue, standings: pure functions in `src/player-data.js`
 - Live sync: PeerJS/WebRTC wrapper in `src/live-sync.js`
 - Persistence: `localStorage` key `picklepulse-state-v1`
-- Offline shell: service worker in `sw.js`
-- Backups: JSON Blob download and File API import
-- Build system: none
+- Offline shell: `sw.js`
+- Backup: JSON Blob download and File API import
+- Build helper: `scripts/build-core.js` concatenates the three eager source files; the generated bundle is checked in
 - Runtime package installation: none
 
-PeerJS is not bundled. `loadPeerJS()` dynamically loads the pinned browser build from:
+`index.html` eagerly loads only `src/picklepulse-core.js`. That generated file preserves this source order:
 
-1. `https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js`
-2. `https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js`
+1. `game-engine.js`
+2. `player-data.js`
+3. `app.js`
 
-This happens only when a controller starts live mode or a `?watch=ROOM` display opens. Core scoring remains independent of the network library.
+`src/live-sync.js` is injected only when a controller starts live mode or a `?watch=ROOM` page opens. PeerJS itself is not bundled; `loadPeerJS()` then loads version `1.5.5` from jsDelivr, with unpkg as fallback. After changing any eager source file, run `npm run build:core` and commit the regenerated bundle.
 
-## Live-room protocol
+## Startup and runtime performance invariants
 
-A normalized room contains 4–8 characters from:
+- Keep `index.html` to one eager JavaScript request: `src/picklepulse-core.js`.
+- Do not put `live-sync.js` or PeerJS back on the normal controller startup path.
+- Service-worker registration is intentionally delayed until browser idle time.
+- The one-second timer tick must update `[data-role="match-clock"]` directly; do not restore full `innerHTML` rendering every second.
+- SVG icon paths live in the inline sprite in `index.html` so they are not parsed as JavaScript.
+- Preserve the cached player-ID map in `playerById()` unless state mutation semantics change.
+- Regenerate the core bundle with `npm run build:core` after changing eager source files.
 
-```text
-23456789ABCDEFGHJKLMNPQRSTUVWXYZ
-```
+## Root state schema
 
-Ambiguous characters such as `0`, `1`, `I`, and `O` are excluded.
-
-The controller peer ID is deterministic:
-
-```js
-picklepulse-${room.toLowerCase()}
-```
-
-A display link adds:
-
-```text
-?watch=ROOM
-```
-
-The controller sends messages shaped like:
+Current root schema version: `3`.
 
 ```js
 {
-  type: 'state',
-  game: Game,
-  sentAt: Date.now()
-}
-```
-
-The whole game is sent after each mutation. Before broadcast, `app.js` adds an `appearance` object to the transmitted game clone. This keeps score colors synchronized with read-only spectators without putting appearance concerns into the scoring engine. This is intentionally simple and acceptable for one scorekeeper with a small rally history. If message size becomes a problem, add a compact live-state serializer instead of sending local history.
-
-Controller connections ignore all incoming `data` events. Do not add remote scoring commands without authentication and explicit product design.
-
-`LiveViewer` reconnects with bounded exponential backoff. On reconnection, the controller sends the latest full state, so missed intermediate updates do not matter.
-
-## Scoring invariants
-
-1. Only the serving team scores under side-out scoring.
-2. Doubles starts at server 2, producing `0 - 0 - 2`.
-3. A server-1 loss moves to server 2 on the same team.
-4. A server-2 loss transfers service and resets to server 1.
-5. Singles transfers service immediately on a service loss.
-6. A game finishes only after reaching the target with a two-point lead.
-7. Rally snapshots make undo restore score, server, completion state, and timer.
-
-Keep these rules in `src/game-engine.js`. The UI should never reimplement scoring decisions.
-
-## State and timer
-
-Stored root state:
-
-```js
-{
-  schemaVersion: 2,
+  schemaVersion: 3,
   currentGame: Game | null,
   games: SavedGame[],
+  players: Player[],
+  queue: {
+    waiting: string[],
+    pending: string[],
+    onCourt: string[],
+    activeGameId: string
+  },
+  settings: {
+    voiceEnabled: boolean
+  },
+  liveRoom: string,
   lastSavedAt: ISODateString | null,
   appearance: {
     teamA: string,
@@ -95,7 +68,114 @@ Stored root state:
 }
 ```
 
-Timer state:
+`Game.teams[*]` contains both `players` and parallel `playerIds` arrays. Preserve both for readable history and stable standings identity.
+
+## Roster and queue invariants
+
+Roster names are normalized and deduplicated case-insensitively. Queue functions live in `src/player-data.js`; the UI must not duplicate their logic.
+
+Default rotation policy is FIFO four-on/four-off:
+
+1. `waiting` is the ordered paddle rack.
+2. `prepareNextFour()` copies the first four IDs to `pending`.
+3. Default assignment is positional: pending 1 = Team A P1, 2 = Team A P2, 3 = Team B P1, 4 = Team B P2. Assignment remains editable, but the selected four must match `pending`.
+4. `startQueuedGame()` removes those four from `waiting`, puts them in `onCourt`, and records `activeGameId`.
+5. `finishQueuedGame()` appends all four to the back of `waiting` and clears court state.
+
+When an active queued game is replaced by another game, the old four are returned to the queue before the replacement begins.
+
+Do not silently implement winners-stay behavior without a visible policy selector; it changes fairness and queue expectations.
+
+## Standings invariants
+
+`calculateStandings()`:
+
+- deduplicates saved snapshots by game ID and keeps the latest timestamp;
+- counts only games whose status is `complete`;
+- ignores ties;
+- resolves players by player ID first, then normalized name for legacy data;
+- calculates games, wins, losses, points for/against, differential, and win rate;
+- sorts by wins, win rate, differential, games, then name.
+
+Manual active-game saves must not affect standings.
+
+## Live-room protocol
+
+Normalized room codes contain 4–8 characters from:
+
+```text
+23456789ABCDEFGHJKLMNPQRSTUVWXYZ
+```
+
+Controller peer ID:
+
+```js
+picklepulse-${room.toLowerCase()}
+```
+
+Display link:
+
+```text
+?watch=ROOM
+```
+
+The controller sends:
+
+```js
+{
+  type: 'state',
+  game: GameWithAppearance,
+  sentAt: Date.now()
+}
+```
+
+The complete current game is sent after each mutation. Controller connections ignore incoming data, so display mode remains read-only.
+
+`liveRoom` is persisted. During `connectedCallback()`, an active controller game with a saved room attempts to restore that same room. Recovery is best effort because the public PeerServer can temporarily retain a stale peer ID.
+
+## Scoring protection
+
+For an active controller game:
+
+- internal navigation shows an in-app warning;
+- browser Back is guarded with a same-URL history entry and `popstate` warning;
+- `beforeunload` triggers the browser's native refresh/close/navigation prompt;
+- choosing to leave explicitly sets `allowPageLeave`.
+
+Browsers do not permit custom `beforeunload` text. Do not claim otherwise. Keep persistence after every mutation because no navigation guard is absolute on mobile OS task termination.
+
+## Voice announcements
+
+Voice is opt-in and uses `speechSynthesis`. The announcement signature combines status, scores, serving team, server number, serving player, and side so repeated renders do not repeat speech.
+
+Active game example:
+
+```text
+0, 0, 2. Ava serving from the right side.
+```
+
+Completion example:
+
+```text
+Game. Ava · Ben wins, 11 to 8.
+```
+
+Controller preference is persisted in `settings.voiceEnabled`. Spectator voice is session-only because autoplay/user-gesture restrictions vary by browser. Preserve graceful no-op behavior when Speech Synthesis is unavailable.
+
+## Scoring invariants
+
+1. Only the serving team scores under side-out scoring.
+2. Doubles starts at server 2, producing `0 - 0 - 2`.
+3. A server-1 loss moves to server 2 on the same team.
+4. A server-2 loss transfers service and resets to server 1.
+5. Singles transfers service immediately on service loss.
+6. A game finishes only after reaching the target with a two-point lead.
+7. Rally snapshots make undo restore score, server, serving player, completion state, and timer.
+8. Spoken score is server score, receiver score, then server number for doubles.
+
+Keep these rules in `src/game-engine.js`.
+
+## Timer model
 
 ```js
 {
@@ -106,95 +186,115 @@ Timer state:
 }
 ```
 
-The timer uses timestamps rather than incrementing a counter. This preserves accuracy through browser throttling, page visibility changes, and refresh recovery. `setRemainingMs()` and `adjustTimer()` preserve the running/paused state, reset `startedAt` to the correction time when running, stop at zero, and cap remaining time at three hours. Displays receive the same timer object and calculate the visible time locally.
+The timer uses timestamps rather than interval increments. `setRemainingMs()` and `adjustTimer()` preserve running/paused state, stop at zero, and cap remaining time at three hours. Displays calculate visible time locally from synchronized timer state.
+
+## Import/export behavior
+
+Exports include players, queue, current game, saved games, appearance, and settings.
+
+Imports:
+
+- merge players by normalized name;
+- remap conflicting/imported player IDs in saved games and current game;
+- avoid duplicate saved snapshots;
+- append imported waiting players to the local queue;
+- intentionally discard imported `pending`, `onCourt`, and `activeGameId` state so a backup does not resume a possibly stale court session.
+
+All player/imported text rendered into HTML must pass through `escapeHtml()`.
 
 ## Rendering and security
 
-Every player-entered or imported string rendered into a template must pass through `escapeHtml()`. Color values must pass through `normalizeHex()` before they are placed in inline CSS variables. `appearanceStyle()` is the only intended path for score-color variables.
+- Escape every user-entered/imported string with `escapeHtml()`.
+- Normalize colors with `normalizeHex()` before inline CSS.
+- `appearanceStyle()` is the intended score-color CSS-variable path.
+- Room codes are casual sharing identifiers, not authentication.
+- Never add remote scoring commands without an authenticated product design.
 
-The short room code is a casual sharing mechanism, not strong authentication. Peer-to-peer display traffic is transient and is not stored on a backend. The current architecture is appropriate for casual games, demos, and small events—not high-assurance tournaments.
+## Responsive requirements
 
-## Responsive design requirements
+Maintain:
 
-Maintain these behaviors:
+- no horizontal overflow at 320 CSS px;
+- score cards side by side on phones;
+- largest touch targets reserved for score entry;
+- safe-area-aware reachable bottom toolbar;
+- spectator display filling the viewport with both teams visible;
+- prominent `.remote-call strong` current-server text;
+- compact landscape controller mode;
+- `aria-label` and `title` on icon-only buttons;
+- reduced-motion and light/dark preference support.
 
-- No horizontal overflow at 320 CSS px.
-- Controller scores remain side by side on phones.
-- Score cards are the largest touch targets.
-- The bottom toolbar remains reachable with phone safe-area insets.
-- Display mode fills the viewport and keeps both teams visible.
-- Landscape layouts reduce chrome and maximize score numerals.
-- Do not replace icon buttons with unlabeled generic elements; retain `aria-label` and `title` attributes.
-- Respect `prefers-reduced-motion` and device light/dark mode.
-
-Visual QA baseline:
+Manual visual baseline:
 
 - 320 × 568 setup and controller
 - 360 × 800 controller
+- 568 × 320 landscape controller
 - 768 × 1024 tablet controller
 - 390 × 844 spectator display
 - 1366 × 768 spectator display
-- 568 × 320 landscape controller
 
 ## Service worker
 
-Whenever a local app asset is added or renamed:
+Whenever a local asset is added or renamed:
 
-1. Update `ASSETS` in `sw.js`.
-2. Bump `CACHE_NAME` when an existing installation must refresh cached files.
+1. update `ASSETS` in `sw.js`;
+2. bump `CACHE_NAME` when installed clients must refresh cached files.
 
-Do not add cross-origin PeerJS CDN files to `cache.addAll()`. A failed cross-origin cache fill could prevent the local app shell from installing. Live mode already requires network connectivity.
+Do not add cross-origin PeerJS CDN files to `cache.addAll()`.
 
-## Tests and validation
+## Validation
 
 Run:
 
 ```bash
 node --check src/game-engine.js
 node --check src/live-sync.js
+node --check src/player-data.js
 node --check src/app.js
+node --check src/picklepulse-core.js
+npm run build:core
 npm test
 python3 -m http.server 4173
 ```
 
-Manual two-browser test:
+Manual two-browser checks:
 
-1. Start a doubles match and confirm `0 - 0 - 2`.
-2. Start live mode and open the generated link in a second browser.
-3. Verify the initial game appears without another scoring action.
-4. Score, undo, pause/resume, and reset the timer.
-5. Open the timer-adjust panel and test quick add/subtract plus an exact `MM:SS` value while running and paused.
-6. Confirm every timer correction updates the display immediately.
-7. Open the palette panel, change both team colors, enable high contrast, and verify the spectator updates.
-8. Open a third spectator and verify both displays update.
-9. Disconnect the controller network, score locally, reconnect, and verify latest-state recovery.
-10. Close the controller and verify spectators enter reconnecting state.
-11. Export JSON and import it in a different browser profile.
-
-The Node suite contains a fake in-memory Peer implementation that validates the controller-to-viewer state path without using the public PeerServer.
-
-## High-value improvements
-
-Recommended next work:
-
-1. Add an optional QR code for the spectator URL using a tiny audited local library.
-2. Add Screen Wake Lock with graceful fallback.
-3. Preserve the exact serving-player and doubles-rotation implementation when adding match formats.
-4. Add best-of-three match support and side switching.
-5. Add optional haptic feedback for rally entry.
-6. Add an install prompt and clearer PWA update notification.
-7. Add a compact live serializer that omits rally history.
-8. Add a self-hosted PeerServer configuration field for clubs that need more control.
-9. Add a Cloudflare Durable Object or similar persistent-room adapter for tournament use.
-10. Add real cross-browser WebRTC tests in CI using two browser contexts.
-11. Add a controller lock PIN before ever supporting remote write commands.
-12. Add internationalization without increasing scoring-screen text density.
+1. Add at least six players and verify dropdown setup.
+2. Queue five or more players, load Next 4, verify 1–2 prefill Team A and 3–4 prefill Team B, optionally edit, and start.
+3. Complete the queued game and verify all four return behind existing waiters.
+4. Verify standings count the completed game once and ignore an active save.
+5. Export, clear or use another browser profile, import, and verify roster/history/standings.
+6. Enter a room code in the connect form and verify `?watch=ROOM` display mode.
+7. Start live mode and open two spectators.
+8. Enable voice by clicking the speaker control and verify score/server/side calls.
+9. Verify the large current-server callout on phone and TV display sizes.
+10. Score, undo, pause/resume, adjust timer, and change colors; verify both spectators update.
+11. Press Back during active scoring and verify the in-app warning.
+12. Refresh the controller, accept the native warning, and verify local game recovery plus same-room reconnect attempt.
+13. Disconnect the network, continue scoring locally, reconnect, and verify latest-state recovery.
 
 ## Known limitations
 
-- The public PeerServer and direct WebRTC path may be blocked on restrictive networks.
-- The controller must remain open; there is no server-side live room.
-- Controller refresh creates a new room.
-- Local storage is per browser profile and may be cleared by the browser or OS.
-- The app reports estimated connection quality only when the browser exposes the Network Information API.
-- PeerJS client delivery currently depends on one of two public CDNs when live mode starts.
+- Public PeerServer/WebRTC can be blocked by restrictive networks.
+- The controller must remain open; there is no server-side room or cloud history.
+- Same-room refresh recovery can fail temporarily because of stale peer registration.
+- `localStorage` is per browser profile and may be cleared by the browser or OS.
+- Voice quality and availability depend on device/browser voices.
+- Native navigation warning wording is controlled by the browser.
+- The queue currently supports one explicit policy only: FIFO four-on/four-off.
+- Automated tests are DOM smoke tests, not full cross-browser layout or WebRTC end-to-end tests.
+
+## High-value next work
+
+1. Optional queue policies with clear labels: winners split, winners stay, challenge court.
+2. QR code for spectator links using a small audited local library.
+3. Screen Wake Lock with graceful fallback.
+4. Player rename flow that preserves IDs and historical records.
+5. Best-of-three match support and side switching.
+6. Optional haptic feedback.
+7. Install/update prompt for the PWA.
+8. Compact live serializer that omits rally history.
+9. Configurable self-hosted PeerServer.
+10. Real Playwright cross-browser tests with two browser contexts.
+11. Controller lock PIN before any remote-write feature.
+12. Internationalization without increasing scoring-screen text density.
