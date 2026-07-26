@@ -1,11 +1,11 @@
 {
   "name": "picklepulse-scorekeeper",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "private": true,
-  "description": "Fast-loading local-first pickleball scoring with player roster, ordered team queue, standings, voice calls, protected scoring, and PeerJS display mode.",
+  "description": "Fast local-first pickleball scoring with authenticated live display links, bounded local data, queue, standings, and voice calls.",
   "scripts": {
     "build:core": "node scripts/build-core.js",
-    "start": "python3 -m http.server 4173",
+    "start": "python3 serve.py --port 4173",
     "test": "node --test tests/*.test.js"
   },
   "license": "MIT"

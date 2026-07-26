@@ -6,12 +6,24 @@
   'use strict';
 
   const ROOT_SCHEMA_VERSION = 3;
+  const MAX_PLAYERS = 500;
+  const MAX_QUEUE_PLAYERS = 500;
+  const MAX_ID_LENGTH = 120;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     return `${prefix}-${random}`;
+  }
+
+  function cleanId(value) {
+    return String(value == null ? '' : value).replace(/[^A-Za-z0-9._:-]/g, '').slice(0, MAX_ID_LENGTH);
+  }
+
+  function safeDate(value, fallback) {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : fallback;
   }
 
   function cleanName(value) {
@@ -34,18 +46,15 @@
     if (!value || typeof value !== 'object') return null;
     const name = cleanName(value.name);
     if (!name) return null;
-    const id = String(value.id || makeId()).slice(0, 120);
-    return {
-      id,
-      name,
-      createdAt: value.createdAt || new Date(now).toISOString()
-    };
+    const fallbackDate = new Date(now).toISOString();
+    const id = cleanId(value.id) || makeId();
+    return { id, name, createdAt: safeDate(value.createdAt, fallbackDate) };
   }
 
   function normalizePlayers(values) {
     const byId = new Map();
     const byName = new Map();
-    (Array.isArray(values) ? values : []).forEach((value) => {
+    (Array.isArray(values) ? values.slice(0, MAX_PLAYERS) : []).forEach((value) => {
       const player = normalizePlayer(value);
       if (!player) return;
       const key = nameKey(player.name);
@@ -59,14 +68,14 @@
   function normalizeQueue(value, players) {
     const source = value && typeof value === 'object' ? value : {};
     const validIds = new Set(normalizePlayers(players).map((player) => player.id));
-    const safe = (items, max = Infinity) => unique(items).filter((id) => validIds.has(id)).slice(0, max);
+    const safe = (items, max = MAX_QUEUE_PLAYERS) => unique(items).map(cleanId).filter((id) => validIds.has(id)).slice(0, max);
     const pending = safe(source.pending, 4);
     const onCourt = safe(source.onCourt, 4);
     return {
       waiting: safe(source.waiting).filter((id) => !onCourt.includes(id)),
       pending: pending.length === 4 ? pending : [],
       onCourt,
-      activeGameId: source.activeGameId ? String(source.activeGameId) : ''
+      activeGameId: cleanId(source.activeGameId)
     };
   }
 
@@ -230,7 +239,10 @@
 
   return {
     ROOT_SCHEMA_VERSION,
+    MAX_PLAYERS,
+    MAX_QUEUE_PLAYERS,
     makeId,
+    cleanId,
     cleanName,
     nameKey,
     normalizePlayer,

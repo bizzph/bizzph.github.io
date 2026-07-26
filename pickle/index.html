@@ -3,8 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; script-src-attr 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'" />
+    <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#0e110f" />
-    <meta name="description" content="Local-first pickleball scorekeeper with player roster, queue, standings, voice calls, protected scoring, and PeerJS live display mode." />
+    <meta name="description" content="Local-first pickleball scorekeeper with player roster, queue, standings, voice calls, protected scoring, and authenticated local Wi-Fi live display." />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
@@ -43,6 +45,6 @@
     </svg>
     <pickleball-app></pickleball-app>
     <noscript>This app needs JavaScript enabled.</noscript>
-    <script defer fetchpriority="high" src="src/picklepulse-core.js"></script>
+    <script defer fetchpriority="high" src="src/picklepulse-core.js?v=8"></script>
   </body>
 </html>

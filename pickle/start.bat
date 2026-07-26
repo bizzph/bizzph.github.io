@@ -1,4 +1,4 @@
 @echo off
 set PORT=4173
-echo PicklePulse is available at http://localhost:%PORT%
-py -m http.server %PORT%
+if not "%1"=="" set PORT=%1
+python serve.py --port %PORT%

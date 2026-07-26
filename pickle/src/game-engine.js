@@ -8,6 +8,12 @@
   const SCHEMA_VERSION = 3;
   const DEFAULT_TIMER_MS = 15 * 60 * 1000;
   const MAX_TIMER_MS = 180 * 60 * 1000;
+  const MAX_SCORE = 999;
+  const MAX_RALLIES = 500;
+  const MAX_SAVED_RALLIES = 100;
+  const MAX_IMPORT_GAMES = 500;
+  const MAX_TEXT_LENGTH = 60;
+  const MAX_ID_LENGTH = 120;
 
   function makeId(prefix) {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -21,8 +27,90 @@
   }
 
   function normalizeName(value, fallback) {
-    const text = String(value || '').trim();
+    const text = String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, MAX_TEXT_LENGTH);
     return text || fallback;
+  }
+
+  function safeObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
+  function safeInteger(value, fallback, minimum, maximum) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(minimum, Math.min(maximum, Math.trunc(number)));
+  }
+
+  function safeId(value, fallback) {
+    const text = String(value == null ? '' : value).replace(/[^A-Za-z0-9._:-]/g, '').slice(0, MAX_ID_LENGTH);
+    return text || fallback;
+  }
+
+  function safeDate(value, fallback) {
+    if (!value) return fallback;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : fallback;
+  }
+
+  function normalizeTimer(value, status) {
+    const source = safeObject(value);
+    const durationMs = safeInteger(source.durationMs, DEFAULT_TIMER_MS, 1, MAX_TIMER_MS);
+    const elapsedMs = safeInteger(source.elapsedMs, 0, 0, durationMs);
+    const running = status === 'active' && Boolean(source.running) && elapsedMs < durationMs;
+    const startedAt = running && Number.isFinite(Number(source.startedAt)) ? Number(source.startedAt) : null;
+    return { durationMs, elapsedMs, running, startedAt };
+  }
+
+  function normalizeTeam(value, index, format) {
+    const source = safeObject(value);
+    const expectedPlayers = format === 'singles' ? 1 : 2;
+    const rawPlayers = Array.isArray(source.players) ? source.players.slice(0, expectedPlayers) : [];
+    const players = [];
+    for (let playerIndex = 0; playerIndex < expectedPlayers; playerIndex += 1) {
+      players.push(normalizeName(rawPlayers[playerIndex], `Player ${format === 'singles' ? index + 1 : playerIndex + 1}`));
+    }
+    const rawIds = Array.isArray(source.playerIds) ? source.playerIds.slice(0, expectedPlayers) : [];
+    const playerIds = players.map((_name, playerIndex) => safeId(rawIds[playerIndex], ''));
+    return {
+      name: normalizeName(source.name, `Team ${index === 0 ? 'A' : 'B'}`),
+      players,
+      playerIds,
+      score: safeInteger(source.score, 0, 0, MAX_SCORE)
+    };
+  }
+
+  function normalizeSnapshot(value, durationMs, format) {
+    const source = safeObject(value);
+    const scores = Array.isArray(source.scores) ? source.scores : [];
+    const status = source.status === 'complete' ? 'complete' : 'active';
+    const timer = normalizeTimer(source.timer, status);
+    timer.durationMs = durationMs;
+    timer.elapsedMs = Math.min(durationMs, timer.elapsedMs);
+    if (status === 'complete') {
+      timer.running = false;
+      timer.startedAt = null;
+    }
+    return {
+      scores: [safeInteger(scores[0], 0, 0, MAX_SCORE), safeInteger(scores[1], 0, 0, MAX_SCORE)],
+      servingTeam: safeInteger(source.servingTeam, 0, 0, 1),
+      serverNumber: format === 'doubles' ? safeInteger(source.serverNumber, 1, 1, 2) : 1,
+      servingPlayer: format === 'doubles' ? safeInteger(source.servingPlayer, 0, 0, 1) : 0,
+      status,
+      completedAt: status === 'complete' ? safeDate(source.completedAt, null) : null,
+      timer
+    };
+  }
+
+  function normalizeRally(value, durationMs, format, index) {
+    const source = safeObject(value);
+    const winnerTeam = Number(source.winnerTeam);
+    if (![0, 1].includes(winnerTeam)) return null;
+    return {
+      id: safeId(source.id, `rally-${index}`),
+      at: safeDate(source.at, new Date(0).toISOString()),
+      winnerTeam,
+      before: normalizeSnapshot(source.before, durationMs, format)
+    };
   }
 
   function timerDurationMs(game) {
@@ -78,25 +166,68 @@
   }
 
   function normalizeGame(game) {
-    const next = clone(game);
-    next.schemaVersion = SCHEMA_VERSION;
-    next.timer = next.timer || {};
-    next.timer.durationMs = timerDurationMs(next);
-    next.timer.elapsedMs = Math.max(0, Math.min(next.timer.durationMs, Number(next.timer.elapsedMs) || 0));
-    next.timer.running = Boolean(next.timer.running) && next.timer.elapsedMs < next.timer.durationMs;
-    next.timer.startedAt = next.timer.running && next.timer.startedAt != null && Number.isFinite(Number(next.timer.startedAt))
-      ? Number(next.timer.startedAt)
-      : null;
-    next.teams = Array.isArray(next.teams) ? next.teams : [];
-    next.teams.forEach((team) => {
-      team.players = Array.isArray(team.players) ? team.players.map((name) => normalizeName(name, 'Player')) : [];
-      team.playerIds = Array.isArray(team.playerIds) ? team.playerIds.map((id) => String(id || '')) : [];
-      while (team.playerIds.length < team.players.length) team.playerIds.push('');
-      team.playerIds = team.playerIds.slice(0, team.players.length);
-    });
-    if (next.format === 'doubles') next.servingPlayer = servingPlayerIndex(next);
-    else next.servingPlayer = 0;
+    const source = safeObject(game);
+    const nowIso = new Date().toISOString();
+    const format = source.format === 'singles' ? 'singles' : 'doubles';
+    const status = source.status === 'complete' ? 'complete' : 'active';
+    const rawTeams = Array.isArray(source.teams) ? source.teams.slice(0, 2) : [];
+    const teams = [normalizeTeam(rawTeams[0], 0, format), normalizeTeam(rawTeams[1], 1, format)];
+    const timer = normalizeTimer(source.timer, status);
+    const target = [11, 15, 21].includes(Number(source.target)) ? Number(source.target) : 11;
+    const next = {
+      schemaVersion: SCHEMA_VERSION,
+      id: safeId(source.id, makeId('game')),
+      createdAt: safeDate(source.createdAt, nowIso),
+      updatedAt: safeDate(source.updatedAt, nowIso),
+      completedAt: status === 'complete' ? safeDate(source.completedAt, nowIso) : null,
+      format,
+      target,
+      winBy: 2,
+      scoring: 'sideout',
+      status,
+      teams,
+      servingTeam: safeInteger(source.servingTeam, 0, 0, 1),
+      serverNumber: format === 'doubles' ? safeInteger(source.serverNumber, 1, 1, 2) : 1,
+      servingPlayer: format === 'doubles' ? safeInteger(source.servingPlayer, 0, 0, 1) : 0,
+      startingTeam: safeInteger(source.startingTeam, 0, 0, 1),
+      rallies: [],
+      timer
+    };
+    const rawRallies = Array.isArray(source.rallies) ? source.rallies.slice(-MAX_RALLIES) : [];
+    next.rallies = rawRallies.map((rally, index) => normalizeRally(rally, timer.durationMs, format, index)).filter(Boolean);
+    if (format === 'doubles') next.servingPlayer = servingPlayerIndex(next);
+    if (status === 'complete') {
+      next.timer.running = false;
+      next.timer.startedAt = null;
+    }
+    const snapshotId = safeId(source.snapshotId, '');
+    const savedAt = safeDate(source.savedAt, null);
+    if (snapshotId) next.snapshotId = snapshotId;
+    if (savedAt) next.savedAt = savedAt;
     return next;
+  }
+
+  function publicGameState(game) {
+    const normalized = normalizeGame(game);
+    return {
+      schemaVersion: normalized.schemaVersion,
+      id: normalized.id,
+      createdAt: normalized.createdAt,
+      updatedAt: normalized.updatedAt,
+      completedAt: normalized.completedAt,
+      format: normalized.format,
+      target: normalized.target,
+      winBy: normalized.winBy,
+      scoring: normalized.scoring,
+      status: normalized.status,
+      teams: normalized.teams.map((team) => ({ name: team.name, players: team.players.slice(), score: team.score })),
+      servingTeam: normalized.servingTeam,
+      serverNumber: normalized.serverNumber,
+      servingPlayer: normalized.servingPlayer,
+      startingTeam: normalized.startingTeam,
+      timer: { ...normalized.timer },
+      rallies: []
+    };
   }
 
   function createGame(options) {
@@ -334,6 +465,7 @@
     snapshot.timer.elapsedMs = getElapsedMs(game, safeNow);
     snapshot.timer.running = false;
     snapshot.timer.startedAt = null;
+    snapshot.rallies = snapshot.status === 'complete' ? [] : snapshot.rallies.slice(-MAX_SAVED_RALLIES);
     return snapshot;
   }
 
@@ -394,10 +526,8 @@
     if (!payload || typeof payload !== 'object') throw new Error('The JSON file is not an object.');
     const games = Array.isArray(payload.games) ? payload.games : Array.isArray(payload) ? payload : null;
     if (!games) throw new Error('No games array was found in the JSON file.');
-
-    const validGames = games.filter((game) => {
-      return game && Array.isArray(game.teams) && game.teams.length === 2 && game.teams.every((team) => typeof team.score === 'number');
-    });
+    if (games.length > MAX_IMPORT_GAMES) throw new Error(`A backup can contain at most ${MAX_IMPORT_GAMES} games.`);
+    const validGames = games.filter((game) => game && Array.isArray(game.teams) && game.teams.length === 2);
     if (validGames.length === 0) throw new Error('No valid pickleball games were found.');
     return validGames.map(normalizeGame);
   }
@@ -406,8 +536,13 @@
     SCHEMA_VERSION,
     DEFAULT_TIMER_MS,
     MAX_TIMER_MS,
+    MAX_SCORE,
+    MAX_RALLIES,
+    MAX_SAVED_RALLIES,
+    MAX_IMPORT_GAMES,
     createGame,
     normalizeGame,
+    publicGameState,
     timerDurationMs,
     getElapsedMs,
     getRemainingMs,

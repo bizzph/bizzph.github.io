@@ -3,10 +3,13 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=8';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
+  const LIVE_SECRET_STORAGE_KEY = 'picklepulse-live-secret-v1';
+  const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+  const MAX_SAVED_GAMES = 500;
   const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
   const DEFAULT_SETTINGS = Object.freeze({ voiceEnabled: false });
   const COLOR_PRESETS = Object.freeze([
@@ -30,13 +33,47 @@
       .slice(0, 8);
   }
 
-  function liveDisplayUrl(room, href) {
+  function normalizeAccessKey(value) {
+    return String(value || '').replace(/[^2-9A-HJ-NP-Za-km-z]/g, '').slice(0, 32);
+  }
+
+  function liveSecretStorage() {
+    try {
+      if (globalThis.sessionStorage) return globalThis.sessionStorage;
+    } catch (_error) {}
+    return globalThis.localStorage;
+  }
+
+  function liveDisplayUrl(room, accessKey, href) {
     const source = href || (globalThis.location && location.href) || 'https://example.test/';
     const url = new URL(source);
     url.search = '';
     url.hash = '';
     url.searchParams.set('watch', normalizeRoomCode(room));
+    const key = normalizeAccessKey(accessKey);
+    if (key) url.hash = new URLSearchParams({ key }).toString();
     return url.toString();
+  }
+
+  function parseLiveAccess(value, href) {
+    const raw = String(value || '').trim();
+    let room = '';
+    let accessKey = '';
+    if (raw) {
+      try {
+        const url = new URL(raw, href || (globalThis.location && location.href) || 'https://example.test/');
+        room = normalizeRoomCode(url.searchParams.get('watch'));
+        accessKey = normalizeAccessKey(new URLSearchParams(url.hash.replace(/^#/, '')).get('key'));
+      } catch (_error) {}
+    }
+    if (!room || !accessKey) {
+      const match = raw.replace(/\s+/g, '').match(/^([2-9A-HJ-NP-Z]{4,8})[.:/-]([2-9A-HJ-NP-Za-km-z]{16,32})$/i);
+      if (match) {
+        room = normalizeRoomCode(match[1]);
+        accessKey = normalizeAccessKey(match[2]);
+      }
+    }
+    return { room, accessKey, valid: room.length >= 4 && accessKey.length >= 16 };
   }
 
   function loadLiveSync() {
@@ -177,8 +214,24 @@
       super();
       const params = new URLSearchParams(globalThis.location ? location.search : '');
       this.watchRoom = normalizeRoomCode(params.get('watch'));
+      const fragment = new URLSearchParams(globalThis.location ? String(location.hash || '').replace(/^#/, '') : '');
+      const fragmentAccessKey = normalizeAccessKey(fragment.get('key'));
+      this.watchAccessKey = fragmentAccessKey;
       this.mode = this.watchRoom ? 'display' : 'controller';
       this.state = this.loadState();
+      if (this.watchRoom) {
+        this.watchAccessKey = fragmentAccessKey || this.readLiveSecret(this.watchRoom);
+        if (this.watchAccessKey.length >= 16) {
+          this.saveLiveSecret(this.watchRoom, this.watchAccessKey);
+          if (fragmentAccessKey && globalThis.history && typeof history.replaceState === 'function') {
+            try {
+              const cleanUrl = new URL(location.href);
+              cleanUrl.hash = '';
+              history.replaceState(history.state, '', cleanUrl.toString());
+            } catch (_error) {}
+          }
+        }
+      }
       this.view = this.state.currentGame ? 'game' : 'setup';
       this.network = this.readNetwork();
       this.toast = '';
@@ -190,6 +243,7 @@
       this.guardArmed = false;
       this.live = { phase: 'off', room: '', viewers: 0, detail: '' };
       this.liveController = null;
+      this.liveAccessKey = '';
       this.remoteGame = null;
       this.remoteStatus = { phase: 'connecting', room: this.watchRoom, detail: '' };
       this.remoteUpdatedAt = null;
@@ -278,7 +332,7 @@
         return {
           schemaVersion: Players.ROOT_SCHEMA_VERSION,
           currentGame: parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null,
-          games: Array.isArray(parsed.games) ? parsed.games.map((game) => Engine.normalizeGame(game)) : [],
+          games: Array.isArray(parsed.games) ? parsed.games.slice(0, MAX_SAVED_GAMES).map((game) => Engine.normalizeGame(game)) : [],
           players,
           queue: Players.normalizeQueue(parsed.queue, players),
           settings: normalizeSettings(parsed.settings),
@@ -297,11 +351,35 @@
         this.state.players = Players.normalizePlayers(this.state.players);
         this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
         this.state.settings = normalizeSettings(this.state.settings);
+        this.state.games = (Array.isArray(this.state.games) ? this.state.games : []).slice(0, MAX_SAVED_GAMES).map((game) => Engine.normalizeGame(game));
         this.state.lastSavedAt = new Date().toISOString();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+        return true;
       } catch (error) {
         this.showToast(`Save failed: ${error.message}`);
+        return false;
       }
+    }
+
+    readLiveSecret(room = '') {
+      try {
+        const value = JSON.parse(liveSecretStorage().getItem(LIVE_SECRET_STORAGE_KEY));
+        const expected = normalizeRoomCode(room);
+        return value && normalizeRoomCode(value.room) === expected ? normalizeAccessKey(value.accessKey) : '';
+      } catch (_error) {
+        return '';
+      }
+    }
+
+    saveLiveSecret(room, accessKey) {
+      try {
+        liveSecretStorage().setItem(LIVE_SECRET_STORAGE_KEY, JSON.stringify({ room: normalizeRoomCode(room), accessKey: normalizeAccessKey(accessKey) }));
+      } catch (_error) {}
+    }
+
+    clearLiveSecret() {
+      try { liveSecretStorage().removeItem(LIVE_SECRET_STORAGE_KEY); } catch (_error) {}
+      this.liveAccessKey = '';
     }
 
     playerById(id) {
@@ -429,6 +507,7 @@
       const completedNow = previous && previous.status === 'active' && game && game.status === 'complete';
       if (completedNow) {
         this.state.games.unshift(Engine.snapshotForSave(game, Date.now()));
+        this.state.games = this.state.games.slice(0, MAX_SAVED_GAMES);
         this.state.queue = Players.finishQueuedGame(this.state.queue, game.id, this.state.players);
       }
       this.state.currentGame = game ? Engine.normalizeGame(game) : null;
@@ -464,16 +543,29 @@
 
     async startViewer() {
       if (!this.watchRoom) return;
+      if (this.watchAccessKey.length < 16) {
+        this.remoteStatus = { phase: 'error', room: this.watchRoom, detail: 'This live link is missing its access key.' };
+        this.render();
+        return;
+      }
       try {
         const LiveApi = await loadLiveSync();
         this.viewer = new LiveApi.LiveViewer({
           room: this.watchRoom,
+          accessKey: this.watchAccessKey,
           onState: (game, sentAt) => {
-            const receivedAt = Date.now();
-            this.remoteGame = LiveApi.adaptRemoteGame(game, sentAt, receivedAt);
-            this.remoteUpdatedAt = receivedAt;
-            this.announceGame(this.remoteGame, false, true);
-            this.render();
+            try {
+              const receivedAt = Date.now();
+              const adapted = LiveApi.adaptRemoteGame(game, sentAt, receivedAt);
+              const appearance = normalizeAppearance(adapted.appearance);
+              this.remoteGame = { ...Engine.normalizeGame(adapted), appearance };
+              this.remoteUpdatedAt = receivedAt;
+              this.announceGame(this.remoteGame, false, true);
+              this.render();
+            } catch (error) {
+              this.remoteStatus = { phase: 'error', room: this.watchRoom, detail: error.message || 'Invalid live update' };
+              this.render();
+            }
           },
           onStatus: (status) => {
             this.remoteStatus = status;
@@ -492,30 +584,40 @@
         if (!silent) this.showToast('Start a match first');
         return false;
       }
-      if (!navigator.onLine) {
-        if (!silent) this.showToast('Internet is required for live mode');
-        return false;
-      }
       if (this.liveController) return true;
 
       let LiveApi;
       try {
         LiveApi = await loadLiveSync();
       } catch (error) {
-        this.live = { phase: 'error', room: normalizeRoomCode(preferredRoom), viewers: 0, detail: error.message || 'Unable to load live mode' };
+        this.live = { phase: 'error', room: normalizeRoomCode(preferredRoom), viewers: 0, detail: error.message || 'Unable to load local live mode' };
         this.render();
-        if (!silent) this.showToast('Could not load live mode');
+        if (!silent) this.showToast('Could not load local live mode');
         return false;
       }
+
       const preferred = normalizeRoomCode(preferredRoom);
+      const storedKey = preferred ? this.readLiveSecret(preferred) : '';
       const attempts = preferred ? 3 : 4;
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const room = preferred || LiveApi.generateRoomCode();
+        let accessKey = storedKey;
+        try {
+          accessKey = accessKey || LiveApi.generateAccessKey();
+        } catch (error) {
+          this.live = { phase: 'error', room, viewers: 0, detail: error.message || 'Secure randomness is unavailable' };
+          this.render();
+          if (!silent) this.showToast('This browser cannot create a secure live room');
+          return false;
+        }
         this.live = { phase: attempt ? 'reconnecting' : 'starting', room, viewers: 0, detail: '' };
         this.render();
         const controller = new LiveApi.LiveController({
           room,
-          getState: () => this.state.currentGame ? { ...this.state.currentGame, appearance: normalizeAppearance(this.state.appearance) } : null,
+          accessKey,
+          getState: () => this.state.currentGame
+            ? { ...Engine.publicGameState(this.state.currentGame), appearance: normalizeAppearance(this.state.appearance) }
+            : null,
           onStatus: (status) => {
             this.live = status;
             this.render();
@@ -524,10 +626,12 @@
         try {
           await controller.start();
           this.liveController = controller;
+          this.liveAccessKey = accessKey;
           this.state.liveRoom = room;
+          this.saveLiveSecret(room, accessKey);
           this.persist();
           controller.broadcast();
-          if (!silent) this.showToast(`Live · ${room}`);
+          if (!silent) this.showToast(`Secure live · ${room}`);
           return true;
         } catch (error) {
           controller.stop();
@@ -538,7 +642,7 @@
             }
             if (!preferred) continue;
           }
-          this.live = { phase: 'error', room, viewers: 0, detail: error.message || 'Unable to connect' };
+          this.live = { phase: 'error', room, viewers: 0, detail: error.message || 'Unable to connect to the local server' };
           this.render();
           return false;
         }
@@ -552,6 +656,7 @@
       this.liveController = null;
       this.live = { phase: 'off', room: '', viewers: 0, detail: '' };
       this.state.liveRoom = '';
+      this.clearLiveSecret();
       this.persist();
       this.render();
     }
@@ -559,8 +664,8 @@
     async shareLive() {
       const started = await this.startLive(this.state.liveRoom);
       if (!started) return;
-      const url = liveDisplayUrl(this.live.room);
-      const shareData = { title: 'PicklePulse live score', text: `Watch room ${this.live.room}`, url };
+      const url = liveDisplayUrl(this.live.room, this.liveAccessKey);
+      const shareData = { title: 'PicklePulse live score', text: `Watch secure room ${this.live.room}`, url };
       if (navigator.share) {
         try {
           await navigator.share(shareData);
@@ -569,7 +674,7 @@
           if (error && error.name === 'AbortError') return;
         }
       }
-      await this.copyText(url, 'Display link copied');
+      await this.copyText(url, 'Secure display link copied');
     }
 
     async copyText(text, message = 'Copied') {
@@ -596,6 +701,10 @@
       const clean = Players.cleanName(name);
       if (!clean) {
         this.showToast('Enter a player name');
+        return null;
+      }
+      if (this.state.players.length >= Players.MAX_PLAYERS) {
+        this.showToast(`Player limit reached (${Players.MAX_PLAYERS})`);
         return null;
       }
       if (this.state.players.some((player) => Players.nameKey(player.name) === Players.nameKey(clean))) {
@@ -625,13 +734,13 @@
       if (form.id === 'join-room-form') {
         event.preventDefault();
         const data = new FormData(form);
-        const room = normalizeRoomCode(data.get('room'));
-        if (room.length < 4) {
-          this.showToast('Enter a 4–8 character code');
+        const access = parseLiveAccess(data.get('room'));
+        if (!access.valid) {
+          this.showToast('Paste the secure link or room.access code');
           return;
         }
         this.allowPageLeave = true;
-        location.href = liveDisplayUrl(room);
+        location.href = liveDisplayUrl(access.room, access.accessKey);
         return;
       }
 
@@ -671,6 +780,7 @@
       }
       if (this.state.currentGame && this.state.currentGame.status === 'active') {
         this.state.games.unshift(Engine.snapshotForSave(this.state.currentGame, Date.now()));
+        this.state.games = this.state.games.slice(0, MAX_SAVED_GAMES);
         this.state.queue = Players.finishQueuedGame(
           this.state.queue,
           this.state.currentGame.id,
@@ -848,6 +958,7 @@
       if (action === 'save') {
         if (!this.state.currentGame) return;
         this.state.games.unshift(Engine.snapshotForSave(this.state.currentGame, Date.now()));
+        this.state.games = this.state.games.slice(0, MAX_SAVED_GAMES);
         this.persist();
         this.showToast('Saved');
         return;
@@ -872,11 +983,11 @@
         return;
       }
       if (action === 'copy-room') {
-        await this.copyText(this.live.room, 'Room copied');
+        await this.copyText(`${this.live.room}.${this.liveAccessKey}`, 'Secure room code copied');
         return;
       }
       if (action === 'copy-link') {
-        await this.copyText(liveDisplayUrl(this.live.room), 'Display link copied');
+        await this.copyText(liveDisplayUrl(this.live.room, this.liveAccessKey), 'Secure display link copied');
         return;
       }
       if (action === 'queue-add') {
@@ -962,8 +1073,10 @@
         return;
       }
       if (action === 'leave-display') {
+        this.clearLiveSecret();
         const url = new URL(location.href);
         url.search = '';
+        url.hash = '';
         this.allowPageLeave = true;
         location.href = url.toString();
       }
@@ -992,9 +1105,13 @@
     }
 
     async importJson(file) {
+      const previousState = JSON.parse(JSON.stringify(this.state));
       try {
-        const payload = JSON.parse(await file.text());
-        if (!payload || typeof payload !== 'object') throw new Error('The JSON file is not an object.');
+        if (!file || Number(file.size) > MAX_IMPORT_BYTES) throw new Error('Backup is too large. Maximum size is 5 MB.');
+        const text = await file.text();
+        if (text.length > MAX_IMPORT_BYTES) throw new Error('Backup is too large. Maximum size is 5 MB.');
+        const payload = JSON.parse(text);
+        if (!payload || typeof payload !== 'object') throw new Error('The JSON backup has an invalid structure.');
 
         const currentByName = new Map(this.state.players.map((player) => [Players.nameKey(player.name), player]));
         const usedIds = new Set(this.state.players.map((player) => player.id));
@@ -1006,7 +1123,9 @@
             idMap.set(player.id, existing.id);
             return;
           }
-          const next = { ...player, id: usedIds.has(player.id) ? Players.makeId() : player.id };
+          if (usedIds.size >= Players.MAX_PLAYERS) return;
+          const next = Players.normalizePlayer({ ...player, id: usedIds.has(player.id) ? Players.makeId() : player.id });
+          if (!next) return;
           usedIds.add(next.id);
           idMap.set(player.id, next.id);
           this.state.players.push(next);
@@ -1022,22 +1141,25 @@
               if (idMap.has(id)) return idMap.get(id);
               const name = team.players && team.players[index];
               const player = currentByName.get(Players.nameKey(name));
-              return player ? player.id : id;
+              return player ? player.id : Players.cleanId(id);
             });
           });
         });
         const existingSnapshots = new Set(this.state.games.map((game) => String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`)));
         importedGames.reverse().forEach((game) => {
           const key = String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`);
-          if (!existingSnapshots.has(key)) this.state.games.unshift(game);
+          if (!existingSnapshots.has(key) && this.state.games.length < MAX_SAVED_GAMES) {
+            this.state.games.unshift(game);
+            existingSnapshots.add(key);
+          }
         });
+        this.state.games = this.state.games.slice(0, MAX_SAVED_GAMES);
 
         if (payload.queue) {
           const importedQueue = {
             ...payload.queue,
-            waiting: (payload.queue.waiting || []).map((id) => idMap.get(String(id)) || String(id)),
-            pending: [],
-            onCourt: []
+            waiting: (Array.isArray(payload.queue.waiting) ? payload.queue.waiting : []).map((id) => idMap.get(String(id)) || Players.cleanId(id)),
+            pending: [], onCourt: [], activeGameId: ''
           };
           const normalized = Players.normalizeQueue(importedQueue, this.state.players);
           normalized.waiting.forEach((id) => {
@@ -1050,17 +1172,19 @@
             team.playerIds = (team.playerIds || []).map((id, index) => {
               if (idMap.has(id)) return idMap.get(id);
               const player = currentByName.get(Players.nameKey(team.players && team.players[index]));
-              return player ? player.id : id;
+              return player ? player.id : Players.cleanId(id);
             });
           });
           this.state.currentGame = importedCurrent;
         }
         if (payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
         if (payload.settings) this.state.settings = normalizeSettings(payload.settings);
-        this.persist();
+        if (!this.persist()) throw new Error('Backup could not be saved locally.');
         this.view = 'history';
-        this.showToast(`${importedGames.length} games · ${importedPlayers.length} players imported`);
+        this.showToast(`${importedGames.length} games · ${importedPlayers.length} players reviewed`);
       } catch (error) {
+        this.state = previousState;
+        this._playerMapSource = null;
         this.showToast(error.message || 'Import failed');
       }
     }
@@ -1210,8 +1334,8 @@
           ` : ''}
           ${hasPlayers ? this.renderNewGameForm() : this.renderRosterEmpty()}
           <form id="join-room-form" class="connect-card">
-            <div><span class="connect-icon">${icon('radio')}</span><span><b>Watch a live game</b><small>Enter the room code—no URL editing needed.</small></span></div>
-            <label><span class="sr-only">Room code</span><input name="room" minlength="4" maxlength="8" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off" required><button type="submit">Connect</button></label>
+            <div><span class="connect-icon">${icon('shield')}</span><span><b>Watch a live game</b><small>Paste the secure link or room.access code.</small></span></div>
+            <label><span class="sr-only">Secure live link or code</span><input name="room" maxlength="400" placeholder="ROOM.ACCESS KEY" autocomplete="off" required><button type="submit">Connect</button></label>
           </form>
         </section>
       `;
@@ -1364,7 +1488,7 @@
             <div class="serve-call ${game.status === 'complete' ? 'complete' : ''}">
               ${game.status === 'complete' ? icon('trophy') : '<span class="serve-pip"></span>'}
               <strong>${game.status === 'complete' ? 'Final' : escapeHtml(serve.playerName)}</strong>
-              <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
+              <span>${game.status === 'complete' ? `${escapeHtml(Number(game.teams[0].score) || 0)}–${escapeHtml(Number(game.teams[1].score) || 0)}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
             </div>
             <div class="timer-tools">
               <button class="icon-btn subtle ${voice ? 'active' : ''}" type="button" data-action="toggle-voice" aria-label="${voice ? 'Turn voice announcements off' : 'Turn voice announcements on'}" title="Voice announcements">${icon(voice ? 'speaker' : 'speakerOff')}</button>
@@ -1396,7 +1520,7 @@
         <button class="score-team team-${index === 0 ? 'a' : 'b'} ${serving ? 'serving' : ''}" type="button" data-action="rally" data-team="${index}" ${game.status === 'active' ? '' : 'disabled'} aria-label="${escapeHtml(teamTitle(team, index))} won rally">
           <span class="team-letter">${index === 0 ? 'A' : 'B'}${serving ? '<i></i>' : ''}</span>
           <strong class="team-name">${escapeHtml(teamTitle(team, index))}</strong>
-          <span class="team-score">${team.score}</span>
+          <span class="team-score">${escapeHtml(Number(team.score) || 0)}</span>
           <span class="score-action">${icon('plus')} ${actionLabel}</span>
         </button>
       `;
@@ -1466,7 +1590,7 @@
             <main class="display-wait">
               <div class="radar">${icon('radio')}</div>
               <h1>${escapeHtml(this.watchRoom)}</h1>
-              <p>${this.remoteStatus.phase === 'error' ? 'Could not load PeerJS' : 'Waiting for controller'}</p>
+              <p>${escapeHtml(this.remoteStatus.detail || (this.remoteStatus.phase === 'error' ? 'Could not connect to the local live server' : 'Waiting for controller'))}</p>
             </main>
           `}
           ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
@@ -1484,14 +1608,14 @@
             <div class="remote-call ${game.status === 'complete' ? 'complete' : ''}">
               <span class="remote-call-label">${game.status === 'complete' ? 'Result' : 'Current serving'}</span>
               <strong>${game.status === 'complete' ? 'FINAL' : escapeHtml(serve.playerName)}</strong>
-              <span class="remote-call-detail">${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(Engine.spokenScore(game))} · ${escapeHtml(serve.side)} side`}</span>
+              <span class="remote-call-detail">${game.status === 'complete' ? `${escapeHtml(Number(game.teams[0].score) || 0)}–${escapeHtml(Number(game.teams[1].score) || 0)}` : `${escapeHtml(Engine.spokenScore(game))} · ${escapeHtml(serve.side)} side`}</span>
             </div>
           </div>
           <div class="remote-grid">
             ${this.renderRemoteTeam(game, 0)}
             ${this.renderRemoteTeam(game, 1)}
           </div>
-          <footer class="remote-footer">${game.format} · first to ${game.target} · win by 2${this.remoteUpdatedAt ? ` · synced ${escapeHtml(formatDate(this.remoteUpdatedAt))}` : ''}</footer>
+          <footer class="remote-footer">${escapeHtml(game.format)} · first to ${escapeHtml(Number(game.target) || 11)} · win by 2${this.remoteUpdatedAt ? ` · synced ${escapeHtml(formatDate(this.remoteUpdatedAt))}` : ''}</footer>
         </main>
       `;
     }
@@ -1503,7 +1627,7 @@
         <section class="remote-team team-${index === 0 ? 'a' : 'b'} ${serving ? 'serving' : ''}">
           <span class="remote-letter">${index === 0 ? 'A' : 'B'}${serving ? '<i></i>' : ''}</span>
           <h2>${escapeHtml(teamTitle(team, index))}</h2>
-          <strong>${team.score}</strong>
+          <strong>${escapeHtml(Number(team.score) || 0)}</strong>
         </section>
       `;
     }

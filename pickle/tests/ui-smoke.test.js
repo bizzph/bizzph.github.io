@@ -45,7 +45,7 @@ test('minimal setup view renders a fifteen-minute default', () => {
   assert.match(app.innerHTML, /PicklePulse/);
   assert.match(app.innerHTML, /Add players first/);
   assert.match(app.innerHTML, /Watch a live game/);
-  assert.match(app.innerHTML, /placeholder="ROOM CODE"/);
+  assert.match(app.innerHTML, /Paste the secure link/);
   app.state.players = [
     { id: 'p1', name: 'Ava' }, { id: 'p2', name: 'Ben' },
     { id: 'p3', name: 'Cora' }, { id: 'p4', name: 'Drew' }
@@ -261,11 +261,67 @@ test('watch mode loads the live module only when requested', async () => {
 
   const app = new global.PickleballAppForTest();
   app.watchRoom = 'ABC234';
+  app.watchAccessKey = '23456789ABCDEFGHJKMN';
   await app.startViewer();
-  assert.equal(requestedScript, 'src/live-sync.js');
+  assert.equal(requestedScript, 'src/live-sync.js?v=8');
   assert.ok(app.viewer instanceof MockViewer);
 
   global.document.createElement = originalCreateElement;
   global.document.head = originalHead;
   delete global.PickleLive;
+});
+
+test('hostile remote values are normalized and escaped before rendering', () => {
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  app.watchRoom = 'ABC234';
+  app.remoteGame = global.PickleEngine.normalizeGame({
+    format: '<script>alert(1)</script>',
+    target: '<img src=x onerror=alert(1)>',
+    teams: [
+      { name: '<img src=x onerror=alert(1)>', players: ['<b>Ava</b>'], score: '<svg onload=alert(1)>' },
+      { name: 'Safe Team', players: ['Drew'], score: 5 }
+    ]
+  });
+  app.remoteStatus = { phase: 'live', room: 'ABC234', detail: '' };
+  app.render();
+  assert.doesNotMatch(app.innerHTML, /<script|<img src=x|<svg onload/i);
+  assert.match(app.innerHTML, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(app.innerHTML, /first to 11/);
+});
+
+test('viewer captures the live key in session storage and removes it from the address bar', () => {
+  const originalLocation = global.location;
+  const originalHistory = global.history;
+  const originalSessionStorage = global.sessionStorage;
+  const values = new Map();
+  let replacedUrl = '';
+  global.location = {
+    protocol: 'http:',
+    search: '?watch=ABC234',
+    hash: '#key=23456789ABCDEFGHJKMN',
+    href: 'http://192.168.1.25:4173/?watch=ABC234#key=23456789ABCDEFGHJKMN'
+  };
+  global.sessionStorage = {
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); }
+  };
+  global.history = {
+    state: null,
+    replaceState(value, _title, url) { this.state = value; replacedUrl = url || ''; },
+    pushState(value) { this.state = value; },
+    go() {}, back() {}
+  };
+
+  const app = new global.PickleballAppForTest();
+  assert.equal(app.watchRoom, 'ABC234');
+  assert.equal(app.watchAccessKey, '23456789ABCDEFGHJKMN');
+  assert.match(values.get('picklepulse-live-secret-v1'), /23456789ABCDEFGHJKMN/);
+  assert.equal(replacedUrl, 'http://192.168.1.25:4173/?watch=ABC234');
+
+  global.location = originalLocation;
+  global.history = originalHistory;
+  if (originalSessionStorage === undefined) delete global.sessionStorage;
+  else global.sessionStorage = originalSessionStorage;
 });
