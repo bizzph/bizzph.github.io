@@ -809,3 +809,116 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   .tool-btn { min-height: 44px; }
   .tool-btn .icon { width: 21px; height: 21px; }
 }
+
+/* v7.3: compact next-four queue on the final spectator screen. */
+.remote-scoreboard.has-next-queue {
+  grid-template-columns: minmax(0, 1fr) clamp(138px, 15vw, 184px);
+}
+.remote-scoreboard.has-next-queue .remote-meta,
+.remote-scoreboard.has-next-queue .remote-footer {
+  grid-column: 1 / -1;
+}
+.remote-scoreboard.has-next-queue .remote-grid {
+  grid-column: 1;
+  min-width: 0;
+}
+.remote-next-queue {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-left: 3px solid #6ad49b;
+  border-radius: 15px;
+  background: rgb(20 25 21 / 86%);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(8px);
+}
+.remote-next-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9ea8a0;
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.remote-next-title .icon {
+  width: 15px;
+  height: 15px;
+  color: #6ad49b;
+}
+.remote-next-queue ol {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  list-style: none;
+}
+.remote-next-queue li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+.remote-next-queue li > span {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #6ad49b;
+  background: rgb(106 212 155 / 12%);
+  font-size: .65rem;
+  font-weight: 900;
+}
+.remote-next-queue li > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #f4f8f5;
+  font-size: clamp(.72rem, 1.15vw, .9rem);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .remote-scoreboard.has-next-queue {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto auto;
+  }
+  .remote-scoreboard.has-next-queue .remote-meta,
+  .remote-scoreboard.has-next-queue .remote-grid,
+  .remote-scoreboard.has-next-queue .remote-footer,
+  .remote-next-queue {
+    grid-column: 1;
+  }
+  .remote-next-queue {
+    grid-row: 3;
+    width: 100%;
+    padding: 8px 10px;
+  }
+  .remote-next-queue ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+  }
+  .remote-next-queue li {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 5px;
+  }
+  .remote-next-queue li > span {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+  }
+  .remote-next-queue li > b {
+    font-size: .68rem;
+  }
+  .remote-scoreboard.has-next-queue .remote-footer {
+    grid-row: 4;
+  }
+}

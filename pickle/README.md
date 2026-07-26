@@ -1,4 +1,4 @@
-# PicklePulse v7.2
+# PicklePulse v7.3
 
 PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scoring controller and an optional read-only live display powered by PeerJS. It needs no account, database, API key, package install, or build step.
 
@@ -16,6 +16,7 @@ PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scorin
 - Protected scoring mode with back-navigation and refresh/close warnings
 - Persistent live room recovery after an accidental controller refresh
 - Large current-server callout on the spectator display
+- Compact right-side **Next 4** queue panel after the live score becomes final
 - Optional spoken score, server, and court-side announcements
 - Side-out singles and doubles scoring, including the correct doubles opening call `0 - 0 - 2`
 - Games to 11, 15, or 21, win by two
@@ -77,7 +78,7 @@ A direct spectator URL still works:
 https://example.github.io/pickleball-scorekeeper/?watch=RCBZLH
 ```
 
-The spectator display is read-only. It shows the current server prominently, the spoken serving score, the correct court side, timer, and both team scores.
+The spectator display is read-only. It shows the current server prominently, the spoken serving score, the correct court side, timer, and both team scores. After a game becomes final, a compact side panel shows up to the first four waiting players from the controller queue.
 
 ### Accidental navigation protection
 

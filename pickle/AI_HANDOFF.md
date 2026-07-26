@@ -1,4 +1,4 @@
-# AI Handoff: PicklePulse v7.2
+# AI Handoff: PicklePulse v7.3
 
 Read this before modifying the project.
 
@@ -26,6 +26,8 @@ The interface is icon-first and touch-oriented. Preserve large score targets, mi
 1. `game-engine.js`
 2. `player-data.js`
 3. `app.js`
+
+The controller live snapshot also includes `nextQueue`, containing only the first four waiting player names. The spectator renders it only when the received game status is `complete`.
 
 `src/live-sync.js` is injected only when a controller starts live mode or a `?watch=ROOM` page opens. PeerJS itself is not bundled; `loadPeerJS()` then loads version `1.5.5` from jsDelivr, with unpkg as fallback. After changing any eager source file, run `npm run build:core` and commit the regenerated bundle.
 

@@ -329,3 +329,67 @@ test('manual end asks for confirmation before completing the game', async () => 
   assert.equal(app.state.currentGame.status, 'complete');
   global.confirm = originalConfirm;
 });
+
+
+test('final live display shows a compact next-four queue panel', () => {
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  app.watchRoom = 'RCBZLH';
+  app.remoteGame = global.PickleEngine.createGame({
+    format: 'doubles', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben',
+    teamBPlayer1: 'Cora', teamBPlayer2: 'Drew'
+  });
+  app.remoteGame.status = 'complete';
+  app.remoteGame.teams[0].score = 11;
+  app.remoteGame.teams[1].score = 8;
+  app.remoteGame.nextQueue = ['Eli', 'Faye', '<Gus>', 'Hope', 'Ignored'];
+  app.remoteStatus = { phase: 'live', room: 'RCBZLH', detail: '' };
+  app.render();
+  assert.match(app.innerHTML, /class="remote-scoreboard has-next-queue"/);
+  assert.match(app.innerHTML, /class="remote-next-queue"/);
+  assert.match(app.innerHTML, /Next 4/);
+  assert.match(app.innerHTML, /Eli/);
+  assert.match(app.innerHTML, /Faye/);
+  assert.match(app.innerHTML, /&lt;Gus&gt;/);
+  assert.match(app.innerHTML, /Hope/);
+  assert.doesNotMatch(app.innerHTML, /Ignored/);
+});
+
+test('active live display does not show the next-four queue panel', () => {
+  const app = new global.PickleballAppForTest();
+  app.mode = 'display';
+  app.watchRoom = 'RCBZLH';
+  app.remoteGame = global.PickleEngine.createGame({ format: 'singles' });
+  app.remoteGame.nextQueue = ['Eli', 'Faye', 'Gus', 'Hope'];
+  app.remoteStatus = { phase: 'live', room: 'RCBZLH', detail: '' };
+  app.render();
+  assert.doesNotMatch(app.innerHTML, /remote-next-queue/);
+  assert.doesNotMatch(app.innerHTML, /has-next-queue/);
+});
+
+test('final live snapshot uses the first four waiting players after requeue', () => {
+  global.localStorage.value = null;
+  const app = new global.PickleballAppForTest();
+  app.state.players = [
+    { id: 'p1', name: 'Ava' }, { id: 'p2', name: 'Ben' },
+    { id: 'p3', name: 'Cora' }, { id: 'p4', name: 'Drew' },
+    { id: 'p5', name: 'Eli' }, { id: 'p6', name: 'Faye' },
+    { id: 'p7', name: 'Gus' }, { id: 'p8', name: 'Hope' }
+  ];
+  const game = global.PickleEngine.createGame({
+    format: 'doubles', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben',
+    teamBPlayer1: 'Cora', teamBPlayer2: 'Drew'
+  });
+  app.state.currentGame = game;
+  app.state.queue = global.PicklePlayers.normalizeQueue({
+    waiting: ['p5', 'p6', 'p7', 'p8'],
+    onCourt: ['p1', 'p2', 'p3', 'p4'],
+    activeGameId: game.id
+  }, app.state.players);
+  let sent = null;
+  app.liveController = { broadcast() { sent = app.liveSnapshot(); } };
+  const finalGame = global.PickleEngine.endGame(game, Date.now());
+  app.setCurrentGame(finalGame);
+  assert.deepEqual(sent.nextQueue, ['Eli', 'Faye', 'Gus', 'Hope']);
+  assert.deepEqual(app.state.queue.waiting.slice(-4), ['p1', 'p2', 'p3', 'p4']);
+});

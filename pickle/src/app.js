@@ -339,6 +339,23 @@
       return player ? player.name : 'Unknown';
     }
 
+    nextQueuePlayers() {
+      return this.state.queue.waiting
+        .slice(0, 4)
+        .map((id) => this.playerById(id))
+        .filter(Boolean)
+        .map((player) => player.name);
+    }
+
+    liveSnapshot() {
+      if (!this.state.currentGame) return null;
+      return {
+        ...this.state.currentGame,
+        appearance: normalizeAppearance(this.state.appearance),
+        nextQueue: this.nextQueuePlayers()
+      };
+    }
+
     readNetwork() {
       const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
       if (!navigator.onLine) return { level: 'offline', label: 'Offline' };
@@ -537,7 +554,7 @@
         this.render();
         const controller = new LiveApi.LiveController({
           room,
-          getState: () => this.state.currentGame ? { ...this.state.currentGame, appearance: normalizeAppearance(this.state.appearance) } : null,
+          getState: () => this.liveSnapshot(),
           onStatus: (status) => {
             this.live = status;
             this.render();
@@ -766,6 +783,7 @@
       this.resetQueueDrag();
       if (changed) {
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.render();
       }
     }
@@ -1037,6 +1055,7 @@
       if (action === 'queue-add') {
         this.state.queue = Players.addToQueue(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
@@ -1045,18 +1064,21 @@
         this.state.queue = Players.addAllToQueue(this.state.queue, this.state.players);
         const added = this.state.queue.waiting.length - before;
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.showToast(added ? `${added} player${added === 1 ? '' : 's'} added to queue` : 'All players are already queued');
         return;
       }
       if (action === 'queue-remove') {
         this.state.queue = Players.removeFromQueue(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
       if (action === 'queue-up' || action === 'queue-down') {
         this.state.queue = Players.moveInQueue(this.state.queue, target.dataset.player, action === 'queue-up' ? -1 : 1, this.state.players);
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
@@ -1067,6 +1089,7 @@
           return;
         }
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.view = 'setup';
         this.render();
         return;
@@ -1074,6 +1097,7 @@
       if (action === 'cancel-pending') {
         this.state.queue = Players.cancelPending(this.state.queue, this.state.players);
         this.persist();
+        if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
@@ -1084,6 +1108,7 @@
           this.state.players = this.state.players.filter((item) => item.id !== player.id);
           this.state.queue = Players.removePlayerEverywhere(this.state.queue, player.id, this.state.players);
           this.persist();
+          if (this.liveController) this.liveController.broadcast();
           this.render();
         }
         return;
@@ -1642,8 +1667,11 @@
     renderRemoteGame(game) {
       const remaining = Engine.getRemainingMs(game, Date.now());
       const serve = Engine.serviceDetails(game);
+      const nextQueue = game.status === 'complete' && Array.isArray(game.nextQueue)
+        ? game.nextQueue.slice(0, 4).map((name) => String(name || '').trim()).filter(Boolean)
+        : [];
       return `
-        <main class="remote-scoreboard">
+        <main class="remote-scoreboard ${nextQueue.length ? 'has-next-queue' : ''}">
           <div class="remote-meta">
             <time data-role="match-clock" class="${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
             <div class="remote-call ${game.status === 'complete' ? 'complete' : ''}">
@@ -1656,6 +1684,12 @@
             ${this.renderRemoteTeam(game, 0)}
             ${this.renderRemoteTeam(game, 1)}
           </div>
+          ${nextQueue.length ? `
+            <aside class="remote-next-queue" aria-label="Next players in queue">
+              <div class="remote-next-title">${icon('users')}<span>Next 4</span></div>
+              <ol>${nextQueue.map((name, index) => `<li><span>${index + 1}</span><b>${escapeHtml(name)}</b></li>`).join('')}</ol>
+            </aside>
+          ` : ''}
           <footer class="remote-footer">${game.format} · first to ${game.target} · win by 2${this.remoteUpdatedAt ? ` · synced ${escapeHtml(formatDate(this.remoteUpdatedAt))}` : ''}</footer>
         </main>
       `;
