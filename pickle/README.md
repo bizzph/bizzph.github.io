@@ -1,19 +1,35 @@
-# PicklePulse v8 — Secure LAN Edition
+# PicklePulse v7.2
 
-PicklePulse is a fast, local-first pickleball scorekeeper designed for this setup:
+PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scoring controller and an optional read-only live display powered by PeerJS. It needs no account, database, API key, package install, or build step.
 
-- score the match from a mobile browser;
-- show the read-only live score on a laptop;
-- keep both devices on the same trusted Wi-Fi network;
-- store players, queue, standings, game history, and settings in the scoring browser.
+## What is included
 
-Version 8 removes the public PeerJS/CDN path. Live scoring now uses the included Python server as a small authenticated relay on your local network. No account, cloud database, API key, or third-party JavaScript is required.
+- Local player roster stored in `localStorage`
+- Player dropdowns for singles and doubles setup
+- FIFO **four on, four off** player queue with fixed default mapping: 1 = Team A P1, 2 = Team A P2, 3 = Team B P1, 4 = Team B P2
+- One-tap **Add all** for every roster player who is not already queued or on court
+- Mouse and touch drag-and-drop queue ordering, with up/down buttons as accessible fallbacks
+- Automatic requeue of all four players after a queued game ends
+- Local standings calculated from completed saved games
+- JSON backup and restore for roster, queue, current game, history, appearance, and settings
+- Room-code connect form, so spectators do not need to edit the URL manually
+- Protected scoring mode with back-navigation and refresh/close warnings
+- Persistent live room recovery after an accidental controller refresh
+- Large current-server callout on the spectator display
+- Optional spoken score, server, and court-side announcements
+- Side-out singles and doubles scoring, including the correct doubles opening call `0 - 0 - 2`
+- Games to 11, 15, or 21, win by two
+- 15-minute default countdown, timer corrections, undo, and confirmed manual game end
+- Offline app shell and installable PWA metadata
+- Custom team score colors and high-contrast mode synchronized to spectators
+- Faster startup through a single eager core bundle, lazy live-network loading, idle service-worker registration, and focused timer updates
+- Compact icon-first controls with reduced helper text and accessible labels/tooltips
 
-## Start the app
+## Run locally
 
-Python 3 is the only runtime requirement.
+Extract the ZIP and start a local server.
 
-### macOS or Linux
+### macOS / Linux
 
 ```bash
 ./start.sh
@@ -24,152 +40,187 @@ Python 3 is the only runtime requirement.
 Double-click `start.bat`, or run:
 
 ```bat
-python serve.py --port 4173
+py -m http.server 4173
 ```
 
-### Any platform
-
-```bash
-python3 serve.py --port 4173
-```
-
-On the laptop, open:
+Then open:
 
 ```text
 http://localhost:4173
 ```
 
-On the phone, connect to the same trusted Wi-Fi and open the laptop's LAN address, for example:
+Basic local scoring also works when `index.html` is opened directly. PeerJS live mode and service workers work best over HTTP or HTTPS.
 
-```text
-http://192.168.1.25:4173
-```
+## Typical workflow
 
-Use the same LAN address on both devices when sharing a live display link. Allow Python through the operating-system firewall only for **private networks**. Do not expose port `4173` through router port forwarding.
+1. Open **Players** and add the local roster.
+2. Add waiting players individually or tap **Add all**. Drag the grip to reorder the queue when needed.
+3. Tap **Next 4** to load the first four waiting players.
+4. The queue prefills positions 1–2 as Team A and 3–4 as Team B. Review or change the teams, then start scoring.
+5. When the game ends, those four players return to the back of the queue.
+6. Open **History** to see completed-game standings and saved games.
 
-Basic scoring can still open from `index.html`, but authenticated live display mode requires `serve.py`.
+The queue is deliberately simple and transparent: first in, first out, four players on, then all four off. Players can be reordered by dragging the grip with a mouse or touch, or by using the up/down buttons, before the next game is loaded. The default assignment is always **1 = A P1, 2 = A P2, 3 = B P1, 4 = B P2**.
 
-## Secure live display
+## Live controller and spectator display
 
-1. Start a game on the phone.
+### Start a live room
+
+1. Start a game on the controller.
 2. Tap **Live**.
-3. Copy the full secure display link or the compact `ROOM.ACCESSKEY` code.
-4. Open or paste it on the laptop.
+3. Share the generated link or room code.
+4. On the spectator device, either open the shared link or enter the code in the **Watch a live game** form.
 
-A live link looks like:
+A direct spectator URL still works:
 
 ```text
-http://192.168.1.25:4173/?watch=RCBZLH#key=23456789ABCDEFGHJKMN
+https://example.github.io/pickleball-scorekeeper/?watch=RCBZLH
 ```
 
-The room code identifies the relay slot. The separate random access key authorizes the viewer. The raw key arrives in the URL fragment, which is not included in the HTTP page request. The viewer captures it into session storage and removes it from the address bar. The browser derives a SHA-256 relay token before contacting the local API.
+The spectator display is read-only. It shows the current server prominently, the spoken serving score, the correct court side, timer, and both team scores.
 
-The controller sends only the public scoreboard snapshot:
+### Accidental navigation protection
 
-- team names and player display names;
-- scores, format, target, status, serve, and timer;
-- score-display colors.
+While an active game is being scored:
 
-It does **not** send rally history, local player IDs, roster, queue, standings, saved-game history, settings, or the raw access key. Live room data stays in server memory and is removed when the controller stops, the server exits, or the room expires.
+- internal navigation asks for confirmation before leaving the scoring screen;
+- browser Back is intercepted and shows an in-app warning;
+- refresh, tab close, and external navigation trigger the browser's standard unsaved-work warning;
+- the current game and live room code are persisted locally after changes;
+- after refresh, the controller attempts to restore the same live room automatically.
 
-The local relay limits each room to three active displays, caps messages at 64 KB, validates authentication on every request, and expires inactive viewer slots.
+Browsers control the exact wording of refresh/close warnings. They do not allow a web page to replace that prompt with custom text.
 
-## Security model
+## Voice announcements
 
-The v8 build includes:
+Tap the speaker icon on either the controller or spectator display to enable voice. Announcements use the browser's built-in `speechSynthesis` API and include:
 
-- no external scripts, CDNs, analytics, trackers, or internet dependency;
-- an authenticated same-origin LAN relay;
-- a strict Content Security Policy and defensive response headers;
-- schema-based validation for saved, imported, and remote game data;
-- escaped dynamic scoreboard rendering;
-- bounded imports, players, queue entries, games, rallies, scores, rooms, viewers, and message sizes;
-- an explicit static-file allowlist, so the server does not expose tests, source modules, documentation, or arbitrary files;
-- Host-header filtering, no CORS access, per-device API throttling, and bounded room creation;
-- session-only storage for the active live credential, excluded from JSON exports;
-- versioned core/live files and a restricted service-worker cache.
-
-### Trusted-Wi-Fi limitation
-
-Plain `http://` traffic is not encrypted. This is appropriate only on a Wi-Fi network you trust and control. Avoid public, guest, hotel, or open Wi-Fi. Anyone who obtains the complete secure link while the room is active can view that score.
-
-For encrypted LAN traffic, provide your own certificate and key:
-
-```bash
-python3 serve.py --port 4173 --cert certificate.pem --key private-key.pem
+```text
+0, 0, 2. Ava serving from the right side.
 ```
 
-Both devices must trust that certificate. HTTPS is optional for a private home or club network but preferred when you can configure it correctly.
+For doubles, the spoken score is always server score, receiver score, server number. Voice availability and the installed voice vary by browser and device. Audio is opt-in because many browsers require a user gesture before speech is allowed.
 
-## Players and queue
+## Standings
 
-Players are saved in the browser's local storage. Add players first, then select them from team dropdowns.
+Standings are generated locally from the latest completed snapshot of each saved game. They show:
 
-The queue uses FIFO four-on/four-off rotation. The first four waiting players are assigned as:
+- games played
+- wins and losses
+- win percentage
+- point differential
 
-1. Team A — Player 1
-2. Team A — Player 2
-3. Team B — Player 1
-4. Team B — Player 2
+Unfinished/manual mid-game saves are excluded. Player IDs are stored with game records so renamed or duplicate-looking names are less likely to corrupt the standings.
 
-Assignments can still be edited before starting. After a completed queued game, all four return to the back of the line.
+## JSON backup and restore
 
-## Standings and backups
+Use the download and upload buttons in **History**. Version 7 backups contain the complete local state:
 
-Standings are calculated locally from completed saved games. They include games played, wins, losses, win percentage, points for/against, and point differential.
-
-JSON export includes the roster, queue, completed history, current game, appearance, and settings. The active live access key is intentionally excluded. Imports are limited to 5 MB and are normalized before becoming application state. Invalid or oversized data is rejected, and the previous state is restored if import persistence fails.
-
-Browser storage is convenient but not a permanent database. Export a backup periodically if the history matters.
-
-## Scoring features
-
-- singles and doubles;
-- automatic server number, serving player, and court side;
-- win-by-two scoring;
-- undo;
-- countdown timer with quick and exact adjustments;
-- current-server emphasis on the laptop display;
-- optional voice score and serve announcements;
-- warning before refresh, closing, or accidental navigation during active scoring;
-- local recovery of the active game after a refresh.
-
-## Performance
-
-Normal startup uses one eager, versioned JavaScript bundle. The local live module is loaded only when a controller starts a room or a viewer opens a secure live link. Timer ticks update only the visible clock rather than rebuilding the interface.
-
-After editing `src/game-engine.js`, `src/player-data.js`, or `src/app.js`, regenerate the browser bundle:
-
-```bash
-npm run build:core
+```json
+{
+  "app": "PicklePulse",
+  "schemaVersion": 3,
+  "exportedAt": "2026-07-26T00:00:00.000Z",
+  "players": [
+    { "id": "player-...", "name": "Ava", "createdAt": "..." }
+  ],
+  "queue": {
+    "waiting": [],
+    "pending": [],
+    "onCourt": [],
+    "activeGameId": ""
+  },
+  "currentGame": null,
+  "games": [],
+  "appearance": {
+    "teamA": "#ffd400",
+    "teamB": "#00d9ff",
+    "highContrast": true
+  },
+  "settings": {
+    "voiceEnabled": false
+  }
+}
 ```
+
+Imports merge roster entries by normalized player name, remap player IDs in games, avoid duplicate saved snapshots, and append imported waiting players to the local queue. Imported `onCourt` state is intentionally not resumed automatically.
+
+## PeerJS notes
+
+PeerJS wraps WebRTC data channels. The controller creates a deterministic peer ID from the room code, while spectator browsers connect to that controller and receive complete state snapshots. Spectator messages are ignored.
+
+The local live-sync module is loaded only when live mode is requested. It then loads the pinned PeerJS `1.5.5` browser client from jsDelivr with an unpkg fallback. Core scoring, roster, queue, standings, history, and JSON backup do not need PeerJS or internet access.
+
+Live limitations:
+
+- controller and spectator browsers must remain open;
+- internet access is required for signaling and live connectivity;
+- restrictive networks may block WebRTC;
+- there is no cloud copy of a game;
+- same-room recovery after refresh is best effort and can fail while a stale peer ID is still registered;
+- the free public PeerServer is appropriate for casual use and prototypes, not guaranteed tournament infrastructure.
 
 ## Tests
 
-Run:
+Node.js 18 or newer:
 
 ```bash
 npm test
 ```
 
-The suite covers scoring rules, serving rotation, timers, queue ordering, standings, hostile import normalization, public-state filtering, secure room parsing, relay authentication, wrong-key rejection, payload bounds, optimized loading, security policy, and UI smoke behavior.
+The suite covers scoring rules, serving-player rotation, win-by-two, undo, timers, room generation, PeerJS controller-to-viewer transfer, queue rotation, add-all, drag reordering, team mapping, end-game confirmation, standings deduplication, unfinished-game exclusion, optimized loading, appearance synchronization, and UI smoke rendering.
+
+For syntax-only checks:
+
+```bash
+node --check src/game-engine.js
+node --check src/live-sync.js
+node --check src/player-data.js
+node --check src/app.js
+node --check src/picklepulse-core.js
+```
+
+After editing `game-engine.js`, `player-data.js`, or `app.js`, regenerate the checked-in browser bundle:
+
+```bash
+npm run build:core
+```
 
 ## Project structure
 
 ```text
-index.html                     App shell and icon sprite
-styles.css                     Responsive UI
-src/picklepulse-core.js        Generated eager browser bundle
-src/live-sync.js               Lazy authenticated LAN client
-src/game-engine.js             Scoring and strict game schema
-src/player-data.js             Roster, queue, and standings
-src/app.js                     UI, persistence, import/export, live controls
-serve.py                       Hardened static server and in-memory relay
-sw.js                          Restricted offline cache
-scripts/build-core.js          Deterministic core bundler
-tests/                         Node test suite
+pickleball-scorekeeper/
+├── index.html
+├── styles.css
+├── manifest.webmanifest
+├── sw.js
+├── package.json
+├── start.sh
+├── start.bat
+├── src/
+│   ├── app.js
+│   ├── game-engine.js
+│   ├── live-sync.js
+│   ├── picklepulse-core.js
+│   └── player-data.js
+├── scripts/
+│   └── build-core.js
+├── tests/
+│   ├── game-engine.test.js
+│   ├── live-sync.test.js
+│   ├── loading.test.js
+│   ├── player-data.test.js
+│   └── ui-smoke.test.js
+├── assets/
+│   └── icon.svg
+├── README.md
+└── AI_HANDOFF.md
 ```
+
+## Privacy
+
+Roster names, queue state, settings, current game, and history remain in the controller browser unless the user exports JSON. During live mode, the current game state and appearance are sent directly to connected spectator peers. There is no analytics code.
 
 ## License
 
-MIT
+MIT. See `LICENSE`.

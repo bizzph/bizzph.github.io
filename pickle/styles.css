@@ -602,7 +602,11 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .queue-card > header, .roster-card > header, .saved-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .queue-card h2, .queue-card p, .roster-card h2, .saved-section-head h2 { margin: 0; }
 .queue-card header p { margin-top: 3px; color: var(--muted); font-size: .75rem; }
-.queue-next { min-height: 42px; padding: 0 13px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; color: #fff; background: var(--accent); font-weight: 850; cursor: pointer; }
+.queue-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.queue-add-all, .queue-next { min-height: 42px; padding: 0 12px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 850; cursor: pointer; }
+.queue-add-all { border: 1px solid var(--line); color: var(--accent); background: var(--bg); }
+.queue-next { border: 0; color: #fff; background: var(--accent); }
+.queue-add-all .icon, .queue-next .icon { width: 16px; height: 16px; }
 @media (prefers-color-scheme: dark) { .queue-next { color: #082015; } }
 .on-court, .queue-ready { display: grid; gap: 4px; padding: 11px 12px; border-radius: 13px; background: var(--surface-2); }
 .on-court span, .queue-ready span { color: var(--muted); font-size: .67rem; font-weight: 850; text-transform: uppercase; letter-spacing: .07em; }
@@ -610,8 +614,15 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .queue-ready span, .queue-ready b { grid-column: 1; }
 .queue-ready button { grid-column: 2; grid-row: 1 / 3; align-self: center; border: 0; padding: 8px 10px; border-radius: 10px; color: var(--accent); background: var(--accent-soft); font-weight: 850; cursor: pointer; }
 .queue-list { margin: 0; padding: 0; display: grid; gap: 7px; list-style: none; counter-reset: queue; }
-.queue-list li { min-width: 0; min-height: 48px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 6px 5px 9px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); }
+.queue-list li { position: relative; min-width: 0; min-height: 48px; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); transition: opacity .12s ease, transform .12s ease, border-color .12s ease; }
 .queue-list li.is-pending { border-color: color-mix(in srgb, var(--accent) 48%, var(--line)); background: var(--accent-soft); }
+.queue-list li.is-dragging { opacity: .48; transform: scale(.985); }
+.queue-list li.drop-before::before, .queue-list li.drop-after::after { content: ''; position: absolute; z-index: 2; left: 8px; right: 8px; height: 3px; border-radius: 999px; background: var(--accent); pointer-events: none; }
+.queue-list li.drop-before::before { top: -5px; }
+.queue-list li.drop-after::after { bottom: -5px; }
+.queue-drag-handle { width: 32px; height: 36px; border: 0; border-radius: 9px; display: grid; place-items: center; color: var(--muted); background: transparent; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.queue-drag-handle:active { cursor: grabbing; background: var(--surface); color: var(--text); }
+.queue-drag-handle .icon { width: 19px; height: 19px; }
 .queue-position { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; color: var(--muted); background: var(--surface); font-size: .72rem; font-weight: 900; }
 .queue-list b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .87rem; }
 .queue-actions { display: flex; gap: 2px; }
@@ -677,7 +688,8 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   .connect-card label { grid-template-columns: 1fr; }
   .connect-card label button { min-height: 44px; }
   .queue-card > header { align-items: flex-start; }
-  .queue-next { min-width: 92px; }
+  .queue-header-actions { display: grid; grid-template-columns: 1fr; }
+  .queue-add-all, .queue-next { min-width: 92px; min-height: 38px; }
   .roster-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .roster-row .queue-chip { grid-column: 2; justify-self: start; }
   .roster-row .icon-btn { grid-column: 3; grid-row: 1 / 3; }
@@ -694,4 +706,106 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   .remote-call { padding-block: 4px; }
   .remote-call-label { display: none; }
   .remote-call strong { font-size: clamp(1rem, 5vh, 1.8rem); }
+}
+
+/* v7.2: compact icon-first interface */
+.icon-only {
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 !important;
+  display: inline-grid !important;
+  place-items: center;
+}
+.icon-only .icon { width: 20px; height: 20px; }
+.icon-start { width: 58px; min-width: 58px; padding: 0; }
+.icon-start .icon { width: 23px; height: 23px; }
+
+.next-match-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+.next-match-icon { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: var(--accent); background: var(--surface); }
+.next-match-icon .icon { width: 18px; height: 18px; }
+
+.connect-card { grid-template-columns: auto minmax(0, 1fr); gap: 11px; }
+.connect-card > .connect-icon { flex: 0 0 auto; }
+.connect-card label { grid-template-columns: minmax(0, 1fr) auto; }
+.connect-card label button { padding: 0; }
+
+.setup-title-row { align-items: center; }
+.section-head > h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.3rem); }
+.add-player-form button.icon-only { padding: 0; }
+
+.queue-add-all,
+.queue-next {
+  position: relative;
+  width: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+}
+.queue-add-all .icon,
+.queue-next .icon { width: 19px; height: 19px; }
+.button-count {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: .56rem;
+  font-weight: 950;
+  line-height: 1;
+}
+.on-court,
+.queue-ready { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+.on-court > span,
+.queue-ready > span {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface);
+}
+.on-court > span .icon,
+.queue-ready > span .icon { width: 17px; height: 17px; }
+.on-court b,
+.queue-ready b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-ready span,
+.queue-ready b { grid-column: auto; }
+.queue-ready button { grid-column: 3; grid-row: 1; padding: 0; color: var(--accent); background: var(--surface); }
+.queue-empty { min-height: 64px; }
+.queue-empty .icon { width: 25px; height: 25px; opacity: .55; }
+.queue-chip {
+  width: 38px;
+  min-width: 38px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.queue-chip .icon { width: 17px; height: 17px; }
+.game-toolbar { padding: 6px; }
+.tool-btn { min-height: 48px; }
+.tool-btn .icon { width: 22px; height: 22px; }
+.standings-empty .icon { width: 30px; height: 30px; opacity: .55; }
+.display-brand { width: 34px; height: 34px; justify-content: center; border-radius: 50%; background: rgb(106 212 155 / 10%); }
+.display-brand .icon { margin: 0; }
+
+@media (max-width: 480px) {
+  .queue-header-actions { display: flex; grid-template-columns: none; }
+  .queue-add-all,
+  .queue-next { min-width: 38px; width: 38px; min-height: 38px; }
+  .connect-card { grid-template-columns: auto minmax(0, 1fr); }
+  .connect-card label { grid-template-columns: minmax(0, 1fr) auto; }
+  .connect-card label button { min-height: 46px; }
+  .roster-row .queue-chip { grid-column: auto; justify-self: auto; }
+  .tool-btn { min-height: 44px; }
+  .tool-btn .icon { width: 21px; height: 21px; }
 }

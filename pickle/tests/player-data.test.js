@@ -57,3 +57,23 @@ test('standings ignore unfinished saved snapshots', () => {
   assert.equal(rows.find((row) => row.id === 'p1').games, 0);
   assert.equal(rows.find((row) => row.id === 'p3').games, 0);
 });
+
+test('add all queues every available roster player once', () => {
+  const queue = Players.normalizeQueue({ waiting: ['p2'], onCourt: ['p4'] }, roster);
+  const next = Players.addAllToQueue(queue, roster);
+  assert.deepEqual(next.waiting, ['p2', 'p1', 'p3', 'p5']);
+  assert.deepEqual(next.onCourt, ['p4']);
+});
+
+test('drag reorder moves players before or after a target and refreshes pending four', () => {
+  let queue = Players.normalizeQueue({
+    waiting: ['p1', 'p2', 'p3', 'p4', 'p5'],
+    pending: ['p1', 'p2', 'p3', 'p4']
+  }, roster);
+  queue = Players.reorderQueue(queue, 'p5', 'p2', false, roster);
+  assert.deepEqual(queue.waiting, ['p1', 'p5', 'p2', 'p3', 'p4']);
+  assert.deepEqual(queue.pending, ['p1', 'p5', 'p2', 'p3']);
+  queue = Players.reorderQueue(queue, 'p1', 'p4', true, roster);
+  assert.deepEqual(queue.waiting, ['p5', 'p2', 'p3', 'p4', 'p1']);
+  assert.deepEqual(queue.pending, ['p5', 'p2', 'p3', 'p4']);
+});

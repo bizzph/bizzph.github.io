@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
 set -eu
 PORT="${PORT:-4173}"
-python3 serve.py --port "$PORT"
+echo "PicklePulse is available at http://localhost:${PORT}"
+python3 -m http.server "$PORT"

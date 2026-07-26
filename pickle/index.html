@@ -3,10 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'; script-src-attr 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'" />
-    <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#0e110f" />
-    <meta name="description" content="Local-first pickleball scorekeeper with player roster, queue, standings, voice calls, protected scoring, and authenticated local Wi-Fi live display." />
+    <meta name="description" content="Local-first pickleball scorekeeper with player roster, queue, standings, voice calls, protected scoring, and PeerJS live display mode." />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
@@ -41,10 +39,13 @@
       <symbol id="pp-icon-speakerOff" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5ZM16 10l5 5M21 10l-5 5"/></symbol>
       <symbol id="pp-icon-arrowUp" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
       <symbol id="pp-icon-arrowDown" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="pp-icon-grip" viewBox="0 0 24 24"><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></symbol>
       <symbol id="pp-icon-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6Z"/><path d="m9 12 2 2 4-5"/></symbol>
+      <symbol id="pp-icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="pp-icon-userPlus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2.5 21v-2a5.5 5.5 0 0 1 11 0v2M18 8v8M14 12h8"/></symbol>
     </svg>
     <pickleball-app></pickleball-app>
     <noscript>This app needs JavaScript enabled.</noscript>
-    <script defer fetchpriority="high" src="src/picklepulse-core.js?v=8"></script>
+    <script defer fetchpriority="high" src="src/picklepulse-core.js"></script>
   </body>
 </html>
