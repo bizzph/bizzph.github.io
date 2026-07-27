@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 class FakeElement {
   constructor() { this.innerHTML = ''; }
@@ -331,7 +333,7 @@ test('manual end asks for confirmation before completing the game', async () => 
 });
 
 
-test('final live display shows a compact next-four queue panel', () => {
+test('final live display shows a floating bottom next-four queue panel', () => {
   const app = new global.PickleballAppForTest();
   app.mode = 'display';
   app.watchRoom = 'RCBZLH';
@@ -353,6 +355,15 @@ test('final live display shows a compact next-four queue panel', () => {
   assert.match(app.innerHTML, /&lt;Gus&gt;/);
   assert.match(app.innerHTML, /Hope/);
   assert.doesNotMatch(app.innerHTML, /Ignored/);
+});
+
+
+
+test('final next-four panel is fixed at the bottom with readable names', () => {
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(styles, /\.remote-next-queue\s*\{[\s\S]*?position:\s*fixed;/);
+  assert.match(styles, /\.remote-next-queue\s*\{[\s\S]*?bottom:\s*max\(18px, env\(safe-area-inset-bottom\)\);/);
+  assert.match(styles, /\.remote-next-queue li > b\s*\{[\s\S]*?font-size:\s*clamp\(1rem, 2vw, 1\.45rem\);/);
 });
 
 test('active live display does not show the next-four queue panel', () => {

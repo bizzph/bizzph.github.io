@@ -1,4 +1,4 @@
-# AI Handoff: PicklePulse v7.3
+# AI Handoff: PicklePulse v7.4
 
 Read this before modifying the project.
 
