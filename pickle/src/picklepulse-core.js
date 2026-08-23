@@ -721,7 +721,19 @@
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
   const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
-  const DEFAULT_SETTINGS = Object.freeze({ voiceEnabled: false });
+  const DEFAULT_SETTINGS = Object.freeze({
+    voiceEnabled: false,
+    voiceURI: '',
+    theme: 'system',
+    lofiEnabled: false,
+    lofiTrack: 'sunny',
+    scoreboardSwapped: false
+  });
+  const LOFI_TRACKS = Object.freeze([
+    { id: 'sunny', label: 'Sunny Rally', notes: [261.63, 329.63, 392.00, 493.88, 392.00, 329.63, 293.66, 392.00] },
+    { id: 'bounce', label: 'Kitchen Bounce', notes: [220.00, 277.18, 329.63, 369.99, 329.63, 277.18, 246.94, 329.63] },
+    { id: 'drive', label: 'Baseline Drive', notes: [196.00, 246.94, 293.66, 349.23, 293.66, 246.94, 220.00, 293.66] }
+  ]);
   const COLOR_PRESETS = Object.freeze([
     { id: 'classic', label: 'Classic', teamA: '#1e7350', teamB: '#4e5f8d' },
     { id: 'bright', label: 'Bright', teamA: '#00c875', teamB: '#3b82f6' },
@@ -847,7 +859,16 @@
 
   function normalizeSettings(value) {
     const source = value && typeof value === 'object' ? value : DEFAULT_SETTINGS;
-    return { voiceEnabled: Boolean(source.voiceEnabled) };
+    const theme = ['light', 'dark', 'system'].includes(source.theme) ? source.theme : 'system';
+    const lofiTrack = LOFI_TRACKS.some((track) => track.id === source.lofiTrack) ? source.lofiTrack : 'sunny';
+    return {
+      voiceEnabled: Boolean(source.voiceEnabled),
+      voiceURI: String(source.voiceURI || ''),
+      theme,
+      lofiEnabled: Boolean(source.lofiEnabled),
+      lofiTrack,
+      scoreboardSwapped: Boolean(source.scoreboardSwapped)
+    };
   }
 
   function appearanceStyle(value) {
@@ -871,18 +892,69 @@
     return [game.status, game.teams[0].score, game.teams[1].score, game.servingTeam, game.serverNumber, details.playerName, details.side].join('|');
   }
 
-  function gameAnnouncement(game) {
-    if (!game || !Array.isArray(game.teams)) return '';
+  function isMatchPoint(game) {
+    if (!game || game.status !== 'active' || !Array.isArray(game.teams)) return false;
+    const serving = Number(game.servingTeam) === 1 ? 1 : 0;
+    const receiving = serving === 0 ? 1 : 0;
+    const serverScore = Number(game.teams[serving].score) || 0;
+    const receiverScore = Number(game.teams[receiving].score) || 0;
+    const target = Number(game.target) || 11;
+    const winBy = Number(game.winBy) || 2;
+    return serverScore + 1 >= target && (serverScore + 1) - receiverScore >= winBy;
+  }
+
+  function rallyCall(previous, game) {
+    if (!previous || !game || previous.status !== 'active' || game.status !== 'active') return '';
+    if (Number(previous.servingTeam) !== Number(game.servingTeam)) return 'Side out.';
+    if (game.format === 'doubles' && Number(previous.serverNumber) === 1 && Number(game.serverNumber) === 2) return 'Second server.';
+    return '';
+  }
+
+  const VOICE_SEGMENT_PAUSE_MS = 500;
+  const VOICE_NOVELTY_PATTERN = /\b(?:albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|junior|organ|princess|ralph|superstar|trinoids|whisper|zarvox|wobble)\b/i;
+  const VOICE_PREFERENCE_TERMS = Object.freeze([
+    ['natural', 140], ['neural', 140], ['enhanced', 120], ['premium', 120],
+    ['microsoft aria', 105], ['microsoft jenny', 105], ['microsoft ava', 100],
+    ['microsoft sonia', 96], ['microsoft ryan', 94], ['google us english', 100],
+    ['google uk english', 88], ['samantha', 92], ['alex', 84], ['daniel', 82],
+    ['karen', 80], ['moira', 78], ['tessa', 78]
+  ]);
+
+  function voiceClarityScore(voice) {
+    const name = String(voice && voice.name || '').toLowerCase();
+    const lang = String(voice && voice.lang || '').toLowerCase().replace('_', '-');
+    if (VOICE_NOVELTY_PATTERN.test(name)) return -10000;
+    let score = 0;
+    if (lang === 'en-us') score += 36;
+    else if (lang === 'en-gb') score += 28;
+    else if (lang === 'en-ca') score += 22;
+    else if (lang === 'en-au' || lang === 'en-nz') score += 20;
+    else if (lang.startsWith('en-')) score += 14;
+    if (voice && voice.localService) score += 8;
+    if (voice && voice.default) score += 6;
+    for (const [term, weight] of VOICE_PREFERENCE_TERMS) {
+      if (name.includes(term)) score += weight;
+    }
+    return score;
+  }
+
+  function gameAnnouncementSegments(game, previous) {
+    if (!game || !Array.isArray(game.teams)) return [];
     if (game.status === 'complete') {
       const a = Number(game.teams[0].score) || 0;
       const b = Number(game.teams[1].score) || 0;
-      if (a === b) return `Game ended, tied at ${a}.`;
+      if (a === b) return [`Game ended.`, `Tied at ${a}.`];
       const winner = a > b ? 0 : 1;
-      return `Game. ${teamTitle(game.teams[winner], winner)} wins, ${Math.max(a, b)} to ${Math.min(a, b)}.`;
+      return ['Game.', `${teamTitle(game.teams[winner], winner)} wins.`, `${Math.max(a, b)} to ${Math.min(a, b)}.`];
     }
     const serve = Engine.serviceDetails(game);
-    const score = Engine.spokenScore(game).replaceAll(' - ', ', ');
-    return `${score}. ${serve.playerName} serving from the ${serve.side.toLowerCase()} side.`;
+    const score = `${Engine.spokenScore(game).replaceAll(' - ', ', ')}.`;
+    return [
+      rallyCall(previous, game),
+      isMatchPoint(game) ? 'Match point.' : '',
+      score,
+      `${serve.playerName} on the ${serve.side.toLowerCase()} side.`
+    ].filter(Boolean);
   }
 
   class PickleballApp extends HTMLElement {
@@ -896,6 +968,7 @@
       this.network = this.readNetwork();
       this.toast = '';
       this.showColors = false;
+      this.showAudio = false;
       this.showTimerAdjust = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
@@ -908,8 +981,18 @@
       this.remoteUpdatedAt = null;
       this.viewer = null;
       this.displayVoiceEnabled = false;
+      this.displayVoiceURI = '';
+      this.displayScoreboardSwapped = false;
+      this.availableVoices = [];
+      this.playerNameDraft = '';
+      this.audioContext = null;
+      this.lofiTimer = null;
+      this.lofiStep = 0;
+      this.lofiResumeAfterSpeech = false;
       this.lastVoiceSignature = this.state.currentGame ? voiceSignature(this.state.currentGame) : '';
       this.lastRemoteVoiceSignature = '';
+      this.voiceGeneration = 0;
+      this.voicePauseTimer = null;
       this._playerMapSource = null;
       this._playerMap = new Map();
       this.draggedQueueId = '';
@@ -919,6 +1002,8 @@
       this.boundClick = this.onClick.bind(this);
       this.boundSubmit = this.onSubmit.bind(this);
       this.boundChange = this.onChange.bind(this);
+      this.boundInput = this.onInput.bind(this);
+      this.boundVoicesChanged = this.refreshVoices.bind(this);
       this.boundNetwork = this.onNetworkChange.bind(this);
       this.boundFullscreen = this.onFullscreenChange.bind(this);
       this.boundBeforeUnload = this.onBeforeUnload.bind(this);
@@ -936,6 +1021,7 @@
       this.addEventListener('click', this.boundClick);
       this.addEventListener('submit', this.boundSubmit);
       this.addEventListener('change', this.boundChange);
+      this.addEventListener('input', this.boundInput);
       this.addEventListener('dragstart', this.boundDragStart);
       this.addEventListener('dragover', this.boundDragOver);
       this.addEventListener('drop', this.boundDrop);
@@ -950,9 +1036,12 @@
       window.addEventListener('popstate', this.boundPopState);
       document.addEventListener('fullscreenchange', this.boundFullscreen);
       document.addEventListener('webkitfullscreenchange', this.boundFullscreen);
+      if (globalThis.speechSynthesis && speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', this.boundVoicesChanged);
       if (navigator.connection && navigator.connection.addEventListener) {
         navigator.connection.addEventListener('change', this.boundNetwork);
       }
+      this.refreshVoices(false);
+      this.applyTheme();
       this.render();
       if (this.shouldProtectScoring()) this.armScoringGuard();
       this.clock = window.setInterval(() => {
@@ -986,6 +1075,14 @@
       window.removeEventListener('popstate', this.boundPopState);
       document.removeEventListener('fullscreenchange', this.boundFullscreen);
       document.removeEventListener('webkitfullscreenchange', this.boundFullscreen);
+      if (globalThis.speechSynthesis && speechSynthesis.removeEventListener) speechSynthesis.removeEventListener('voiceschanged', this.boundVoicesChanged);
+      this.voiceGeneration += 1;
+      if (this.voicePauseTimer) {
+        window.clearTimeout(this.voicePauseTimer);
+        this.voicePauseTimer = null;
+      }
+      if (globalThis.speechSynthesis) speechSynthesis.cancel();
+      this.stopLofi(false);
       if (navigator.connection && navigator.connection.removeEventListener) {
         navigator.connection.removeEventListener('change', this.boundNetwork);
       }
@@ -1065,6 +1162,7 @@
       return {
         ...this.state.currentGame,
         appearance: normalizeAppearance(this.state.appearance),
+        displaySwapped: Boolean(this.state.settings.scoreboardSwapped),
         nextQueue: this.nextQueuePlayers()
       };
     }
@@ -1086,6 +1184,136 @@
 
     onFullscreenChange() {
       if (this.mode === 'display') this.render();
+    }
+
+    onInput(event) {
+      if (event.target && event.target.name === 'playerName') this.playerNameDraft = String(event.target.value || '');
+    }
+
+    resolvedTheme() {
+      const setting = normalizeSettings(this.state.settings).theme;
+      if (setting === 'light' || setting === 'dark') return setting;
+      try {
+        return globalThis.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch (_error) {
+        return 'light';
+      }
+    }
+
+    applyTheme() {
+      const root = globalThis.document && document.documentElement;
+      if (!root) return;
+      const setting = normalizeSettings(this.state.settings).theme;
+      if (root.dataset) {
+        if (setting === 'light' || setting === 'dark') root.dataset.theme = setting;
+        else delete root.dataset.theme;
+      }
+    }
+
+    refreshVoices(render = true) {
+      if (!globalThis.speechSynthesis || typeof speechSynthesis.getVoices !== 'function') {
+        this.availableVoices = [];
+        return;
+      }
+      try {
+        const seen = new Set();
+        this.availableVoices = speechSynthesis.getVoices()
+          .filter((voice) => /^en(?:[-_]|$)/i.test(String(voice.lang || '')) || (!voice.lang && /english/i.test(String(voice.name || ''))))
+          .filter((voice) => {
+            const key = String(voice.voiceURI || `${voice.name}|${voice.lang}`);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return voiceClarityScore(voice) > -10000;
+          })
+          .sort((a, b) => voiceClarityScore(b) - voiceClarityScore(a) || String(a.name).localeCompare(String(b.name)))
+          .slice(0, 4);
+        if (render && this.showAudio) this.render();
+      } catch (_error) {
+        this.availableVoices = [];
+      }
+    }
+
+    selectedVoice(remote = false) {
+      const uri = remote ? this.displayVoiceURI : normalizeSettings(this.state.settings).voiceURI;
+      if (!uri) return null;
+      return this.availableVoices.find((voice) => voice.voiceURI === uri) || null;
+    }
+
+    async ensureAudioContext() {
+      const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
+      if (!AudioContextCtor) return null;
+      try {
+        if (!this.audioContext) this.audioContext = new AudioContextCtor();
+        if (this.audioContext.state === 'suspended' && this.audioContext.resume) await this.audioContext.resume();
+        return this.audioContext;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    async startLofi() {
+      if (this.mode !== 'controller' || !normalizeSettings(this.state.settings).lofiEnabled) return false;
+      if (globalThis.speechSynthesis && speechSynthesis.speaking) {
+        this.lofiResumeAfterSpeech = true;
+        return false;
+      }
+      const context = await this.ensureAudioContext();
+      if (!context) {
+        this.showToast('Lo-fi audio unavailable');
+        return false;
+      }
+      if (this.lofiTimer) return true;
+      this.lofiStep = 0;
+      this.playLofiStep();
+      this.lofiTimer = window.setInterval(() => this.playLofiStep(), 520);
+      return true;
+    }
+
+    stopLofi(clearResume = true) {
+      if (this.lofiTimer) window.clearInterval(this.lofiTimer);
+      this.lofiTimer = null;
+      if (clearResume) this.lofiResumeAfterSpeech = false;
+    }
+
+    playLofiStep() {
+      const context = this.audioContext;
+      if (!context || context.state === 'closed') return;
+      if (globalThis.speechSynthesis && speechSynthesis.speaking) {
+        this.stopLofi(false);
+        this.lofiResumeAfterSpeech = true;
+        return;
+      }
+      const settings = normalizeSettings(this.state.settings);
+      const track = LOFI_TRACKS.find((item) => item.id === settings.lofiTrack) || LOFI_TRACKS[0];
+      const frequency = track.notes[this.lofiStep % track.notes.length];
+      const now = context.currentTime;
+      try {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.type = this.lofiStep % 4 === 0 ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(frequency, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.045, now + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+        osc.connect(gain);
+        gain.connect(context.destination);
+        osc.start(now);
+        osc.stop(now + 0.44);
+      } catch (_error) {}
+      this.lofiStep += 1;
+    }
+
+    pauseLofiForSpeech() {
+      if (!this.lofiTimer) return false;
+      this.stopLofi(false);
+      this.lofiResumeAfterSpeech = true;
+      return true;
+    }
+
+    resumeLofiAfterSpeech() {
+      const shouldResume = this.lofiResumeAfterSpeech && normalizeSettings(this.state.settings).lofiEnabled;
+      this.lofiResumeAfterSpeech = false;
+      if (shouldResume) this.startLofi();
     }
 
     isFullscreen() {
@@ -1187,7 +1415,7 @@
       this.persist();
       if (this.state.currentGame && this.state.currentGame.status === 'active') this.armScoringGuard();
       if (broadcast && this.liveController) this.liveController.broadcast();
-      if (announce) this.announceGame(this.state.currentGame);
+      if (announce) this.announceGame(this.state.currentGame, false, false, previous);
       this.render();
     }
 
@@ -1195,21 +1423,54 @@
       return this.mode === 'display' ? this.displayVoiceEnabled : Boolean(this.state.settings.voiceEnabled);
     }
 
-    announceGame(game, force = false, remote = false) {
+    announceGame(game, force = false, remote = false, previous = null) {
       if (!this.voiceEnabled() || !game || !globalThis.speechSynthesis || !globalThis.SpeechSynthesisUtterance) return;
       const signature = voiceSignature(game);
       const lastKey = remote ? 'lastRemoteVoiceSignature' : 'lastVoiceSignature';
       if (!force && signature === this[lastKey]) return;
       this[lastKey] = signature;
-      const text = gameAnnouncement(game);
-      if (!text) return;
+      const segments = gameAnnouncementSegments(game, previous);
+      if (!segments.length) return;
       try {
+        if (!remote) this.pauseLofiForSpeech();
+        const generation = ++this.voiceGeneration;
+        if (this.voicePauseTimer) {
+          window.clearTimeout(this.voicePauseTimer);
+          this.voicePauseTimer = null;
+        }
         speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95;
-        utterance.pitch = 1;
-        speechSynthesis.speak(utterance);
+        const voice = this.selectedVoice(remote);
+        const finish = () => {
+          if (!remote && generation === this.voiceGeneration) this.resumeLofiAfterSpeech();
+        };
+        const speakSegment = (index) => {
+          if (generation !== this.voiceGeneration) return;
+          if (index >= segments.length) {
+            finish();
+            return;
+          }
+          const utterance = new SpeechSynthesisUtterance(segments[index]);
+          if (voice) utterance.voice = voice;
+          utterance.lang = voice && voice.lang ? voice.lang : 'en-US';
+          utterance.rate = 0.92;
+          utterance.pitch = 1;
+          utterance.onend = () => {
+            if (generation !== this.voiceGeneration) return;
+            if (index >= segments.length - 1) {
+              finish();
+              return;
+            }
+            this.voicePauseTimer = window.setTimeout(() => {
+              this.voicePauseTimer = null;
+              speakSegment(index + 1);
+            }, VOICE_SEGMENT_PAUSE_MS);
+          };
+          utterance.onerror = finish;
+          speechSynthesis.speak(utterance);
+        };
+        speakSegment(0);
       } catch (_error) {
+        if (!remote) this.resumeLofiAfterSpeech();
         this.showToast('Voice unavailable');
       }
     }
@@ -1222,9 +1483,10 @@
           room: this.watchRoom,
           onState: (game, sentAt) => {
             const receivedAt = Date.now();
+            const previousRemote = this.remoteGame;
             this.remoteGame = LiveApi.adaptRemoteGame(game, sentAt, receivedAt);
             this.remoteUpdatedAt = receivedAt;
-            this.announceGame(this.remoteGame, false, true);
+            this.announceGame(this.remoteGame, false, true, previousRemote);
             this.render();
           },
           onStatus: (status) => {
@@ -1357,6 +1619,7 @@
       const player = Players.normalizePlayer({ id: Players.makeId(), name: clean });
       this.state.players.push(player);
       this.state.players = Players.normalizePlayers(this.state.players);
+      this.playerNameDraft = '';
       this.persist();
       this.render();
       return player;
@@ -1600,6 +1863,20 @@
         this.render();
         return;
       }
+      if (event.target.id === 'voice-select') {
+        this.state.settings = { ...normalizeSettings(this.state.settings), voiceURI: String(event.target.value || '') };
+        this.persist();
+        return;
+      }
+      if (event.target.id === 'lofi-track') {
+        this.state.settings = { ...normalizeSettings(this.state.settings), lofiTrack: String(event.target.value || 'sunny') };
+        this.persist();
+        if (this.lofiTimer) {
+          this.stopLofi(false);
+          this.startLofi();
+        }
+        return;
+      }
       if (event.target.name === 'format') {
         const doubles = event.target.value === 'doubles';
         this.querySelectorAll('.doubles-only').forEach((element) => { element.hidden = !doubles; });
@@ -1648,12 +1925,57 @@
       }
       if (action === 'toggle-colors') {
         this.showColors = !this.showColors;
-        if (this.showColors) this.showTimerAdjust = false;
+        if (this.showColors) { this.showTimerAdjust = false; this.showAudio = false; }
         this.render();
         return;
       }
       if (action === 'close-colors') {
         this.showColors = false;
+        this.render();
+        return;
+      }
+      if (action === 'toggle-audio-panel') {
+        this.showAudio = !this.showAudio;
+        if (this.showAudio) {
+          this.showColors = false;
+          this.showTimerAdjust = false;
+          this.refreshVoices(false);
+        }
+        this.render();
+        return;
+      }
+      if (action === 'close-audio') {
+        this.showAudio = false;
+        this.render();
+        return;
+      }
+      if (action === 'toggle-theme') {
+        const next = this.resolvedTheme() === 'dark' ? 'light' : 'dark';
+        this.state.settings = { ...normalizeSettings(this.state.settings), theme: next };
+        this.persist();
+        this.applyTheme();
+        this.render();
+        return;
+      }
+      if (action === 'toggle-lofi') {
+        const settings = normalizeSettings(this.state.settings);
+        const enabled = !settings.lofiEnabled;
+        this.state.settings = { ...settings, lofiEnabled: enabled };
+        this.persist();
+        this.render();
+        if (enabled) await this.startLofi();
+        else this.stopLofi();
+        return;
+      }
+      if (action === 'swap-scoreboard') {
+        if (this.mode === 'display') {
+          this.displayScoreboardSwapped = !this.displayScoreboardSwapped;
+        } else {
+          const settings = normalizeSettings(this.state.settings);
+          this.state.settings = { ...settings, scoreboardSwapped: !settings.scoreboardSwapped };
+          this.persist();
+          if (this.liveController) this.liveController.broadcast();
+        }
         this.render();
         return;
       }
@@ -1676,7 +1998,7 @@
       if (action === 'toggle-time-adjust') {
         if (!this.state.currentGame || this.state.currentGame.status === 'complete') return;
         this.showTimerAdjust = !this.showTimerAdjust;
-        if (this.showTimerAdjust) this.showColors = false;
+        if (this.showTimerAdjust) { this.showColors = false; this.showAudio = false; }
         this.render();
         return;
       }
@@ -1717,12 +2039,28 @@
           this.displayVoiceEnabled = !this.displayVoiceEnabled;
           this.render();
           if (this.displayVoiceEnabled) this.announceGame(this.remoteGame, true, true);
+          else {
+            this.voiceGeneration += 1;
+            if (this.voicePauseTimer) {
+              window.clearTimeout(this.voicePauseTimer);
+              this.voicePauseTimer = null;
+            }
+            if (globalThis.speechSynthesis) speechSynthesis.cancel();
+          }
         } else {
           this.state.settings.voiceEnabled = !this.state.settings.voiceEnabled;
           this.persist();
           this.render();
           if (this.state.settings.voiceEnabled) this.announceGame(this.state.currentGame, true);
-          else if (globalThis.speechSynthesis) speechSynthesis.cancel();
+          else {
+            this.voiceGeneration += 1;
+            if (this.voicePauseTimer) {
+              window.clearTimeout(this.voicePauseTimer);
+              this.voicePauseTimer = null;
+            }
+            if (globalThis.speechSynthesis) speechSynthesis.cancel();
+            this.resumeLofiAfterSpeech();
+          }
         }
         return;
       }
@@ -1967,6 +2305,12 @@
     }
 
     render() {
+      this.applyTheme();
+      const active = globalThis.document ? document.activeElement : null;
+      const restorePlayerName = Boolean(active && active.name === 'playerName'
+        && (typeof this.contains !== 'function' || this.contains(active)));
+      const selectionStart = restorePlayerName && Number.isInteger(active.selectionStart) ? active.selectionStart : null;
+      const selectionEnd = restorePlayerName && Number.isInteger(active.selectionEnd) ? active.selectionEnd : selectionStart;
       if (this.mode === 'display') {
         this.innerHTML = this.renderDisplay();
         return;
@@ -1976,6 +2320,7 @@
         <div class="app-shell ${appearance.highContrast ? 'score-contrast' : ''}" style="${appearanceStyle(appearance)}">
           ${this.renderHeader()}
           ${this.showColors ? this.renderColorPanel() : ''}
+          ${this.showAudio ? this.renderAudioPanel() : ''}
           ${this.showTimerAdjust ? this.renderTimeAdjustPanel() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
@@ -1985,6 +2330,16 @@
           <input id="import-file" type="file" accept="application/json,.json" hidden />
         </div>
       `;
+      if (restorePlayerName) {
+        const nextInput = this.querySelector && this.querySelector('input[name="playerName"]');
+        if (nextInput && typeof nextInput.focus === 'function') {
+          nextInput.focus();
+          if (selectionStart !== null && typeof nextInput.setSelectionRange === 'function') {
+            const max = String(nextInput.value || '').length;
+            nextInput.setSelectionRange(Math.min(selectionStart, max), Math.min(selectionEnd, max));
+          }
+        }
+      }
     }
 
     renderHeader() {
@@ -2045,7 +2400,37 @@
             <label><b>B</b><input type="color" value="${teamB}" data-color-key="teamB" aria-label="Team B score color"></label>
           </div>
           <label class="contrast-toggle"><span>${icon('fullscreen')}<b>High contrast</b></span><input id="score-high-contrast" type="checkbox" ${appearance.highContrast ? 'checked' : ''}></label>
-          <button class="reset-colors" type="button" data-action="reset-colors">Reset</button>
+          <button class="settings-row-button" type="button" data-action="toggle-theme">${icon(this.resolvedTheme() === 'dark' ? 'moon' : 'sun')}<span><b>${this.resolvedTheme() === 'dark' ? 'Dark' : 'Light'} theme</b><small>Tap to switch</small></span></button>
+          <button class="settings-row-button" type="button" data-action="toggle-audio-panel">${icon('speaker')}<span><b>Audio</b><small>Voice and lo-fi</small></span></button>
+          <button class="reset-colors" type="button" data-action="reset-colors">Reset colors</button>
+        </section>
+      `;
+    }
+
+    renderAudioPanel() {
+      const settings = normalizeSettings(this.state.settings);
+      const selectedVoiceURI = String(settings.voiceURI || '');
+      const voiceOptions = [
+        `<option value="" ${selectedVoiceURI ? '' : 'selected'}>System default (recommended)</option>`,
+        ...this.availableVoices.map((voice) => `<option value="${escapeHtml(voice.voiceURI)}" ${voice.voiceURI === selectedVoiceURI ? 'selected' : ''}>${escapeHtml(voice.name)}${voice.lang ? ` · ${escapeHtml(voice.lang)}` : ''}</option>`)
+      ].join('');
+      return `
+        <div class="audio-scrim" data-action="close-audio"></div>
+        <section class="audio-panel" role="dialog" aria-modal="true" aria-label="Audio settings">
+          <header>
+            <span>${icon('speaker')}<b>Audio</b></span>
+            <button class="icon-btn compact" type="button" data-action="close-audio" aria-label="Close audio settings">${icon('x')}</button>
+          </header>
+          <div class="audio-setting">
+            <div><b>Voice-over</b><small>Scores, side outs, match point</small></div>
+            <button class="audio-toggle ${settings.voiceEnabled ? 'active' : ''}" type="button" data-action="toggle-voice" aria-pressed="${settings.voiceEnabled}">${icon(settings.voiceEnabled ? 'speaker' : 'speakerOff')}<span>${settings.voiceEnabled ? 'On' : 'Off'}</span></button>
+          </div>
+          <label class="audio-select"><span>English voice</span><select id="voice-select">${voiceOptions}</select><small>System default + up to 4 best clear English voices on this device</small></label>
+          <div class="audio-setting">
+            <div><b>Lo-fi court music</b><small>Pauses automatically for voice-over</small></div>
+            <button class="audio-toggle ${settings.lofiEnabled ? 'active' : ''}" type="button" data-action="toggle-lofi" aria-pressed="${settings.lofiEnabled}">${icon('music')}<span>${settings.lofiEnabled ? 'On' : 'Off'}</span></button>
+          </div>
+          <label class="audio-select"><span>Mix</span><select id="lofi-track">${LOFI_TRACKS.map((track) => `<option value="${track.id}" ${track.id === settings.lofiTrack ? 'selected' : ''}>${track.label}</option>`).join('')}</select></label>
         </section>
       `;
     }
@@ -2124,7 +2509,7 @@
           <div class="empty-symbol">${icon('users')}</div>
           <h1>Players</h1>
           <form id="quick-add-player-form" class="add-player-form">
-            <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Player name" autocomplete="off" required></label>
+            <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Player name" autocomplete="off" value="${escapeHtml(this.playerNameDraft)}" required></label>
             <button class="icon-only" type="submit" aria-label="Add player" title="Add player">${icon('plus')}</button>
           </form>
           <button class="icon-btn" type="button" data-action="view" data-view="players" aria-label="Open players and queue" title="Players and queue">${icon('users')}</button>
@@ -2186,7 +2571,7 @@
             </div>
           </div>
           <form id="add-player-form" class="add-player-form player-add-card">
-            <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Add player name" autocomplete="off" required></label>
+            <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Add player name" autocomplete="off" value="${escapeHtml(this.playerNameDraft)}" required></label>
             <button class="icon-only" type="submit" aria-label="Add player" title="Add player">${icon('plus')}</button>
           </form>
           ${this.renderQueue()}
@@ -2256,7 +2641,9 @@
       if (!game) return `<section class="empty-view"><div class="empty-symbol">${icon('ball')}</div><button class="start-btn icon-start" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button></section>`;
       const remaining = Engine.getRemainingMs(game, Date.now());
       const serve = Engine.serviceDetails(game);
-      const voice = Boolean(this.state.settings.voiceEnabled);
+      const settings = normalizeSettings(this.state.settings);
+      const voice = settings.voiceEnabled;
+      const scoreOrder = settings.scoreboardSwapped ? [1, 0] : [0, 1];
       return `
         <section class="game-view">
           ${this.renderLiveBar()}
@@ -2270,17 +2657,17 @@
               <span>${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} · ${escapeHtml(Engine.spokenScore(game))}`}</span>
             </div>
             <div class="timer-tools">
-              <button class="icon-btn subtle ${voice ? 'active' : ''}" type="button" data-action="toggle-voice" aria-label="${voice ? 'Turn voice announcements off' : 'Turn voice announcements on'}" title="Voice announcements">${icon(voice ? 'speaker' : 'speakerOff')}</button>
+              <button class="icon-btn subtle ${this.showAudio || voice ? 'active' : ''}" type="button" data-action="toggle-audio-panel" aria-label="Audio settings" title="Audio settings">${icon(voice ? 'speaker' : 'speakerOff')}</button>
               <button class="icon-btn subtle ${this.showTimerAdjust ? 'active' : ''}" type="button" data-action="toggle-time-adjust" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Adjust timer" title="Adjust timer">${icon('clockAdjust')}</button>
               <button class="icon-btn subtle" type="button" data-action="reset-timer" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset timer" title="Reset timer">${icon('reset')}</button>
             </div>
           </div>
           <div class="score-grid" aria-live="polite">
-            ${this.renderScoreTeam(game, 0)}
-            ${this.renderScoreTeam(game, 1)}
+            ${scoreOrder.map((index) => this.renderScoreTeam(game, index)).join('')}
           </div>
           <nav class="game-toolbar" aria-label="Match actions">
             <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
+            <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
             <button class="tool-btn" type="button" data-action="save" aria-label="Save game" title="Save">${icon('save')}</button>
             <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
             ${game.status === 'complete'
@@ -2294,7 +2681,7 @@
     renderScoreTeam(game, index) {
       const team = game.teams[index];
       const serving = game.status === 'active' && game.servingTeam === index;
-      const actionLabel = serving ? 'Point' : game.format === 'doubles' && game.serverNumber === 1 ? 'Server 2' : 'Serve';
+      const actionLabel = serving && isMatchPoint(game) ? 'Match point' : serving ? 'Point' : game.format === 'doubles' && game.serverNumber === 1 ? 'Server 2' : 'Serve';
       return `
         <button class="score-team team-${index === 0 ? 'a' : 'b'} ${serving ? 'serving' : ''}" type="button" data-action="rally" data-team="${index}" ${game.status === 'active' ? '' : 'disabled'} aria-label="${escapeHtml(teamTitle(team, index))} won rally">
           <span class="team-letter">${index === 0 ? 'A' : 'B'}${serving ? '<i></i>' : ''}</span>
@@ -2361,6 +2748,7 @@
             <span class="display-status ${live ? 'live' : ''}" aria-label="${escapeHtml(statusLabel)} room ${escapeHtml(this.watchRoom)}"><i></i>${escapeHtml(this.watchRoom)}</span>
             <div class="display-actions">
               <button class="icon-btn ghost ${this.displayVoiceEnabled ? 'active' : ''}" type="button" data-action="toggle-voice" aria-label="${this.displayVoiceEnabled ? 'Turn voice announcements off' : 'Turn voice announcements on'}" title="Voice announcements">${icon(this.displayVoiceEnabled ? 'speaker' : 'speakerOff')}</button>
+              <button class="icon-btn ghost" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
               <button class="icon-btn ghost fullscreen-btn" type="button" data-action="toggle-fullscreen" aria-label="${fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}" title="${fullscreen ? 'Exit fullscreen' : 'Fullscreen'}">${icon(fullscreen ? 'fullscreenExit' : 'fullscreen')}</button>
               <button class="icon-btn ghost leave-display" type="button" data-action="leave-display" aria-label="Exit display mode" title="Exit">${icon('x')}</button>
             </div>
@@ -2383,6 +2771,8 @@
       const nextQueue = game.status === 'complete' && Array.isArray(game.nextQueue)
         ? game.nextQueue.slice(0, 4).map((name) => String(name || '').trim()).filter(Boolean)
         : [];
+      const remoteSwapped = Boolean(game.displaySwapped) !== Boolean(this.displayScoreboardSwapped);
+      const scoreOrder = remoteSwapped ? [1, 0] : [0, 1];
       return `
         <main class="remote-scoreboard ${nextQueue.length ? 'has-next-queue' : ''}">
           <div class="remote-meta">
@@ -2394,8 +2784,7 @@
             </div>
           </div>
           <div class="remote-grid">
-            ${this.renderRemoteTeam(game, 0)}
-            ${this.renderRemoteTeam(game, 1)}
+            ${scoreOrder.map((index) => this.renderRemoteTeam(game, index)).join('')}
           </div>
           ${nextQueue.length ? `
             <aside class="remote-next-queue" aria-label="Next players in queue">

@@ -1,8 +1,8 @@
 {
   "name": "picklepulse-scorekeeper",
-  "version": "7.4.0",
+  "version": "7.5.2",
   "private": true,
-  "description": "Fast-loading local-first pickleball scoring with player roster, compact icon-first UI, add-all and drag-sort queue, standings, floating final-screen next-four display, voice calls, protected scoring, and PeerJS display mode.",
+  "description": "Fast-loading local-first pickleball scoring with roster and queue, selectable voice calls, lo-fi court audio, light/dark themes, display-side swapping, standings, protected scoring, and PeerJS display mode.",
   "scripts": {
     "build:core": "node scripts/build-core.js",
     "start": "python3 -m http.server 4173",

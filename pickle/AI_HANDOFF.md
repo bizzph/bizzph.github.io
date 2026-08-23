@@ -1,4 +1,4 @@
-# AI Handoff: PicklePulse v7.4
+# AI Handoff: PicklePulse v7.5.2
 
 Read this before modifying the project.
 
@@ -27,7 +27,7 @@ The interface is icon-first and touch-oriented. Preserve large score targets, mi
 2. `player-data.js`
 3. `app.js`
 
-The controller live snapshot also includes `nextQueue`, containing only the first four waiting player names. The spectator renders it only when the received game status is `complete`.
+The controller live snapshot also includes `nextQueue`, containing only the first four waiting player names, plus `displaySwapped` for the visual left/right team order. The spectator renders `nextQueue` only when the received game status is `complete`. `displaySwapped` is presentation-only and must never change scoring identity or service state.
 
 `src/live-sync.js` is injected only when a controller starts live mode or a `?watch=ROOM` page opens. PeerJS itself is not bundled; `loadPeerJS()` then loads version `1.5.5` from jsDelivr, with unpkg as fallback. After changing any eager source file, run `npm run build:core` and commit the regenerated bundle.
 
@@ -58,7 +58,12 @@ Current root schema version: `3`.
     activeGameId: string
   },
   settings: {
-    voiceEnabled: boolean
+    voiceEnabled: boolean,
+    voiceURI: string,
+    theme: "system" | "light" | "dark",
+    lofiEnabled: boolean,
+    lofiTrack: "sunny" | "bounce" | "drive",
+    scoreboardSwapped: boolean
   },
   liveRoom: string,
   lastSavedAt: ISODateString | null,
@@ -152,10 +157,12 @@ Browsers do not permit custom `beforeunload` text. Do not claim otherwise. Keep 
 
 Voice is opt-in and uses `speechSynthesis`. The announcement signature combines status, scores, serving team, server number, serving player, and side so repeated renders do not repeat speech.
 
-Active game example:
+Active game example (each line is a separate utterance with a 500 ms gap):
 
 ```text
-0, 0, 2. Ava serving from the right side.
+Second server.
+0, 0, 2.
+Drew on the left side.
 ```
 
 Completion example:
@@ -164,7 +171,9 @@ Completion example:
 Game. Ava · Ben wins, 11 to 8.
 ```
 
-Controller preference is persisted in `settings.voiceEnabled`. Spectator voice is session-only because autoplay/user-gesture restrictions vary by browser. Preserve graceful no-op behavior when Speech Synthesis is unavailable.
+Controller voice enablement and selected voice URI are persisted in settings. An empty `voiceURI` means **System default**, which is the default and recommended UI option. `refreshVoices()` filters device voices to English (`en-*` / `en_*`), removes common novelty/effect voices, ranks likely clarity using Natural/Neural/Enhanced/Premium markers plus known clear Microsoft, Google, and Apple voice names, deduplicates them, and keeps at most four alternatives so the menu has at most five total choices including System default. `selectedVoice()` returns `null` for System default so the browser chooses the voice while the utterance remains tagged `en-US`; stored explicit voice URIs are used only when still available. Spectator voice remains session-only because autoplay/user-gesture restrictions vary by browser. `gameAnnouncementSegments()` returns separate utterances and `announceGame()` inserts a 500 ms pause between them. Rule calls (`Side out.`, `Second server.`, `Match point.`), score, and server-side guidance should remain separate segments for clarity. Use `Side out` only when service transfers to the opposing team; a server-1 loss in doubles is `Second server`, not a side out. Match point means the serving side would satisfy target + win-by-two by scoring the next point, so 10–10 in a game to 11 is not match point. Preserve graceful no-op behavior when Speech Synthesis is unavailable and cancel pending segment timers when voice is disabled/disconnected.
+
+Controller lo-fi is generated procedurally through Web Audio; there are no external music assets. It must pause before speech and resume only after the full segmented announcement finishes. Browser autoplay rules mean starting lo-fi may require a user gesture.
 
 ## Scoring invariants
 
@@ -208,6 +217,9 @@ All player/imported text rendered into HTML must pass through `escapeHtml()`.
 
 ## Rendering and security
 
+Player-name forms keep a transient `playerNameDraft`, and full renders restore focus/cursor position when that input was active, so toast expiry, network state, or live status updates cannot erase or cut off typing. Keep this behavior unless render architecture changes.
+
+
 - Escape every user-entered/imported string with `escapeHtml()`.
 - Normalize colors with `normalizeHex()` before inline CSS.
 - `appearanceStyle()` is the intended score-color CSS-variable path.
@@ -219,6 +231,7 @@ All player/imported text rendered into HTML must pass through `escapeHtml()`.
 Maintain:
 
 - no horizontal overflow at 320 CSS px;
+- roster rows keep avatar, name, queue action, and delete action on one clean mobile row;
 - score cards side by side on phones;
 - largest touch targets reserved for score entry;
 - safe-area-aware reachable bottom toolbar;

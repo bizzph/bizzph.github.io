@@ -404,3 +404,198 @@ test('final live snapshot uses the first four waiting players after requeue', ()
   assert.deepEqual(sent.nextQueue, ['Eli', 'Faye', 'Gus', 'Hope']);
   assert.deepEqual(app.state.queue.waiting.slice(-4), ['p1', 'p2', 'p3', 'p4']);
 });
+
+test('player name draft survives UI rerenders while typing', () => {
+  const app = new global.PickleballAppForTest();
+  app.view = 'players';
+  app.onInput({ target: { name: 'playerName', value: 'Alex Johnson' } });
+  app.render();
+  assert.match(app.innerHTML, /name="playerName"[^>]*value="Alex Johnson"/);
+  app.network = { level: 'weak', label: 'Weak' };
+  app.render();
+  assert.match(app.innerHTML, /name="playerName"[^>]*value="Alex Johnson"/);
+});
+
+test('audio settings default to system voice and rank four clear English alternatives', () => {
+  const priorSynth = global.speechSynthesis;
+  global.speechSynthesis = {
+    getVoices() {
+      return [
+        { voiceURI: 'aria', name: 'Microsoft Aria Online (Natural)', lang: 'en-US' },
+        { voiceURI: 'google-us', name: 'Google US English', lang: 'en-US' },
+        { voiceURI: 'samantha', name: 'Samantha', lang: 'en-US', localService: true },
+        { voiceURI: 'daniel', name: 'Daniel', lang: 'en-GB', localService: true },
+        { voiceURI: 'generic', name: 'English Generic', lang: 'en-AU', localService: true },
+        { voiceURI: 'novelty', name: 'Whisper', lang: 'en-US', localService: true },
+        { voiceURI: 'fr-1', name: 'French One', lang: 'fr-FR', localService: true }
+      ];
+    }
+  };
+  try {
+    const app = new global.PickleballAppForTest();
+    app.refreshVoices(false);
+    assert.equal(app.availableVoices.length, 4);
+    assert.ok(app.availableVoices.every((voice) => /^en[-_]/i.test(voice.lang)));
+    assert.equal(app.availableVoices[0].voiceURI, 'aria');
+    assert.ok(app.availableVoices.some((voice) => voice.voiceURI === 'google-us'));
+    assert.ok(app.availableVoices.some((voice) => voice.voiceURI === 'samantha'));
+    assert.ok(app.availableVoices.some((voice) => voice.voiceURI === 'daniel'));
+    assert.ok(!app.availableVoices.some((voice) => voice.voiceURI === 'novelty'));
+    assert.equal(app.selectedVoice(false), null);
+    app.showAudio = true;
+    app.render();
+    assert.match(app.innerHTML, /id="voice-select"/);
+    assert.match(app.innerHTML, /System default \(recommended\)/);
+    assert.match(app.innerHTML, /value="" selected/);
+    assert.match(app.innerHTML, /Microsoft Aria Online \(Natural\)/);
+    assert.doesNotMatch(app.innerHTML, /French One/);
+    assert.doesNotMatch(app.innerHTML, /Whisper/);
+    assert.match(app.innerHTML, /System default \+ up to 4 best clear English voices on this device/);
+    assert.match(app.innerHTML, /Sunny Rally/);
+    assert.match(app.innerHTML, /Kitchen Bounce/);
+    assert.match(app.innerHTML, /Baseline Drive/);
+    assert.match(app.innerHTML, /Pauses automatically for voice-over/);
+  } finally {
+    global.speechSynthesis = priorSynth;
+  }
+});
+
+test('scoreboard side swap changes visual order without mutating team data', async () => {
+  const app = new global.PickleballAppForTest();
+  app.state.currentGame = global.PickleEngine.createGame({
+    format: 'singles', teamAPlayer1: 'Ava', teamBPlayer1: 'Ben'
+  });
+  app.view = 'game';
+  const beforeTeams = JSON.stringify(app.state.currentGame.teams);
+  await app.onClick({ target: { closest() { return { dataset: { action: 'swap-scoreboard' } }; } } });
+  const scoreGrid = app.innerHTML.match(/<div class="score-grid"[\s\S]*?<\/div>\s*<nav class="game-toolbar"/)[0];
+  const benIndex = scoreGrid.indexOf('Ben');
+  const avaIndex = scoreGrid.indexOf('Ava');
+  assert.ok(benIndex >= 0 && avaIndex >= 0 && benIndex < avaIndex);
+  assert.equal(JSON.stringify(app.state.currentGame.teams), beforeTeams);
+  assert.equal(app.state.settings.scoreboardSwapped, true);
+});
+
+test('voice announces match point only when the serving team can win next rally', () => {
+  const spoken = [];
+  const priorSynth = global.speechSynthesis;
+  const priorUtterance = global.SpeechSynthesisUtterance;
+  global.speechSynthesis = {
+    speaking: false,
+    cancel() {},
+    speak(utterance) { spoken.push(utterance.text); },
+    getVoices() { return []; }
+  };
+  global.SpeechSynthesisUtterance = class SpeechSynthesisUtterance {
+    constructor(text) { this.text = text; }
+  };
+  try {
+    const app = new global.PickleballAppForTest();
+    app.state.settings.voiceEnabled = true;
+    let game = global.PickleEngine.createGame({ format: 'singles', target: 11, teamAPlayer1: 'Ava', teamBPlayer1: 'Ben', startingTeam: 0 });
+    game.teams[0].score = 9;
+    game.teams[1].score = 8;
+    app.state.currentGame = game;
+    const atTen = global.PickleEngine.recordRally(game, 0, Date.now());
+    app.setCurrentGame(atTen);
+    assert.match(spoken.at(-1), /Match point\./);
+
+    const tied = global.PickleEngine.normalizeGame(atTen);
+    tied.teams[1].score = 10;
+    app.announceGame(tied, true, false, atTen);
+    assert.doesNotMatch(spoken.at(-1), /Match point\./);
+  } finally {
+    global.speechSynthesis = priorSynth;
+    global.SpeechSynthesisUtterance = priorUtterance;
+  }
+});
+
+test('voice says side out only when service transfers to the other team', () => {
+  const spoken = [];
+  const priorSynth = global.speechSynthesis;
+  const priorUtterance = global.SpeechSynthesisUtterance;
+  global.speechSynthesis = {
+    speaking: false,
+    cancel() {},
+    speak(utterance) { spoken.push(utterance.text); },
+    getVoices() { return []; }
+  };
+  global.SpeechSynthesisUtterance = class SpeechSynthesisUtterance {
+    constructor(text) { this.text = text; }
+  };
+  try {
+    const app = new global.PickleballAppForTest();
+    app.state.settings.voiceEnabled = true;
+    const opening = global.PickleEngine.createGame({
+      format: 'doubles', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben', teamBPlayer1: 'Cora', teamBPlayer2: 'Drew', startingTeam: 0
+    });
+    app.state.currentGame = opening;
+    const sideOut = global.PickleEngine.recordRally(opening, 1, Date.now());
+    app.setCurrentGame(sideOut);
+    assert.match(spoken.at(-1), /^Side out\./);
+
+    let teamB = global.PickleEngine.recordRally(sideOut, 0, Date.now());
+    app.state.currentGame = sideOut;
+    app.setCurrentGame(teamB);
+    assert.match(spoken.at(-1), /^Second server\./);
+    assert.doesNotMatch(spoken.at(-1), /^Side out\./);
+  } finally {
+    global.speechSynthesis = priorSynth;
+    global.SpeechSynthesisUtterance = priorUtterance;
+  }
+});
+
+test('voice announcements insert a half-second pause between rule call, score, and server position', () => {
+  const spoken = [];
+  const timers = [];
+  const priorSynth = global.speechSynthesis;
+  const priorUtterance = global.SpeechSynthesisUtterance;
+  const priorSetTimeout = global.window.setTimeout;
+  const priorClearTimeout = global.window.clearTimeout;
+  global.window.setTimeout = (callback, delay) => {
+    timers.push({ callback, delay });
+    return timers.length;
+  };
+  global.window.clearTimeout = () => {};
+  global.speechSynthesis = {
+    speaking: false,
+    cancel() {},
+    speak(utterance) { spoken.push(utterance); },
+    getVoices() { return [{ voiceURI: 'en-1', name: 'English One', lang: 'en-US' }]; }
+  };
+  global.SpeechSynthesisUtterance = class SpeechSynthesisUtterance {
+    constructor(text) { this.text = text; }
+  };
+  try {
+    const app = new global.PickleballAppForTest();
+    app.refreshVoices(false);
+    app.state.settings.voiceEnabled = true;
+    const opening = global.PickleEngine.createGame({
+      format: 'doubles', teamAPlayer1: 'Ava', teamAPlayer2: 'Ben', teamBPlayer1: 'Cora', teamBPlayer2: 'Drew', startingTeam: 0
+    });
+    const sideOut = global.PickleEngine.recordRally(opening, 1, Date.now());
+    const secondServer = global.PickleEngine.recordRally(sideOut, 0, Date.now());
+    app.state.currentGame = sideOut;
+    app.announceGame(secondServer, true, false, sideOut);
+
+    assert.equal(spoken.length, 1);
+    assert.equal(spoken[0].text, 'Second server.');
+    assert.equal(spoken[0].lang, 'en-US');
+    spoken[0].onend();
+    assert.equal(timers[0].delay, 500);
+    timers[0].callback();
+
+    assert.equal(spoken[1].text, '0, 0, 2.');
+    spoken[1].onend();
+    assert.equal(timers[1].delay, 500);
+    timers[1].callback();
+
+    assert.equal(spoken[2].text, 'Drew on the left side.');
+  } finally {
+    global.speechSynthesis = priorSynth;
+    global.SpeechSynthesisUtterance = priorUtterance;
+    global.window.setTimeout = priorSetTimeout;
+    global.window.clearTimeout = priorClearTimeout;
+  }
+});
+

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'picklepulse-v7-4';
+const CACHE_NAME = 'picklepulse-v7-5-2';
 const ASSETS = [
   './',
   './index.html',

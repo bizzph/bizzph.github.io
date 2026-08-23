@@ -1,4 +1,4 @@
-# PicklePulse v7.4
+# PicklePulse v7.5.2
 
 PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scoring controller and an optional read-only live display powered by PeerJS. It needs no account, database, API key, package install, or build step.
 
@@ -17,7 +17,10 @@ PicklePulse is a local-first pickleball scorekeeper with a phone-friendly scorin
 - Persistent live room recovery after an accidental controller refresh
 - Large current-server callout on the spectator display
 - Large floating bottom **Next 4** queue bar after the live score becomes final
-- Optional spoken score, server, and court-side announcements
+- Five streamlined voice-over choices: System default plus up to four clarity-ranked English voices, with paced score, server, court-side, side-out, second-server, and match-point announcements
+- Three lightweight procedural lo-fi court mixes that automatically pause during voice-over
+- Persistent light/dark theme toggle
+- Display-only left/right scoreboard swapping on the controller and spectator screen
 - Side-out singles and doubles scoring, including the correct doubles opening call `0 - 0 - 2`
 - Games to 11, 15, or 21, win by two
 - 15-minute default countdown, timer corrections, undo, and confirmed manual game end
@@ -94,13 +97,19 @@ Browsers control the exact wording of refresh/close warnings. They do not allow 
 
 ## Voice announcements
 
-Tap the speaker icon on either the controller or spectator display to enable voice. Announcements use the browser's built-in `speechSynthesis` API and include:
+On the controller, open **Audio** from the speaker button (or from Score colors) to enable voice. **System default (recommended)** is the default choice. The selector then shows up to four of the clearest English voices exposed by the current browser/device. The ranking prefers Natural/Neural/Enhanced/Premium voices and known clear Microsoft, Google, and Apple voice names, while filtering common novelty/effect voices. The spectator speaker remains a session-only voice toggle. Announcements use the browser's built-in `speechSynthesis` API and are split into short phrases with a 500 ms pause between each segment. For example:
 
 ```text
-0, 0, 2. Ava serving from the right side.
+Second server.
+[pause]
+0, 0, 2.
+[pause]
+Drew on the left side.
 ```
 
-For doubles, the spoken score is always server score, receiver score, server number. Voice availability and the installed voice vary by browser and device. Audio is opt-in because many browsers require a user gesture before speech is allowed.
+For doubles, the spoken score is always server score, receiver score, server number. A transfer of serve to the opposing team is announced as **Side out**; a first-server loss that advances to the partner is announced as **Second server**. **Match point** is announced only when the serving team can actually win on its next point, including extended win-by-two scores (so 10–10 is not match point). English voice availability varies by browser and device, so the menu may contain fewer than five total choices when fewer than four suitable English alternatives are exposed.
+
+The three lo-fi mixes—**Sunny Rally**, **Kitchen Bounce**, and **Baseline Drive**—are generated with the Web Audio API, so no music files are downloaded or bundled. When voice-over begins, lo-fi playback pauses and resumes after the call.
 
 ## Standings
 
@@ -139,7 +148,12 @@ Use the download and upload buttons in **History**. Version 7 backups contain th
     "highContrast": true
   },
   "settings": {
-    "voiceEnabled": false
+    "voiceEnabled": false,
+    "voiceURI": "",
+    "theme": "system",
+    "lofiEnabled": false,
+    "lofiTrack": "sunny",
+    "scoreboardSwapped": false
   }
 }
 ```
@@ -169,7 +183,7 @@ Node.js 18 or newer:
 npm test
 ```
 
-The suite covers scoring rules, serving-player rotation, win-by-two, undo, timers, room generation, PeerJS controller-to-viewer transfer, queue rotation, add-all, drag reordering, team mapping, end-game confirmation, standings deduplication, unfinished-game exclusion, optimized loading, appearance synchronization, and UI smoke rendering.
+The suite covers scoring rules, serving-player rotation, win-by-two, undo, timers, room generation, PeerJS controller-to-viewer transfer, queue rotation, add-all, drag reordering, team mapping, end-game confirmation, standings deduplication, unfinished-game exclusion, optimized loading, appearance synchronization, player-name draft preservation, scoreboard swapping, audio settings, match-point calls, side-out calls, English voice filtering, paced voice segments, and UI smoke rendering.
 
 For syntax-only checks:
 
