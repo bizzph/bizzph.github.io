@@ -8,7 +8,7 @@ window.LOT_MAP_CONFIG = {
 
   // Google Maps JavaScript API browser key.
   // Restrict this key to your website/referrers and to Maps JavaScript API.
-  googleMapsApiKey: "",
+  googleMapsApiKey: "AIzaSyAsMdeWpSKojM_ghZWHCirCG46qmm1ja2g",
 
   // "roadmap" or "satellite". Roadmap is the presentation default.
   googleMapType: "roadmap",
