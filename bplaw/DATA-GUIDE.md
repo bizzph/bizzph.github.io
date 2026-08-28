@@ -74,3 +74,12 @@ window.LOT_MAP_CONFIG = {
 ```
 
 Supported default map types in this build are `roadmap` and `satellite`.
+
+
+## Map parcel labels
+
+The visible parcel label is derived in `app.js` from the legal lot name in `due-diligence.js`, with `surveyLot` and then the internal lot ID as fallbacks. Labels are positioned at a calculated polygon centroid using a Google Maps `OverlayView`; no separate mapping library is used.
+
+## Presentation branding
+
+The interface logo is `assets/bertulfo-piasidad-logo.jpg`, cropped from the supplied Bertulfo & Piasidad reference image. Primary UI colors are maintained in the CSS variables at the top of `style.css`; keep future presentation changes within that palette unless the firm supplies updated brand guidance.

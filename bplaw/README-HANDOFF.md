@@ -1,7 +1,14 @@
-# Property Due Diligence Viewer - v15 Google-only build
+# Property Due Diligence Viewer - v16 Bertulfo & Piasidad presentation build
 
 ## What changed
 
+- The supplied **Bertulfo & Piasidad Attorneys & Counselors** logo is now used in the primary sidebar header.
+- The presentation UI now follows the supplied logo palette: deep maroon, white, charcoal, and muted rose neutrals.
+- Styling was simplified for a minimal law-firm presentation while preserving clear hierarchy and touch-sized controls.
+- Each parcel now carries a small on-map label using its legal lot name (`B-25-A`, `B-25-B`, `B-134`, `B-158`, `B-51`, `B-141`, `B-144`, `B-157`).
+- Lot labels are implemented as lightweight Google Maps `OverlayView` elements centered over each parcel and do not capture pointer/touch events.
+- The selected lot label switches to the firm maroon treatment while the parcel itself retains the existing orange active highlight.
+- The firm logo asset is stored at `assets/bertulfo-piasidad-logo.jpg` and was cropped from the user-supplied reference image without redrawing the artwork.
 - Google Maps is now the only map platform and loads by default.
 - All legacy non-Google tile providers, provider switching, custom tile-rendering code, and their attribution/UI were removed.
 - Google Maps JavaScript API is loaded asynchronously and only the Maps library is requested.
@@ -70,12 +77,13 @@ Blank spreadsheet cells are preserved as blank/null data and displayed as an em 
 ## Files
 
 - `index.html` - application shell and presentation layout
-- `style.css` - corporate presentation styling and responsive layout
+- `style.css` - Bertulfo & Piasidad presentation styling and responsive layout
 - `config.js` - BLLM and Google Maps API configuration
 - `lots.js` - survey geometry/source descriptions
 - `due-diligence.js` - spreadsheet-derived document-review data
-- `app.js` - WGS84 parcel calculations, Google Maps integration, UI behavior
+- `app.js` - WGS84 parcel calculations, Google Maps integration, parcel labels, and UI behavior
 - `DATA-GUIDE.md` - data maintenance notes
+- `assets/bertulfo-piasidad-logo.jpg` - supplied firm logo crop used by the interface
 - `start-server.sh` / `start-server.bat` - local HTTP server helpers
 
 ## Legal/survey caution

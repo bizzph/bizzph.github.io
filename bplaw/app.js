@@ -36,6 +36,8 @@
 
   let map = null;
   let polygons = new Map();
+  let mapLabels = new Map();
+  let LotLabelOverlayClass = null;
   let cards = new Map();
   let sidebarListScrollTop = 0;
 
@@ -204,6 +206,81 @@
     return lot.dueDiligence?.legalLot || lot.surveyLot || lot.id;
   }
 
+  function polygonCentroid(coordinates) {
+    if (!Array.isArray(coordinates) || coordinates.length < 3) return configuredBllm();
+    let twiceArea = 0;
+    let centroidLng = 0;
+    let centroidLat = 0;
+
+    for (let i = 0; i < coordinates.length; i += 1) {
+      const current = coordinates[i];
+      const next = coordinates[(i + 1) % coordinates.length];
+      const x1 = Number(current[1]);
+      const y1 = Number(current[0]);
+      const x2 = Number(next[1]);
+      const y2 = Number(next[0]);
+      const cross = x1 * y2 - x2 * y1;
+      twiceArea += cross;
+      centroidLng += (x1 + x2) * cross;
+      centroidLat += (y1 + y2) * cross;
+    }
+
+    if (Math.abs(twiceArea) < 1e-12) {
+      const total = coordinates.reduce((sum, point) => ({
+        lat: sum.lat + Number(point[0]),
+        lng: sum.lng + Number(point[1])
+      }), { lat: 0, lng: 0 });
+      return { lat: total.lat / coordinates.length, lng: total.lng / coordinates.length };
+    }
+
+    return {
+      lat: centroidLat / (3 * twiceArea),
+      lng: centroidLng / (3 * twiceArea)
+    };
+  }
+
+  function getLotLabelOverlayClass() {
+    if (LotLabelOverlayClass) return LotLabelOverlayClass;
+
+    LotLabelOverlayClass = class extends google.maps.OverlayView {
+      constructor(position, text) {
+        super();
+        this.position = position;
+        this.text = text;
+        this.element = null;
+      }
+
+      onAdd() {
+        const element = document.createElement("div");
+        element.className = "lot-map-label";
+        element.textContent = this.text;
+        element.setAttribute("aria-hidden", "true");
+        this.element = element;
+        this.getPanes().overlayLayer.appendChild(element);
+      }
+
+      draw() {
+        if (!this.element) return;
+        const projection = this.getProjection();
+        const pixel = projection.fromLatLngToDivPixel(this.position);
+        if (!pixel) return;
+        this.element.style.left = `${Math.round(pixel.x)}px`;
+        this.element.style.top = `${Math.round(pixel.y)}px`;
+      }
+
+      onRemove() {
+        this.element?.remove();
+        this.element = null;
+      }
+
+      setSelected(selected) {
+        this.element?.classList.toggle("is-selected", Boolean(selected));
+      }
+    };
+
+    return LotLabelOverlayClass;
+  }
+
   function taxStatus(lot) {
     const tax = lot.dueDiligence?.realPropertyTax || {};
     const remarks = String(tax.remarks || "").toLowerCase();
@@ -354,6 +431,7 @@
           zIndex: selected ? 20 : 2
         });
       }
+      mapLabels.get(lot.id)?.setSelected(selected);
     });
   }
 
@@ -453,6 +531,10 @@
     });
 
     polygons.clear();
+    mapLabels.forEach(label => label.setMap(null));
+    mapLabels.clear();
+    const LotLabelOverlay = getLotLabelOverlayClass();
+
     LOTS.forEach(lot => {
       const polygon = new google.maps.Polygon({
         map,
@@ -467,6 +549,11 @@
       });
       polygon.addListener("click", () => selectLot(lot));
       polygons.set(lot.id, polygon);
+
+      const center = polygonCentroid(lot.coordinates);
+      const label = new LotLabelOverlay(new google.maps.LatLng(center.lat, center.lng), legalName(lot));
+      label.setMap(map);
+      mapLabels.set(lot.id, label);
     });
 
     map.addListener("maptypeid_changed", syncMapTypeButtons);
