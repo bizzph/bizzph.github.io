@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f233a">
+  <title>Property Due Diligence Review</title>
+  <link rel="preconnect" href="https://maps.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://maps.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="//maps.googleapis.com">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Property review">
+      <div id="sidebar-list-view" class="sidebar-view">
+        <header class="sidebar-header">
+          <p class="eyebrow">PROPERTY DUE DILIGENCE</p>
+          <h1>Land Review</h1>
+          <p class="intro">Eight surveyed parcels presented with title, tax, court certification, improvement, and survey information.</p>
+        </header>
+
+        <div class="review-note" role="note">
+          <span class="review-note-label">Reference control</span>
+          <strong>BLLM No. 1 · WGS84</strong>
+          <span>10.0575399083, 124.4719672419</span>
+        </div>
+
+        <div class="lot-list" id="lot-list"></div>
+
+        <footer class="sidebar-footer">
+          Presentation aid only. Verify against original titles, certifications, tax records, and official survey/control records before reliance.
+        </footer>
+      </div>
+
+      <section id="sidebar-details-view" class="sidebar-details-view" hidden aria-label="Selected lot details">
+        <div class="sidebar-details-nav">
+          <button id="sidebar-back" class="sidebar-back" type="button" aria-label="Back to property list">
+            <span aria-hidden="true">←</span>
+            <span>All properties</span>
+          </button>
+        </div>
+        <div id="details-content" class="details-content"></div>
+      </section>
+    </aside>
+
+    <main class="workspace" aria-label="Google Maps property viewer">
+      <header class="map-header">
+        <div class="map-heading">
+          <span class="map-kicker">SITE PLAN</span>
+          <strong>Interactive Property Map</strong>
+        </div>
+
+        <div class="map-controls" aria-label="Map controls">
+          <div class="segmented" role="group" aria-label="Map type">
+            <button id="map-roadmap" type="button" class="is-active" aria-pressed="true">Map</button>
+            <button id="map-satellite" type="button" aria-pressed="false">Satellite</button>
+          </div>
+          <button id="show-all" class="control-button" type="button">All lots</button>
+          <div class="zoom-group" role="group" aria-label="Zoom controls">
+            <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="map-stage">
+        <div id="google-map" class="google-map" aria-label="Interactive property map"></div>
+
+        <div id="map-loading" class="map-message" role="status" aria-live="polite">
+          <div class="map-message-card">
+            <span class="spinner" aria-hidden="true"></span>
+            <strong>Loading Google Maps</strong>
+            <span>Preparing property boundaries…</span>
+          </div>
+        </div>
+
+        <div id="map-error" class="map-message" hidden role="alert">
+          <div class="map-message-card map-message-error">
+            <strong id="map-error-title">Google Maps API key required</strong>
+            <span id="map-error-copy">Add your restricted browser key to <code>config.js</code>, then reload the page.</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="lots.js"></script>
+  <script src="due-diligence.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
