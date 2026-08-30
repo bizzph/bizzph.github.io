@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /
+
+# This app is intentionally excluded from search indexing.
