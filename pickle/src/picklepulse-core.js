@@ -724,15 +724,40 @@
   const DEFAULT_SETTINGS = Object.freeze({
     voiceEnabled: false,
     voiceURI: '',
+    voiceVolume: 1,
+    voiceRate: 1.05,
     theme: 'system',
     lofiEnabled: false,
     lofiTrack: 'sunny',
     scoreboardSwapped: false
   });
-  const LOFI_TRACKS = Object.freeze([
-    { id: 'sunny', label: 'Sunny Rally', notes: [261.63, 329.63, 392.00, 493.88, 392.00, 329.63, 293.66, 392.00] },
-    { id: 'bounce', label: 'Kitchen Bounce', notes: [220.00, 277.18, 329.63, 369.99, 329.63, 277.18, 246.94, 329.63] },
-    { id: 'drive', label: 'Baseline Drive', notes: [196.00, 246.94, 293.66, 349.23, 293.66, 246.94, 220.00, 293.66] }
+  // `lofiEnabled` / `lofiTrack` remain in persisted settings for backward-compatible backups.
+  // Playback is now a short, rotating court-music playlist rather than a single repeating lo-fi pattern.
+  const MUSIC_PLAYLIST = Object.freeze([
+    {
+      id: 'sunny', label: 'Rally Pop', bpm: 132, drumMode: 'pop', chordType: 'triangle', bassType: 'triangle', leadType: 'square',
+      chords: [[261.63, 329.63, 392.00], [220.00, 277.18, 329.63], [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]],
+      melody: [659.25, 783.99, 880.00, 783.99, 659.25, 587.33, 659.25, 783.99, 880.00, 987.77, 880.00, 783.99, 739.99, 659.25, 587.33, 659.25],
+      bass: [130.81, 164.81, 110.00, 164.81, 87.31, 130.81, 98.00, 146.83]
+    },
+    {
+      id: 'bounce', label: 'Court Rush', bpm: 140, drumMode: 'dance', chordType: 'sawtooth', bassType: 'square', leadType: 'triangle',
+      chords: [[220.00, 277.18, 329.63], [246.94, 311.13, 369.99], [196.00, 246.94, 329.63], [220.00, 293.66, 369.99]],
+      melody: [440.00, 554.37, 659.25, 739.99, 659.25, 587.33, 554.37, 659.25, 739.99, 880.00, 739.99, 659.25, 587.33, 659.25, 554.37, 493.88],
+      bass: [110.00, 110.00, 123.47, 123.47, 98.00, 98.00, 110.00, 110.00]
+    },
+    {
+      id: 'drive', label: 'Power Serve', bpm: 126, drumMode: 'drive', chordType: 'square', bassType: 'sawtooth', leadType: 'square',
+      chords: [[196.00, 246.94, 293.66], [174.61, 220.00, 261.63], [146.83, 196.00, 246.94], [164.81, 207.65, 246.94]],
+      melody: [392.00, 493.88, 587.33, 659.25, 587.33, 493.88, 440.00, 493.88, 587.33, 659.25, 739.99, 659.25, 587.33, 493.88, 440.00, 392.00],
+      bass: [98.00, 123.47, 87.31, 110.00, 73.42, 98.00, 82.41, 103.83]
+    },
+    {
+      id: 'glow', label: 'Match Point Anthem', bpm: 136, drumMode: 'anthem', chordType: 'sawtooth', bassType: 'triangle', leadType: 'square',
+      chords: [[293.66, 369.99, 440.00], [261.63, 329.63, 392.00], [220.00, 293.66, 369.99], [246.94, 311.13, 415.30]],
+      melody: [587.33, 739.99, 880.00, 987.77, 880.00, 739.99, 659.25, 739.99, 880.00, 987.77, 1174.66, 987.77, 880.00, 783.99, 739.99, 880.00],
+      bass: [146.83, 146.83, 130.81, 130.81, 110.00, 110.00, 123.47, 123.47]
+    }
   ]);
   const COLOR_PRESETS = Object.freeze([
     { id: 'classic', label: 'Classic', teamA: '#1e7350', teamB: '#4e5f8d' },
@@ -860,10 +885,14 @@
   function normalizeSettings(value) {
     const source = value && typeof value === 'object' ? value : DEFAULT_SETTINGS;
     const theme = ['light', 'dark', 'system'].includes(source.theme) ? source.theme : 'system';
-    const lofiTrack = LOFI_TRACKS.some((track) => track.id === source.lofiTrack) ? source.lofiTrack : 'sunny';
+    const lofiTrack = MUSIC_PLAYLIST.some((track) => track.id === source.lofiTrack) ? source.lofiTrack : 'sunny';
+    const voiceVolume = Math.min(1, Math.max(0.2, Number(source.voiceVolume) || 1));
+    const voiceRate = Math.min(1.4, Math.max(0.8, Number(source.voiceRate) || DEFAULT_SETTINGS.voiceRate));
     return {
       voiceEnabled: Boolean(source.voiceEnabled),
       voiceURI: String(source.voiceURI || ''),
+      voiceVolume,
+      voiceRate,
       theme,
       lofiEnabled: Boolean(source.lofiEnabled),
       lofiTrack,
@@ -910,7 +939,7 @@
     return '';
   }
 
-  const VOICE_SEGMENT_PAUSE_MS = 500;
+  const VOICE_SEGMENT_PAUSE_MS = 200;
   const VOICE_NOVELTY_PATTERN = /\b(?:albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|junior|organ|princess|ralph|superstar|trinoids|whisper|zarvox|wobble)\b/i;
   const VOICE_PREFERENCE_TERMS = Object.freeze([
     ['natural', 140], ['neural', 140], ['enhanced', 120], ['premium', 120],
@@ -988,6 +1017,9 @@
       this.audioContext = null;
       this.lofiTimer = null;
       this.lofiStep = 0;
+      this.musicTrackIndex = 0;
+      this.musicStarted = false;
+      this.musicActiveNodes = new Set();
       this.lofiResumeAfterSpeech = false;
       this.lastVoiceSignature = this.state.currentGame ? voiceSignature(this.state.currentGame) : '';
       this.lastRemoteVoiceSignature = '';
@@ -1188,6 +1220,14 @@
 
     onInput(event) {
       if (event.target && event.target.name === 'playerName') this.playerNameDraft = String(event.target.value || '');
+      if (event.target && event.target.id === 'voice-volume') {
+        const output = this.querySelector('#voice-volume-value');
+        if (output) output.textContent = `${Math.round(Number(event.target.value) || 100)}%`;
+      }
+      if (event.target && event.target.id === 'voice-rate') {
+        const output = this.querySelector('#voice-rate-value');
+        if (output) output.textContent = `${(Number(event.target.value) || DEFAULT_SETTINGS.voiceRate).toFixed(2)}×`;
+      }
     }
 
     resolvedTheme() {
@@ -1259,20 +1299,80 @@
       }
       const context = await this.ensureAudioContext();
       if (!context) {
-        this.showToast('Lo-fi audio unavailable');
+        this.showToast('Court music unavailable');
         return false;
       }
       if (this.lofiTimer) return true;
-      this.lofiStep = 0;
+      if (!this.musicStarted) {
+        const settings = normalizeSettings(this.state.settings);
+        const savedIndex = MUSIC_PLAYLIST.findIndex((track) => track.id === settings.lofiTrack);
+        this.musicTrackIndex = savedIndex >= 0 ? savedIndex : 0;
+        this.lofiStep = 0;
+        this.musicStarted = true;
+      }
       this.playLofiStep();
-      this.lofiTimer = window.setInterval(() => this.playLofiStep(), 520);
+      this.scheduleNextMusicStep();
       return true;
     }
 
+    scheduleNextMusicStep() {
+      if (!normalizeSettings(this.state.settings).lofiEnabled) return;
+      const track = MUSIC_PLAYLIST[this.musicTrackIndex] || MUSIC_PLAYLIST[0];
+      const stepMs = Math.round((60 / track.bpm) * 1000);
+      this.lofiTimer = window.setTimeout(() => {
+        this.lofiTimer = null;
+        this.playLofiStep();
+        if (normalizeSettings(this.state.settings).lofiEnabled && !(globalThis.speechSynthesis && speechSynthesis.speaking)) {
+          this.scheduleNextMusicStep();
+        }
+      }, stepMs);
+    }
+
+    stopMusicNodes() {
+      if (!this.musicActiveNodes || !this.musicActiveNodes.size) return;
+      const now = this.audioContext && this.audioContext.currentTime || 0;
+      for (const node of this.musicActiveNodes) {
+        try {
+          if (node.gain && node.gain.cancelScheduledValues) {
+            node.gain.cancelScheduledValues(now);
+            node.gain.setTargetAtTime(0.0001, now, 0.018);
+          }
+          if (node.oscillator && node.oscillator.stop) node.oscillator.stop(now + 0.08);
+        } catch (_error) {}
+      }
+      this.musicActiveNodes.clear();
+    }
+
     stopLofi(clearResume = true) {
-      if (this.lofiTimer) window.clearInterval(this.lofiTimer);
+      if (this.lofiTimer) window.clearTimeout(this.lofiTimer);
       this.lofiTimer = null;
-      if (clearResume) this.lofiResumeAfterSpeech = false;
+      this.stopMusicNodes();
+      if (clearResume) {
+        this.lofiResumeAfterSpeech = false;
+        this.musicStarted = false;
+      }
+    }
+
+    playMusicTone(frequency, duration, volume, type = 'sine', delay = 0) {
+      const context = this.audioContext;
+      if (!context || !frequency) return;
+      const now = context.currentTime + delay;
+      try {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(frequency, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.001, volume), now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + Math.max(0.08, duration));
+        osc.connect(gain);
+        gain.connect(context.destination);
+        const entry = { oscillator: osc, gain };
+        this.musicActiveNodes.add(entry);
+        osc.onended = () => this.musicActiveNodes.delete(entry);
+        osc.start(now);
+        osc.stop(now + duration + 0.06);
+      } catch (_error) {}
     }
 
     playLofiStep() {
@@ -1283,28 +1383,56 @@
         this.lofiResumeAfterSpeech = true;
         return;
       }
-      const settings = normalizeSettings(this.state.settings);
-      const track = LOFI_TRACKS.find((item) => item.id === settings.lofiTrack) || LOFI_TRACKS[0];
-      const frequency = track.notes[this.lofiStep % track.notes.length];
-      const now = context.currentTime;
-      try {
-        const osc = context.createOscillator();
-        const gain = context.createGain();
-        osc.type = this.lofiStep % 4 === 0 ? 'triangle' : 'sine';
-        osc.frequency.setValueAtTime(frequency, now);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(0.045, now + 0.025);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
-        osc.connect(gain);
-        gain.connect(context.destination);
-        osc.start(now);
-        osc.stop(now + 0.44);
-      } catch (_error) {}
+      const track = MUSIC_PLAYLIST[this.musicTrackIndex] || MUSIC_PLAYLIST[0];
+      const step = this.lofiStep;
+      const beat = step % 4;
+      const stepSeconds = 60 / track.bpm;
+      const chordIndex = Math.floor(step / 4) % track.chords.length;
+      const melody = track.melody[step % track.melody.length];
+      const bass = track.bass[Math.floor(step / 2) % track.bass.length];
+      const danceKick = track.drumMode === 'dance';
+      const driveFill = track.drumMode === 'drive' && (step % 8 === 6 || step % 8 === 7);
+      const anthemFill = track.drumMode === 'anthem' && step >= track.melody.length - 3;
+
+      // Tight synthetic drums: strong kick/backbeat plus off-beat hats. These are intentionally
+      // short and bright so the cues feel like game-day pop/dance instead of a lo-fi bed.
+      if (danceKick || beat === 0 || beat === 2 || driveFill || anthemFill) {
+        this.playMusicTone(68, 0.10, 0.026, 'sine');
+        this.playMusicTone(136, 0.045, 0.006, 'triangle');
+      }
+      if (beat === 1 || beat === 3) {
+        this.playMusicTone(185, 0.055, 0.008, 'square');
+        this.playMusicTone(960, 0.035, 0.0035, 'square', 0.008);
+      }
+      this.playMusicTone(3200, 0.026, 0.0024, 'square', stepSeconds * 0.48);
+      if (track.drumMode === 'dance') this.playMusicTone(4200, 0.018, 0.0018, 'square', stepSeconds * 0.23);
+
+      // Short chord stabs and syncopated bass keep the arrangement energetic and uncluttered.
+      if (beat === 0 || beat === 2) {
+        for (const [index, note] of track.chords[chordIndex].entries()) {
+          this.playMusicTone(note, stepSeconds * 0.34, 0.009, track.chordType, index * 0.01);
+        }
+      } else {
+        for (const [index, note] of track.chords[chordIndex].entries()) {
+          this.playMusicTone(note * 2, stepSeconds * 0.18, 0.0045, 'triangle', stepSeconds * 0.48 + index * 0.008);
+        }
+      }
+      this.playMusicTone(bass, stepSeconds * 0.54, track.drumMode === 'drive' ? 0.021 : 0.017, track.bassType);
+      if (melody) {
+        this.playMusicTone(melody, stepSeconds * 0.48, 0.015, track.leadType);
+        if (beat === 3) this.playMusicTone(melody * 1.5, stepSeconds * 0.18, 0.006, 'triangle', stepSeconds * 0.52);
+      }
+
       this.lofiStep += 1;
+      if (this.lofiStep >= track.melody.length) {
+        this.lofiStep = 0;
+        this.musicTrackIndex = (this.musicTrackIndex + 1) % MUSIC_PLAYLIST.length;
+      }
     }
 
     pauseLofiForSpeech() {
-      if (!this.lofiTimer) return false;
+      const wasPlaying = Boolean(this.lofiTimer || (this.musicActiveNodes && this.musicActiveNodes.size));
+      if (!wasPlaying) return false;
       this.stopLofi(false);
       this.lofiResumeAfterSpeech = true;
       return true;
@@ -1452,8 +1580,9 @@
           const utterance = new SpeechSynthesisUtterance(segments[index]);
           if (voice) utterance.voice = voice;
           utterance.lang = voice && voice.lang ? voice.lang : 'en-US';
-          utterance.rate = 0.92;
+          utterance.rate = normalizeSettings(this.state.settings).voiceRate;
           utterance.pitch = 1;
+          utterance.volume = remote ? 1 : normalizeSettings(this.state.settings).voiceVolume;
           utterance.onend = () => {
             if (generation !== this.voiceGeneration) return;
             if (index >= segments.length - 1) {
@@ -1868,13 +1997,20 @@
         this.persist();
         return;
       }
-      if (event.target.id === 'lofi-track') {
-        this.state.settings = { ...normalizeSettings(this.state.settings), lofiTrack: String(event.target.value || 'sunny') };
+      if (event.target.id === 'voice-volume') {
+        const voiceVolume = Math.min(1, Math.max(0.2, Number(event.target.value) / 100 || 1));
+        this.state.settings = { ...normalizeSettings(this.state.settings), voiceVolume };
+        const output = this.querySelector('#voice-volume-value');
+        if (output) output.textContent = `${Math.round(voiceVolume * 100)}%`;
         this.persist();
-        if (this.lofiTimer) {
-          this.stopLofi(false);
-          this.startLofi();
-        }
+        return;
+      }
+      if (event.target.id === 'voice-rate') {
+        const voiceRate = Math.min(1.4, Math.max(0.8, Number(event.target.value) || DEFAULT_SETTINGS.voiceRate));
+        this.state.settings = { ...normalizeSettings(this.state.settings), voiceRate };
+        const output = this.querySelector('#voice-rate-value');
+        if (output) output.textContent = `${voiceRate.toFixed(2)}×`;
+        this.persist();
         return;
       }
       if (event.target.name === 'format') {
@@ -2401,7 +2537,7 @@
           </div>
           <label class="contrast-toggle"><span>${icon('fullscreen')}<b>High contrast</b></span><input id="score-high-contrast" type="checkbox" ${appearance.highContrast ? 'checked' : ''}></label>
           <button class="settings-row-button" type="button" data-action="toggle-theme">${icon(this.resolvedTheme() === 'dark' ? 'moon' : 'sun')}<span><b>${this.resolvedTheme() === 'dark' ? 'Dark' : 'Light'} theme</b><small>Tap to switch</small></span></button>
-          <button class="settings-row-button" type="button" data-action="toggle-audio-panel">${icon('speaker')}<span><b>Audio</b><small>Voice and lo-fi</small></span></button>
+          <button class="settings-row-button" type="button" data-action="toggle-audio-panel">${icon('speaker')}<span><b>Audio</b><small>Voice and court music</small></span></button>
           <button class="reset-colors" type="button" data-action="reset-colors">Reset colors</button>
         </section>
       `;
@@ -2426,11 +2562,21 @@
             <button class="audio-toggle ${settings.voiceEnabled ? 'active' : ''}" type="button" data-action="toggle-voice" aria-pressed="${settings.voiceEnabled}">${icon(settings.voiceEnabled ? 'speaker' : 'speakerOff')}<span>${settings.voiceEnabled ? 'On' : 'Off'}</span></button>
           </div>
           <label class="audio-select"><span>English voice</span><select id="voice-select">${voiceOptions}</select><small>System default + up to 4 best clear English voices on this device</small></label>
+          <label class="audio-range" for="voice-volume">
+            <span><b>Voice volume</b><small>Set voice-over loudness for the court · 100% browser max</small></span>
+            <input id="voice-volume" type="range" min="20" max="100" step="5" value="${Math.round(settings.voiceVolume * 100)}" aria-label="Voice-over volume">
+            <output id="voice-volume-value" for="voice-volume">${Math.round(settings.voiceVolume * 100)}%</output>
+          </label>
+          <label class="audio-range" for="voice-rate">
+            <span><b>Voice speed</b><small>Adjust how quickly each announcement is spoken</small></span>
+            <input id="voice-rate" type="range" min="0.80" max="1.40" step="0.05" value="${settings.voiceRate.toFixed(2)}" aria-label="Voice-over speed">
+            <output id="voice-rate-value" for="voice-rate">${settings.voiceRate.toFixed(2)}×</output>
+          </label>
           <div class="audio-setting">
-            <div><b>Lo-fi court music</b><small>Pauses automatically for voice-over</small></div>
+            <div><b>Upbeat court playlist</b><small>Four short sports-style cues rotate automatically and cut out for voice-over</small></div>
             <button class="audio-toggle ${settings.lofiEnabled ? 'active' : ''}" type="button" data-action="toggle-lofi" aria-pressed="${settings.lofiEnabled}">${icon('music')}<span>${settings.lofiEnabled ? 'On' : 'Off'}</span></button>
           </div>
-          <label class="audio-select"><span>Mix</span><select id="lofi-track">${LOFI_TRACKS.map((track) => `<option value="${track.id}" ${track.id === settings.lofiTrack ? 'selected' : ''}>${track.label}</option>`).join('')}</select></label>
+          <div class="playlist-list" aria-label="Upbeat court music playlist">${MUSIC_PLAYLIST.map((track, index) => `<span><i>${index + 1}</i>${escapeHtml(track.label)}</span>`).join('')}</div>
         </section>
       `;
     }
