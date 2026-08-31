@@ -2,64 +2,52 @@
 
 ## Survey data
 
-Survey/parcel geometry is maintained in `lots.js`. Each lot may contain:
-
-- `id`
-- `surveyLot`
-- `plan`
-- `barangay`
-- `areaSqm`
-- `tiePoint`
-- `tie.bearing`
-- `tie.distanceM`
-- `boundaries[]`
-- `traverse[]`
-- survey dates, engineer, monument/corner description, and source notes
-
-The BLLM WGS84 coordinate is maintained in `config.js`.
+Survey/parcel geometry is maintained in `lots.js`: survey area, barangay/location, tie point, bearings, distances, adjoining boundaries, survey dates, engineer, and monument/corner descriptions. The BLLM WGS84 coordinate is maintained in `config.js`.
 
 ## Due-diligence data
 
-Document-review information is maintained separately in `due-diligence.js` so spreadsheet updates do not alter survey geometry.
-
-Each record is keyed by the app's lot ID and may contain:
+`due-diligence.js` mirrors `Untitled spreadsheet-3.xlsx`:
 
 ```js
 {
   legalLot: "B-134",
   title: {
-    number: "732", // spreadsheet Column B
-    encumbrances: "None"
+    number: "732",                 // Column B
+    encumbrances: "None"          // Column C
   },
   taxDeclaration: {
-    number: "2018-45-0022-00433", // spreadsheet Column E
-    note: null
+    number: "2018-45-0022-00433", // Column E
+    registeredOwner: "Vallespin, Carlos", // Column F
+    copyType: "Certified",         // Column G
+    otherInfo: null                // Column H
   },
-  realPropertyTax: {
-    fullPayment: "Yes",
-    delinquency: null,
-    periodCovered: "2026",
-    remarks: "..."
+  realPropertyTaxClearance: {
+    fullPayment: "Yes",            // Column J
+    delinquency: null,              // Column K
+    periodCovered: "2026"          // Column L
   },
-  rtcCertification: {
-    landRegistrationOrLitigation: null,
-    postedAsBailBond: null
+  darabCertificate: {
+    remarks: "No pending case or any just compensation case filed" // Column N
   },
-  noImprovements: {
-    remarks: "..."
+  mtcCertification: {
+    pendingCivilCase: "No",        // Column P
+    otherInfo: null                // Column Q
   },
-  recommendation: null
+  certificateNoImprovements: {
+    remarks: "...",                // Column S
+    otherInfo: "..."               // Column T
+  },
+  recommendation: null              // Column U (U:V merged)
 }
 ```
 
-Use `null` for a blank source cell. The UI displays null values as an em dash rather than interpreting them as "None" or "No".
+Repeated Lot No. columns are validation keys. Blank cells remain `null`; the UI displays them as an em dash and does not infer "No" or "None".
 
-### Document-basis rule
+### Document basis
 
-- **Titled lot**: Column B contains a Transfer Certificate of Title number.
+- **Titled lot**: Column B contains a TCT number.
 - **Tax declaration only**: Column B is blank and Column E contains a Tax Declaration number.
-- A Tax Declaration number is displayed separately from the TCT number and is not treated by the app as a title.
-- Do not infer a Tax Declaration number from another row unless a shared-document relationship is explicitly confirmed. For B-25-A and B-25-B, the user confirmed that both use Tax Declaration No. `2018-45-0004-0370`.
+- A titled lot may also have a Tax Declaration. The Tax Declaration is never treated as a title.
 
 ## Current legal-lot mapping
 
@@ -71,27 +59,3 @@ Use `null` for a blank source cell. The UI displays null values as an em dash ra
 - `Lot 6` = `B-141`
 - `Lot 7` = `B-144`
 - `Lot 8` = `B-157`
-
-## Google Maps configuration
-
-In `config.js`:
-
-```js
-window.LOT_MAP_CONFIG = {
-  bllm: { ... },
-  googleMapsApiKey: "YOUR_RESTRICTED_BROWSER_KEY",
-  googleMapType: "roadmap",
-  googleMapsVersion: "quarterly"
-};
-```
-
-Supported default map types in this build are `roadmap` and `satellite`.
-
-
-## Map parcel labels
-
-The visible parcel label is derived in `app.js` from the legal lot name in `due-diligence.js`, with `surveyLot` and then the internal lot ID as fallbacks. Labels are positioned at a calculated polygon centroid using a Google Maps `OverlayView`; no separate mapping library is used.
-
-## Presentation branding
-
-The interface logo is `assets/bertulfo-piasidad-logo.jpg`, cropped from the supplied Bertulfo & Piasidad reference image. Primary UI colors are maintained in the CSS variables at the top of `style.css`; keep future presentation changes within that palette unless the firm supplies updated brand guidance.

@@ -318,13 +318,11 @@
   }
 
   function taxStatus(lot) {
-    const tax = lot.dueDiligence?.realPropertyTax || {};
-    const remarks = String(tax.remarks || "").toLowerCase();
+    const tax = lot.dueDiligence?.realPropertyTaxClearance || {};
     const recommendation = String(lot.dueDiligence?.recommendation || "").toLowerCase();
     if (tax.fullPayment === "No" || tax.delinquency || recommendation.includes("outstanding real property tax")) {
       return { label: "Tax outstanding", className: "is-attention" };
     }
-    if (remarks.includes("pending")) return { label: "Clearance pending", className: "is-warning" };
     if (tax.fullPayment === "Yes") return { label: "Tax paid", className: "is-clear" };
     return { label: "Review records", className: "is-neutral" };
   }
@@ -352,9 +350,10 @@
     const legal = lot.dueDiligence || {};
     const title = legal.title || {};
     const taxDeclaration = legal.taxDeclaration || {};
-    const tax = legal.realPropertyTax || {};
-    const rtc = legal.rtcCertification || {};
-    const noImprovements = legal.noImprovements || {};
+    const tax = legal.realPropertyTaxClearance || {};
+    const darab = legal.darabCertificate || {};
+    const mtc = legal.mtcCertification || {};
+    const noImprovements = legal.certificateNoImprovements || {};
     const titleNo = cleanDocumentNumber(title.number);
     const taxDeclarationNo = cleanDocumentNumber(taxDeclaration.number);
     const basis = documentBasis(lot);
@@ -365,32 +364,36 @@
       ["Encumbrances (if any)", title.encumbrances]
     ]);
 
-    const taxDeclarationNote = taxDeclaration.note || (taxDeclarationNo
-      ? (titleNo
-          ? "Tax Declaration is shown separately from the TCT; the app does not treat it as a title."
-          : "Tax declaration only: no TCT number is listed in Column B of the source spreadsheet.")
-      : "No separate Tax Declaration number is listed in Column E of the source spreadsheet.");
-
     const taxDeclarationBody = detailRows([
       ["Lot No.", legal.legalLot],
       ["Tax Declaration No.", taxDeclarationNo],
-      ["Document-basis note", taxDeclarationNote]
+      ["Registered owner", taxDeclaration.registeredOwner],
+      ["Certified true copy / plain copy", taxDeclaration.copyType],
+      ["Other info", taxDeclaration.otherInfo]
     ]);
 
     const taxBody = detailRows([
+      ["Lot No.", legal.legalLot],
       ["Full payment", tax.fullPayment],
       ["Delinquency", tax.delinquency],
-      ["Period covered", tax.periodCovered],
-      ["Remarks", tax.remarks]
+      ["Period covered", tax.periodCovered]
     ]);
 
-    const rtcBody = detailRows([
-      ["Subject of land registration and/or litigation", rtc.landRegistrationOrLitigation],
-      ["Posted as bail bond", rtc.postedAsBailBond]
+    const darabBody = detailRows([
+      ["Lot No.", legal.legalLot],
+      ["Remarks", darab.remarks]
+    ]);
+
+    const mtcBody = detailRows([
+      ["Lot No.", legal.legalLot],
+      ["Has pending civil case filed before this Court", mtc.pendingCivilCase],
+      ["Other info", mtc.otherInfo]
     ]);
 
     const improvementsBody = detailRows([
-      ["Remarks", noImprovements.remarks]
+      ["Lot No.", legal.legalLot],
+      ["Remarks", noImprovements.remarks],
+      ["Other info", noImprovements.otherInfo]
     ]);
 
     const traverseRows = (lot.traverse || []).map(segment => `
@@ -427,24 +430,27 @@
         <div><span>Area per survey</span><strong>${esc(formatArea(lot.areaSqm))}</strong></div>
         <div><span>TCT No.</span><strong>${display(titleNo)}</strong></div>
         <div><span>Tax Declaration No.</span><strong>${display(taxDeclarationNo)}</strong></div>
+        <div><span>Registered owner</span><strong>${display(taxDeclaration.registeredOwner)}</strong></div>
+        <div><span>Tax declaration copy</span><strong>${display(taxDeclaration.copyType)}</strong></div>
         <div><span>Location</span><strong>${esc(lot.barangay)}</strong></div>
         <div><span>Plan / survey reference</span><strong>${esc(lot.plan || "—")}</strong></div>
       </div>
 
-      ${legal.recommendation ? `<div class="recommendation"><strong>Remarks / recommendation</strong>${esc(legal.recommendation)}</div>` : ""}
+      ${legal.recommendation ? `<div class="recommendation"><strong>Partial remarks / recommendations</strong>${esc(legal.recommendation)}</div>` : ""}
 
       <div class="details-sections">
         ${accordion("Transfer Certificate of Title (TCT)", titleBody, Boolean(titleNo))}
         ${accordion("Tax Declaration", taxDeclarationBody, true)}
         ${accordion("Real Property Tax Clearance", taxBody, false)}
-        ${accordion("RTC Certification", rtcBody, false)}
+        ${accordion("DARAB Certificate", darabBody, false)}
+        ${accordion("MTC Certification", mtcBody, false)}
         ${accordion("Certificate of No Improvements", improvementsBody, false)}
         ${accordion("Bearings & distances", traverseBody, false)}
         ${accordion("Adjoining boundaries", boundaryBody, false)}
         ${accordion("Survey information", surveyBody, false)}
       </div>
 
-      <p class="details-disclaimer">TCT numbers are transcribed from Column B and Tax Declaration numbers from Column E of the supplied spreadsheet, with user-confirmed shared-document corrections reflected where applicable. They are displayed as separate document types; a Tax Declaration is not treated by this app as a title. Unresolved blank source cells are shown as “—”. Survey geometry is calculated from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
+      <p class="details-disclaimer">Due-diligence fields are transcribed from the supplied spreadsheet by document section: TCT (A-C), Tax Declaration (D-H), Real Property Tax Clearance (I-L), DARAB Certificate (M-N), MTC Certification (O-Q), Certificate of No Improvements (R-T), and Partial Remarks / Recommendations (U-V). TCT and Tax Declaration are displayed as separate document types; a Tax Declaration is not treated as a title. Blank source cells are shown as “—”. Survey geometry is calculated separately from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
     `;
   }
 
