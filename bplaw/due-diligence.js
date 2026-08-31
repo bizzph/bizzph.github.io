@@ -27,8 +27,8 @@ window.LOT_DUE_DILIGENCE = {
     legalLot: "B-25-B",
     title: { number: "101-CARP2023000087", encumbrances: null },
     taxDeclaration: {
-      number: null,
-      note: "No separate Tax Declaration No. is listed for B-25-B in Column E; the source remarks state that B-25-A and B-25-B are covered by a single Tax Declaration."
+      number: "2018-45-0004-0370",
+      note: "Shared Tax Declaration No. with B-25-A."
     },
     realPropertyTax: {
       fullPayment: null,

@@ -5,7 +5,7 @@
 - TCT numbers (spreadsheet Column B) and Tax Declaration numbers (Column E) are now stored and displayed as separate document identifiers.
 - Each parcel is explicitly classified as **Titled lot** when a TCT number exists, or **Tax declaration only** when no TCT is listed but a Tax Declaration number exists.
 - B-25-A / B-25-B TCT references were corrected to match the supplied spreadsheet: B-25-A = `101-CARP2023000086`; B-25-B = `101-CARP2023000087`.
-- B-25-B retains a blank separate Tax Declaration number because Column E is blank; its source remark about a single Tax Declaration covering B-25-A and B-25-B is shown as a note rather than inventing a number.
+- B-25-A and B-25-B both display Tax Declaration No. `2018-45-0004-0370`, reflecting the shared Tax Declaration confirmed by the user.
 
 - The supplied **Bertulfo & Piasidad Attorneys & Counselors** logo is now used in the primary sidebar header.
 - The presentation UI now follows the supplied logo palette: deep maroon, white, charcoal, and muted rose neutrals.
@@ -78,7 +78,7 @@ Spreadsheet fields added to the detail panel:
 - Certificate of No Improvements: remarks
 - Partial remarks/recommendations
 
-Blank spreadsheet cells are preserved as blank/null data and displayed as an em dash. No legal conclusion is inferred from an empty source cell.
+Blank spreadsheet cells are generally preserved as blank/null data and displayed as an em dash. User-confirmed shared-document corrections override a blank source cell where specifically instructed; B-25-B therefore displays the same Tax Declaration No. as B-25-A.
 
 ## Files
 

@@ -59,7 +59,7 @@ Use `null` for a blank source cell. The UI displays null values as an em dash ra
 - **Titled lot**: Column B contains a Transfer Certificate of Title number.
 - **Tax declaration only**: Column B is blank and Column E contains a Tax Declaration number.
 - A Tax Declaration number is displayed separately from the TCT number and is not treated by the app as a title.
-- If Column E is blank, do not copy or infer a Tax Declaration number from another row. A source note may explain a shared record, as with B-25-B.
+- Do not infer a Tax Declaration number from another row unless a shared-document relationship is explicitly confirmed. For B-25-A and B-25-B, the user confirmed that both use Tax Declaration No. `2018-45-0004-0370`.
 
 ## Current legal-lot mapping
 

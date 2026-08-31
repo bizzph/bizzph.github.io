@@ -444,7 +444,7 @@
         ${accordion("Survey information", surveyBody, false)}
       </div>
 
-      <p class="details-disclaimer">TCT numbers are transcribed from Column B and Tax Declaration numbers from Column E of the supplied spreadsheet. They are displayed as separate document types; a Tax Declaration is not treated by this app as a title. Blank source cells are shown as “—”. Survey geometry is calculated from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
+      <p class="details-disclaimer">TCT numbers are transcribed from Column B and Tax Declaration numbers from Column E of the supplied spreadsheet, with user-confirmed shared-document corrections reflected where applicable. They are displayed as separate document types; a Tax Declaration is not treated by this app as a title. Unresolved blank source cells are shown as “—”. Survey geometry is calculated from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
     `;
   }
 
