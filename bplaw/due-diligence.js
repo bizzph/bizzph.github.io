@@ -1,14 +1,15 @@
 /*
  * DUE DILIGENCE DATA
  * ------------------
- * Transcribed from the supplied spreadsheet on 2026-08-28.
+ * Updated from the supplied spreadsheet; TCT numbers come from Column B and Tax Declaration numbers from Column E.
  * Blank spreadsheet cells are kept as null and displayed as an em dash.
  * Survey geometry remains in lots.js and is not changed by this file.
  */
 window.LOT_DUE_DILIGENCE = {
   "Lot 1": {
     legalLot: "B-25-A",
-    title: { encumbrances: null },
+    title: { number: "101-CARP2023000086", encumbrances: null },
+    taxDeclaration: { number: "2018-45-0004-0370", note: null },
     realPropertyTax: {
       fullPayment: "No",
       delinquency: "Php 128,815.96",
@@ -24,7 +25,11 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 2": {
     legalLot: "B-25-B",
-    title: { encumbrances: null },
+    title: { number: "101-CARP2023000087", encumbrances: null },
+    taxDeclaration: {
+      number: null,
+      note: "No separate Tax Declaration No. is listed for B-25-B in Column E; the source remarks state that B-25-A and B-25-B are covered by a single Tax Declaration."
+    },
     realPropertyTax: {
       fullPayment: null,
       delinquency: null,
@@ -40,7 +45,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 3": {
     legalLot: "B-134",
-    title: { encumbrances: "None" },
+    title: { number: "732", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0022-00433", note: null },
     realPropertyTax: {
       fullPayment: "Yes",
       delinquency: null,
@@ -58,7 +64,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 4": {
     legalLot: "B-158",
-    title: { encumbrances: "None" },
+    title: { number: "894", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0004-00323", note: null },
     realPropertyTax: {
       fullPayment: "Yes",
       delinquency: null,
@@ -74,7 +81,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 5": {
     legalLot: "B-51",
-    title: { encumbrances: "None" },
+    title: { number: "777", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0022-00813", note: null },
     realPropertyTax: {
       fullPayment: "No",
       delinquency: "Php 11,030.14",
@@ -90,7 +98,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 6": {
     legalLot: "B-141",
-    title: { encumbrances: "None" },
+    title: { number: "953", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0022-00445", note: null },
     realPropertyTax: {
       fullPayment: "Yes",
       delinquency: null,
@@ -108,7 +117,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 7": {
     legalLot: "B-144",
-    title: { encumbrances: "None" },
+    title: { number: "887", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0022-00454", note: null },
     realPropertyTax: {
       fullPayment: "Yes",
       delinquency: null,
@@ -126,7 +136,8 @@ window.LOT_DUE_DILIGENCE = {
   },
   "Lot 8": {
     legalLot: "B-157",
-    title: { encumbrances: "None" },
+    title: { number: "693", encumbrances: "None" },
+    taxDeclaration: { number: "2018-45-0004-00322", note: null },
     realPropertyTax: {
       fullPayment: "Yes",
       delinquency: null,

@@ -281,6 +281,42 @@
     return LotLabelOverlayClass;
   }
 
+  function cleanDocumentNumber(value) {
+    if (value === null || value === undefined) return null;
+    const normalized = String(value).trim();
+    return normalized ? normalized : null;
+  }
+
+  function documentBasis(lot) {
+    const titleNo = cleanDocumentNumber(lot.dueDiligence?.title?.number);
+    const taxDeclarationNo = cleanDocumentNumber(lot.dueDiligence?.taxDeclaration?.number);
+
+    if (titleNo) {
+      return {
+        label: "Titled lot",
+        className: "is-titled",
+        detail: `TCT No. ${titleNo}`
+      };
+    }
+    if (taxDeclarationNo) {
+      return {
+        label: "Tax declaration only",
+        className: "is-tax-only",
+        detail: `Tax Dec. No. ${taxDeclarationNo}`
+      };
+    }
+    return {
+      label: "Document basis to verify",
+      className: "is-unverified",
+      detail: "No TCT or Tax Declaration number listed"
+    };
+  }
+
+  function basisMarkup(lot) {
+    const basis = documentBasis(lot);
+    return `<span class="basis-badge ${basis.className}">${esc(basis.label)}</span>`;
+  }
+
   function taxStatus(lot) {
     const tax = lot.dueDiligence?.realPropertyTax || {};
     const remarks = String(tax.remarks || "").toLowerCase();
@@ -314,14 +350,31 @@
 
   function detailsMarkup(lot) {
     const legal = lot.dueDiligence || {};
+    const title = legal.title || {};
+    const taxDeclaration = legal.taxDeclaration || {};
     const tax = legal.realPropertyTax || {};
     const rtc = legal.rtcCertification || {};
     const noImprovements = legal.noImprovements || {};
+    const titleNo = cleanDocumentNumber(title.number);
+    const taxDeclarationNo = cleanDocumentNumber(taxDeclaration.number);
+    const basis = documentBasis(lot);
 
     const titleBody = detailRows([
       ["Lot No.", legal.legalLot],
-      ["Transfer Certificate / survey reference", lot.surveyLot],
-      ["Encumbrances (if any)", legal.title?.encumbrances]
+      ["Transfer Certificate of Title No.", titleNo],
+      ["Encumbrances (if any)", title.encumbrances]
+    ]);
+
+    const taxDeclarationNote = taxDeclaration.note || (taxDeclarationNo
+      ? (titleNo
+          ? "Tax Declaration is shown separately from the TCT; the app does not treat it as a title."
+          : "Tax declaration only: no TCT number is listed in Column B of the source spreadsheet.")
+      : "No separate Tax Declaration number is listed in Column E of the source spreadsheet.");
+
+    const taxDeclarationBody = detailRows([
+      ["Lot No.", legal.legalLot],
+      ["Tax Declaration No.", taxDeclarationNo],
+      ["Document-basis note", taxDeclarationNote]
     ]);
 
     const taxBody = detailRows([
@@ -350,6 +403,7 @@
 
     const surveyBody = `
       <div class="details-foot">
+        <p><strong>Plan / survey reference:</strong> ${esc(lot.plan || "—")}</p>
         <p><strong>Tie point:</strong> ${esc(lot.tiePoint)}</p>
         <p><strong>Tie:</strong> ${esc(lot.tie.bearing)} · ${esc(formatDistance(lot.tie.distanceM))}</p>
         <p><strong>Survey:</strong> ${esc(lot.surveyDate || "—")}</p>
@@ -364,22 +418,25 @@
       <header class="details-heading">
         <p class="details-kicker">${esc(lot.id)} · PROPERTY RECORD</p>
         <h2>${esc(legalName(lot))}</h2>
-        <p class="details-subtitle">${esc(lot.surveyLot)} · ${esc(lot.barangay)}</p>
-        <div class="details-status-row">${statusMarkup(lot)}</div>
+        <p class="details-subtitle">${esc(basis.detail)} · ${esc(lot.barangay)}</p>
+        <div class="details-status-row">${basisMarkup(lot)}${statusMarkup(lot)}</div>
       </header>
 
       <div class="details-summary">
+        <div><span>Document basis</span><strong>${esc(basis.label)}</strong></div>
         <div><span>Area per survey</span><strong>${esc(formatArea(lot.areaSqm))}</strong></div>
-        <div><span>Plan / title</span><strong>${esc(lot.plan)}</strong></div>
+        <div><span>TCT No.</span><strong>${display(titleNo)}</strong></div>
+        <div><span>Tax Declaration No.</span><strong>${display(taxDeclarationNo)}</strong></div>
         <div><span>Location</span><strong>${esc(lot.barangay)}</strong></div>
-        <div><span>BLLM tie</span><strong>${esc(lot.tie.bearing)} · ${esc(formatDistance(lot.tie.distanceM))}</strong></div>
+        <div><span>Plan / survey reference</span><strong>${esc(lot.plan || "—")}</strong></div>
       </div>
 
       ${legal.recommendation ? `<div class="recommendation"><strong>Remarks / recommendation</strong>${esc(legal.recommendation)}</div>` : ""}
 
       <div class="details-sections">
-        ${accordion("Transfer Certificate of Title", titleBody, true)}
-        ${accordion("Real Property Tax Clearance", taxBody, true)}
+        ${accordion("Transfer Certificate of Title (TCT)", titleBody, Boolean(titleNo))}
+        ${accordion("Tax Declaration", taxDeclarationBody, true)}
+        ${accordion("Real Property Tax Clearance", taxBody, false)}
         ${accordion("RTC Certification", rtcBody, false)}
         ${accordion("Certificate of No Improvements", improvementsBody, false)}
         ${accordion("Bearings & distances", traverseBody, false)}
@@ -387,7 +444,7 @@
         ${accordion("Survey information", surveyBody, false)}
       </div>
 
-      <p class="details-disclaimer">Due-diligence fields are transcribed from the supplied spreadsheet; blank source cells are shown as “—”. Survey geometry is calculated from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
+      <p class="details-disclaimer">TCT numbers are transcribed from Column B and Tax Declaration numbers from Column E of the supplied spreadsheet. They are displayed as separate document types; a Tax Declaration is not treated by this app as a title. Blank source cells are shown as “—”. Survey geometry is calculated from the supplied technical descriptions and configured BLLM WGS84 coordinate. Verify all information against official source documents before legal, engineering, construction, acquisition, or boundary-setting use.</p>
     `;
   }
 
@@ -395,6 +452,9 @@
     listEl.replaceChildren();
     cards.clear();
     LOTS.forEach(lot => {
+      const legal = lot.dueDiligence || {};
+      const titleNo = cleanDocumentNumber(legal.title?.number);
+      const taxDeclarationNo = cleanDocumentNumber(legal.taxDeclaration?.number);
       const card = document.createElement("button");
       card.type = "button";
       card.className = "lot-card";
@@ -402,9 +462,13 @@
         <div class="lot-card-top">
           <div class="lot-title">
             <h2>${esc(legalName(lot))}</h2>
-            <p>${esc(lot.surveyLot)}</p>
+            <div class="lot-document-basis">${basisMarkup(lot)}</div>
           </div>
           <span class="lot-area">${esc(formatArea(lot.areaSqm))}</span>
+        </div>
+        <div class="lot-documents" aria-label="Property document identifiers">
+          <div><span>TCT No.</span><strong>${display(titleNo)}</strong></div>
+          <div><span>Tax Declaration No.</span><strong>${display(taxDeclarationNo)}</strong></div>
         </div>
         <div class="lot-meta">
           <span>${esc(lot.barangay)}</span>

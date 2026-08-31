@@ -1,6 +1,11 @@
-# Property Due Diligence Viewer - v16 Bertulfo & Piasidad presentation build
+# Property Due Diligence Viewer - v17 Bertulfo & Piasidad presentation build
 
 ## What changed
+
+- TCT numbers (spreadsheet Column B) and Tax Declaration numbers (Column E) are now stored and displayed as separate document identifiers.
+- Each parcel is explicitly classified as **Titled lot** when a TCT number exists, or **Tax declaration only** when no TCT is listed but a Tax Declaration number exists.
+- B-25-A / B-25-B TCT references were corrected to match the supplied spreadsheet: B-25-A = `101-CARP2023000086`; B-25-B = `101-CARP2023000087`.
+- B-25-B retains a blank separate Tax Declaration number because Column E is blank; its source remark about a single Tax Declaration covering B-25-A and B-25-B is shown as a note rather than inventing a number.
 
 - The supplied **Bertulfo & Piasidad Attorneys & Counselors** logo is now used in the primary sidebar header.
 - The presentation UI now follows the supplied logo palette: deep maroon, white, charcoal, and muted rose neutrals.
@@ -66,7 +71,8 @@ The supplied spreadsheet uses legal lot numbers rather than the app's original `
 
 Spreadsheet fields added to the detail panel:
 
-- Transfer Certificate of Title: encumbrances
+- Transfer Certificate of Title: TCT number (Column B) and encumbrances
+- Tax Declaration: Tax Declaration number (Column E), kept separate from both title and tax-clearance status
 - Real Property Tax Clearance: full payment, delinquency, period covered, remarks
 - RTC Certification: land registration/litigation and bail-bond status
 - Certificate of No Improvements: remarks

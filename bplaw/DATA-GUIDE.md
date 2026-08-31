@@ -28,7 +28,12 @@ Each record is keyed by the app's lot ID and may contain:
 {
   legalLot: "B-134",
   title: {
+    number: "732", // spreadsheet Column B
     encumbrances: "None"
+  },
+  taxDeclaration: {
+    number: "2018-45-0022-00433", // spreadsheet Column E
+    note: null
   },
   realPropertyTax: {
     fullPayment: "Yes",
@@ -48,6 +53,13 @@ Each record is keyed by the app's lot ID and may contain:
 ```
 
 Use `null` for a blank source cell. The UI displays null values as an em dash rather than interpreting them as "None" or "No".
+
+### Document-basis rule
+
+- **Titled lot**: Column B contains a Transfer Certificate of Title number.
+- **Tax declaration only**: Column B is blank and Column E contains a Tax Declaration number.
+- A Tax Declaration number is displayed separately from the TCT number and is not treated by the app as a title.
+- If Column E is blank, do not copy or infer a Tax Declaration number from another row. A source note may explain a shared record, as with B-25-B.
 
 ## Current legal-lot mapping
 

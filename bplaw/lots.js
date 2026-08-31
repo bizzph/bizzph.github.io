@@ -15,8 +15,8 @@ window.LOT_MAP_DATA = {
     {
       id: "Lot 1",
       shortLabel: "LOT 1",
-      surveyLot: "TCT 101-CARP2023000087",
-      plan: "TCT 101-CARP2023000087",
+      surveyLot: "TCT 101-CARP2023000086",
+      plan: "TCT 101-CARP2023000086",
       barangay: "Ubay, Bohol",
       areaSqm: 20580,
       tiePoint: "BLLM No. 1, Municipality of Ubay, Province of Bohol",
@@ -43,8 +43,8 @@ window.LOT_MAP_DATA = {
     {
       id: "Lot 2",
       shortLabel: "LOT 2",
-      surveyLot: "TCT 101-CARP2023000086",
-      plan: "TCT 101-CARP2023000086",
+      surveyLot: "TCT 101-CARP2023000087",
+      plan: "TCT 101-CARP2023000087",
       barangay: "Ubay, Bohol",
       areaSqm: 20580,
       tiePoint: "BLLM No. 1, Municipality of Ubay, Province of Bohol",
