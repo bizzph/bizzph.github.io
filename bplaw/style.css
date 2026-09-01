@@ -54,7 +54,8 @@ button { -webkit-tap-highlight-color: transparent; }
   align-items: center;
   min-height: 62px;
   margin-bottom: 20px;
-  padding: 8px 0 14px;
+  /* padding: 8px 0 14px; */
+  padding: 0;
   border-bottom: 3px solid var(--brand);
 }
 .firm-brand img {
