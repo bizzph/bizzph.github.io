@@ -26,6 +26,7 @@
   const roadmapBtn = document.getElementById("map-roadmap");
   const satelliteBtn = document.getElementById("map-satellite");
   const showAllBtn = document.getElementById("show-all");
+  const fullscreenToggleBtn = document.getElementById("fullscreen-toggle");
   const zoomInBtn = document.getElementById("zoom-in");
   const zoomOutBtn = document.getElementById("zoom-out");
 
@@ -554,6 +555,43 @@
     });
   }
 
+  function currentFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function syncFullscreenButton() {
+    if (!fullscreenToggleBtn) return;
+    const active = Boolean(currentFullscreenElement());
+    fullscreenToggleBtn.classList.toggle("is-fullscreen", active);
+    fullscreenToggleBtn.setAttribute("aria-pressed", String(active));
+    fullscreenToggleBtn.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+    fullscreenToggleBtn.title = active ? "Exit fullscreen" : "Enter fullscreen";
+  }
+
+  function handleFullscreenChange() {
+    syncFullscreenButton();
+    if (map && window.google?.maps?.event) {
+      requestAnimationFrame(() => google.maps.event.trigger(map, "resize"));
+    }
+  }
+
+  async function toggleFullscreen() {
+    const root = document.documentElement;
+    try {
+      if (currentFullscreenElement()) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } else if (root.requestFullscreen) {
+        await root.requestFullscreen();
+      } else if (root.webkitRequestFullscreen) {
+        root.webkitRequestFullscreen();
+      }
+    } catch (error) {
+      console.warn("Fullscreen request was not completed.", error);
+    }
+    syncFullscreenButton();
+  }
+
   function loadGoogleMapsApi() {
     const key = String(CONFIG.googleMapsApiKey || "").trim();
     if (!key) return Promise.reject(new Error("MISSING_API_KEY"));
@@ -669,6 +707,9 @@
       closeDetails();
       fitAll();
     });
+    fullscreenToggleBtn?.addEventListener("click", toggleFullscreen);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
     zoomInBtn.addEventListener("click", () => {
       if (!map) return;
       map.setZoom(clamp((map.getZoom() || 15) + 1, 3, 21));
@@ -681,6 +722,7 @@
 
   createSidebar();
   bindControls();
+  syncFullscreenButton();
   setControlsDisabled(true);
   createMap().catch(showMapError);
 })();
