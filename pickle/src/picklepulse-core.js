@@ -203,6 +203,23 @@
     return next;
   }
 
+  function resetGame(game, now) {
+    const safeNow = now || Date.now();
+    const next = normalizeGame(game);
+    next.status = 'active';
+    next.completedAt = null;
+    next.teams.forEach((team) => { team.score = 0; });
+    next.servingTeam = Number(next.startingTeam) === 1 ? 1 : 0;
+    next.serverNumber = next.format === 'doubles' ? 2 : 1;
+    next.servingPlayer = 0;
+    next.rallies = [];
+    next.timer.elapsedMs = 0;
+    next.timer.running = true;
+    next.timer.startedAt = safeNow;
+    next.updatedAt = new Date(safeNow).toISOString();
+    return next;
+  }
+
   function setRemainingMs(game, remainingMs, now) {
     const safeNow = now || Date.now();
     const next = normalizeGame(game);
@@ -415,6 +432,7 @@
     pauseTimer,
     startTimer,
     resetTimer,
+    resetGame,
     setRemainingMs,
     adjustTimer,
     expireTimer,
@@ -439,7 +457,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 3;
+  const ROOT_SCHEMA_VERSION = 5;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -490,37 +508,170 @@
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  function clampCourtCount(value) {
+    return Math.max(1, Math.min(12, Math.round(Number(value) || 1)));
+  }
+
+  function pairKey(left, right) {
+    const a = String(left || '');
+    const b = String(right || '');
+    return a < b ? `${a}|${b}` : `${b}|${a}`;
+  }
+
+  function stableHash(text) {
+    let hash = 2166136261;
+    String(text || '').split('').forEach((char) => {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    });
+    return hash >>> 0;
+  }
+
+  function normalizeCountMap(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const next = {};
+    Object.keys(source).forEach((key) => {
+      const count = Math.max(0, Math.floor(Number(source[key]) || 0));
+      if (count) next[key] = count;
+    });
+    return next;
+  }
+
   function normalizeQueue(value, players) {
     const source = value && typeof value === 'object' ? value : {};
-    const validIds = new Set(normalizePlayers(players).map((player) => player.id));
+    const roster = normalizePlayers(players);
+    const validIds = new Set(roster.map((player) => player.id));
     const safe = (items, max = Infinity) => unique(items).filter((id) => validIds.has(id)).slice(0, max);
-    const pending = safe(source.pending, 4);
-    const onCourt = safe(source.onCourt, 4);
-    return {
-      waiting: safe(source.waiting).filter((id) => !onCourt.includes(id)),
-      pending: pending.length === 4 ? pending : [],
+    const rawCourts = Array.isArray(source.courts) ? source.courts : [];
+    const courtCount = clampCourtCount(source.courtCount || rawCourts.length || 1);
+    const courts = Array.from({ length: courtCount }, (_, index) => {
+      const raw = rawCourts[index] && typeof rawCourts[index] === 'object' ? rawCourts[index] : {};
+      const courtPlayers = safe(raw.players, 4);
+      const teamA = safe(raw.teams && raw.teams[0], 2).filter((id) => courtPlayers.includes(id));
+      const teamB = safe(raw.teams && raw.teams[1], 2).filter((id) => courtPlayers.includes(id) && !teamA.includes(id));
+      const teams = teamA.length === 2 && teamB.length === 2 && new Set([...teamA, ...teamB]).size === 4
+        ? [teamA, teamB]
+        : courtPlayers.length === 4
+          ? [[courtPlayers[0], courtPlayers[1]], [courtPlayers[2], courtPlayers[3]]]
+          : [[], []];
+      return {
+        id: `court-${index + 1}`,
+        players: courtPlayers,
+        teams,
+        assignedAt: Number(raw.assignedAt) || 0
+      };
+    });
+    const queueCourtIds = new Set(courts.flatMap((court) => court.players));
+    const onCourt = safe(source.onCourt, 4).filter((id) => !queueCourtIds.has(id));
+    const occupiedIds = new Set([...queueCourtIds, ...onCourt]);
+    const waiting = safe(source.waiting).filter((id) => !occupiedIds.has(id));
+    const pendingRaw = safe(source.pending, 4).filter((id) => waiting.includes(id));
+    const pending = pendingRaw.length === 4 ? pendingRaw : [];
+    const sourceStats = source.stats && typeof source.stats === 'object' ? source.stats : {};
+    let sequence = Math.max(0, Math.floor(Number(source.sequence) || 0));
+    const now = Date.now();
+    const stats = {};
+    roster.forEach((player, index) => {
+      const raw = sourceStats[player.id] && typeof sourceStats[player.id] === 'object' ? sourceStats[player.id] : {};
+      const queuedIndex = waiting.indexOf(player.id);
+      const queuedAt = Number(raw.queuedAt) || (queuedIndex >= 0 ? now + queuedIndex : 0);
+      const tie = Math.max(0, Math.floor(Number(raw.tie) || 0));
+      sequence = Math.max(sequence, tie);
+      const gamesPlayed = Math.max(0, Math.floor(Number(raw.gamesPlayed) || 0));
+      const isPresent = queuedIndex >= 0 || occupiedIds.has(player.id);
+      stats[player.id] = {
+        gamesPlayed,
+        fairTurns: Math.max(0, Math.floor(Number(raw.fairTurns != null ? raw.fairTurns : gamesPlayed) || 0)),
+        queuedAt,
+        lastPlayedAt: Number(raw.lastPlayedAt) || 0,
+        tie,
+        hasJoined: typeof raw.hasJoined === 'boolean' ? raw.hasJoined : Boolean(gamesPlayed || queuedAt || isPresent)
+      };
+    });
+    const next = {
+      waiting,
+      pending,
       onCourt,
-      activeGameId: source.activeGameId ? String(source.activeGameId) : ''
+      activeGameId: source.activeGameId ? String(source.activeGameId) : '',
+      courtCount,
+      courts,
+      stats,
+      pairCounts: normalizeCountMap(source.pairCounts),
+      opponentCounts: normalizeCountMap(source.opponentCounts),
+      sequence,
+      sessionSeed: String(source.sessionSeed || makeId('queue')).slice(0, 120)
     };
+    next.waiting.sort((a, b) => {
+      const left = next.stats[a] || {};
+      const right = next.stats[b] || {};
+      if ((left.fairTurns || 0) !== (right.fairTurns || 0)) return (left.fairTurns || 0) - (right.fairTurns || 0);
+      const leftAt = Number(left.queuedAt) || Number.MAX_SAFE_INTEGER;
+      const rightAt = Number(right.queuedAt) || Number.MAX_SAFE_INTEGER;
+      if (leftAt !== rightAt) return leftAt - rightAt;
+      if ((left.tie || 0) !== (right.tie || 0)) return (left.tie || 0) - (right.tie || 0);
+      return a.localeCompare(b);
+    });
+    if (next.pending.length) next.pending = next.waiting.slice(0, 4);
+    return next;
+  }
+
+  function activeQueueIds(next) {
+    return unique([...next.waiting, ...next.onCourt, ...next.courts.flatMap((court) => court.players)]);
+  }
+
+  function fairnessBaseline(next) {
+    const levels = activeQueueIds(next)
+      .map((id) => next.stats[id])
+      .filter((stat) => stat && stat.hasJoined)
+      .map((stat) => Math.max(0, Number(stat.fairTurns) || 0));
+    return levels.length ? Math.min(...levels) : 0;
+  }
+
+  function prepareFirstJoin(next, id, baseline = fairnessBaseline(next)) {
+    if (!next.stats[id]) next.stats[id] = { gamesPlayed: 0, fairTurns: 0, queuedAt: 0, lastPlayedAt: 0, tie: 0, hasJoined: false };
+    if (!next.stats[id].hasJoined) {
+      next.stats[id].fairTurns = Math.max(0, Math.floor(Number(baseline) || 0));
+      next.stats[id].hasJoined = true;
+    }
+  }
+
+  function stampQueued(next, id, queuedAt = Date.now()) {
+    if (!next.stats[id]) next.stats[id] = { gamesPlayed: 0, fairTurns: 0, queuedAt: 0, lastPlayedAt: 0, tie: 0, hasJoined: false };
+    next.stats[id].hasJoined = true;
+    next.sequence += 1;
+    next.stats[id].queuedAt = Number(queuedAt) || Date.now();
+    next.stats[id].tie = next.sequence;
   }
 
   function addToQueue(queue, playerId, players) {
     const next = normalizeQueue(queue, players);
     const id = String(playerId || '');
     const valid = normalizePlayers(players).some((player) => player.id === id);
-    if (!valid || next.waiting.includes(id) || next.onCourt.includes(id)) return next;
+    const occupied = new Set([...next.onCourt, ...next.courts.flatMap((court) => court.players)]);
+    if (!valid || next.waiting.includes(id) || occupied.has(id)) return next;
+    prepareFirstJoin(next, id);
+    stampQueued(next, id);
     next.waiting.push(id);
-    return next;
+    return normalizeQueue(next, players);
   }
 
   function addAllToQueue(queue, players) {
     const next = normalizeQueue(queue, players);
-    normalizePlayers(players).forEach((player) => {
-      if (!next.waiting.includes(player.id) && !next.onCourt.includes(player.id)) {
-        next.waiting.push(player.id);
-      }
+    const occupied = new Set([...next.waiting, ...next.onCourt, ...next.courts.flatMap((court) => court.players)]);
+    const available = normalizePlayers(players).filter((player) => !occupied.has(player.id));
+    const baseline = fairnessBaseline(next);
+    available.sort((a, b) => {
+      const ah = stableHash(`${next.sessionSeed}|${a.id}`);
+      const bh = stableHash(`${next.sessionSeed}|${b.id}`);
+      return ah - bh || a.id.localeCompare(b.id);
     });
-    return next;
+    const base = Date.now();
+    available.forEach((player) => {
+      prepareFirstJoin(next, player.id, baseline);
+      stampQueued(next, player.id, base);
+      next.waiting.push(player.id);
+    });
+    return normalizeQueue(next, players);
   }
 
   function removeFromQueue(queue, playerId, players) {
@@ -529,6 +680,7 @@
     next.waiting = next.waiting.filter((item) => item !== id);
     next.pending = next.pending.filter((item) => item !== id);
     if (next.pending.length !== 4) next.pending = [];
+    if (next.stats[id]) next.stats[id].queuedAt = 0;
     return next;
   }
 
@@ -538,9 +690,16 @@
     const index = next.waiting.indexOf(id);
     const target = index + (Number(direction) < 0 ? -1 : 1);
     if (index < 0 || target < 0 || target >= next.waiting.length) return next;
-    [next.waiting[index], next.waiting[target]] = [next.waiting[target], next.waiting[index]];
-    if (next.pending.length) next.pending = next.waiting.slice(0, 4);
-    return next;
+    const other = next.waiting[target];
+    const leftTie = next.stats[id] ? next.stats[id].tie : 0;
+    if (next.stats[id] && next.stats[other]) {
+      next.stats[id].tie = next.stats[other].tie;
+      next.stats[other].tie = leftTie;
+      const leftAt = next.stats[id].queuedAt;
+      next.stats[id].queuedAt = next.stats[other].queuedAt;
+      next.stats[other].queuedAt = leftAt;
+    }
+    return normalizeQueue(next, players);
   }
 
   function reorderQueue(queue, playerId, targetPlayerId, placeAfter, players) {
@@ -549,13 +708,19 @@
     const targetId = String(targetPlayerId || '');
     if (!id || !targetId || id === targetId) return next;
     const sourceIndex = next.waiting.indexOf(id);
-    if (sourceIndex < 0 || !next.waiting.includes(targetId)) return next;
-    next.waiting.splice(sourceIndex, 1);
     const targetIndex = next.waiting.indexOf(targetId);
-    if (targetIndex < 0) return normalizeQueue(queue, players);
-    next.waiting.splice(targetIndex + (placeAfter ? 1 : 0), 0, id);
-    if (next.pending.length) next.pending = next.waiting.slice(0, 4);
-    return next;
+    if (sourceIndex < 0 || targetIndex < 0) return next;
+    const ordered = next.waiting.filter((item) => item !== id);
+    const index = ordered.indexOf(targetId) + (placeAfter ? 1 : 0);
+    ordered.splice(index, 0, id);
+    const base = Date.now();
+    ordered.forEach((playerIdValue, orderIndex) => {
+      if (!next.stats[playerIdValue]) return;
+      next.stats[playerIdValue].queuedAt = base + orderIndex;
+      next.stats[playerIdValue].tie = orderIndex + 1;
+    });
+    next.sequence = Math.max(next.sequence, ordered.length + 1);
+    return normalizeQueue(next, players);
   }
 
   function prepareNextFour(queue, players) {
@@ -576,6 +741,143 @@
     return a.length === b.length && a.every((value, index) => value === b[index]);
   }
 
+  function pairingPenalty(next, teams) {
+    const [teamA, teamB] = teams;
+    let score = 0;
+    score += (next.pairCounts[pairKey(teamA[0], teamA[1])] || 0) * 100;
+    score += (next.pairCounts[pairKey(teamB[0], teamB[1])] || 0) * 100;
+    teamA.forEach((a) => teamB.forEach((b) => { score += (next.opponentCounts[pairKey(a, b)] || 0) * 12; }));
+    return score;
+  }
+
+  function bestTeamsForGroup(next, group) {
+    if (!Array.isArray(group) || group.length !== 4) return [[], []];
+    const options = [
+      [[group[0], group[1]], [group[2], group[3]]],
+      [[group[0], group[2]], [group[1], group[3]]],
+      [[group[0], group[3]], [group[1], group[2]]]
+    ];
+    options.sort((a, b) => pairingPenalty(next, a) - pairingPenalty(next, b)
+      || stableHash(a.flat().join('|')) - stableHash(b.flat().join('|')));
+    return options[0];
+  }
+
+  function groupPenalty(next, group) {
+    return pairingPenalty(next, bestTeamsForGroup(next, group));
+  }
+
+  function chooseCourtGroup(next, remaining) {
+    if (remaining.length <= 4) return remaining.slice(0, 4);
+    const anchor = remaining[0];
+    let best = [anchor, remaining[1], remaining[2], remaining[3]];
+    let bestScore = Number.POSITIVE_INFINITY;
+    let bestRank = Number.POSITIVE_INFINITY;
+    for (let a = 1; a < remaining.length - 2; a += 1) {
+      for (let b = a + 1; b < remaining.length - 1; b += 1) {
+        for (let c = b + 1; c < remaining.length; c += 1) {
+          const group = [anchor, remaining[a], remaining[b], remaining[c]];
+          const score = groupPenalty(next, group);
+          const rank = a + b + c;
+          if (score < bestScore || (score === bestScore && rank < bestRank)) {
+            best = group;
+            bestScore = score;
+            bestRank = rank;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function setCourtCount(queue, count, players) {
+    const next = normalizeQueue(queue, players);
+    const desired = clampCourtCount(count);
+    if (desired < next.courts.length) {
+      const returning = next.courts.slice(desired).flatMap((court) => court.players.map((id) => ({ id, queuedAt: court.assignedAt || Date.now() })));
+      returning.forEach(({ id, queuedAt }) => {
+        if (!next.waiting.includes(id)) {
+          stampQueued(next, id, queuedAt);
+          next.waiting.push(id);
+        }
+      });
+    }
+    next.courtCount = desired;
+    next.courts = Array.from({ length: desired }, (_, index) => next.courts[index] || { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 });
+    return normalizeQueue(next, players);
+  }
+
+  function fillOpenCourts(queue, players, now = Date.now()) {
+    const next = normalizeQueue(queue, players);
+    const openIndexes = next.courts.map((court, index) => court.players.length ? -1 : index).filter((index) => index >= 0);
+    const fillCount = Math.min(openIndexes.length, Math.floor(next.waiting.length / 4));
+    if (!fillCount) return next;
+    const selected = next.waiting.slice(0, fillCount * 4);
+    next.waiting = next.waiting.filter((id) => !selected.includes(id));
+    let remaining = selected.slice();
+    for (let i = 0; i < fillCount; i += 1) {
+      const group = chooseCourtGroup(next, remaining);
+      remaining = remaining.filter((id) => !group.includes(id));
+      const teams = bestTeamsForGroup(next, group);
+      next.courts[openIndexes[i]] = {
+        id: `court-${openIndexes[i] + 1}`,
+        players: group,
+        teams,
+        assignedAt: now
+      };
+    }
+    next.pending = [];
+    return normalizeQueue(next, players);
+  }
+
+  function recordCompletedGroup(next, players, teams, now = Date.now()) {
+    unique(players).forEach((id) => {
+      if (!next.stats[id]) next.stats[id] = { gamesPlayed: 0, fairTurns: 0, queuedAt: 0, lastPlayedAt: 0, tie: 0, hasJoined: true };
+      next.stats[id].gamesPlayed += 1;
+      next.stats[id].fairTurns = Math.max(0, Number(next.stats[id].fairTurns) || 0) + 1;
+      next.stats[id].hasJoined = true;
+      next.stats[id].lastPlayedAt = now;
+      stampQueued(next, id, now);
+      if (!next.waiting.includes(id)) next.waiting.push(id);
+    });
+    if (Array.isArray(teams) && teams.length === 2 && teams[0].length === 2 && teams[1].length === 2) {
+      const [teamA, teamB] = teams;
+      [teamA, teamB].forEach((team) => {
+        const key = pairKey(team[0], team[1]);
+        next.pairCounts[key] = (next.pairCounts[key] || 0) + 1;
+      });
+      teamA.forEach((a) => teamB.forEach((b) => {
+        const key = pairKey(a, b);
+        next.opponentCounts[key] = (next.opponentCounts[key] || 0) + 1;
+      }));
+    }
+  }
+
+  function completeCourt(queue, courtIndex, players, now = Date.now()) {
+    const next = normalizeQueue(queue, players);
+    const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
+    const court = next.courts[index];
+    if (!court || court.players.length !== 4) return next;
+    recordCompletedGroup(next, court.players, court.teams, now);
+    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 };
+    next.pending = [];
+    return normalizeQueue(next, players);
+  }
+
+  function cancelCourt(queue, courtIndex, players, now = Date.now()) {
+    const next = normalizeQueue(queue, players);
+    const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
+    const court = next.courts[index];
+    if (!court || !court.players.length) return next;
+    court.players.forEach((id) => {
+      if (!next.waiting.includes(id)) {
+        stampQueued(next, id, court.assignedAt || now);
+        next.waiting.push(id);
+      }
+    });
+    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 };
+    return normalizeQueue(next, players);
+  }
+
   function startQueuedGame(queue, selectedIds, gameId, players) {
     const next = normalizeQueue(queue, players);
     const selected = unique(selectedIds).filter(Boolean);
@@ -587,19 +889,39 @@
     next.pending = [];
     next.onCourt = selected;
     next.activeGameId = String(gameId || '');
-    return next;
+    return normalizeQueue(next, players);
   }
 
   function finishQueuedGame(queue, gameId, players) {
     const next = normalizeQueue(queue, players);
     if (!next.activeGameId || next.activeGameId !== String(gameId || '')) return next;
+    const teams = next.onCourt.length === 4 ? [[next.onCourt[0], next.onCourt[1]], [next.onCourt[2], next.onCourt[3]]] : [[], []];
+    recordCompletedGroup(next, next.onCourt, teams, Date.now());
+    next.onCourt = [];
+    next.activeGameId = '';
+    next.pending = [];
+    return normalizeQueue(next, players);
+  }
+
+  function cancelQueuedGame(queue, gameId, players) {
+    const next = normalizeQueue(queue, players);
+    if (!next.activeGameId || next.activeGameId !== String(gameId || '')) return next;
+    const base = Date.now();
     next.onCourt.forEach((id) => {
-      if (!next.waiting.includes(id)) next.waiting.push(id);
+      if (!next.waiting.includes(id)) {
+        stampQueued(next, id, base);
+        next.waiting.push(id);
+      }
     });
     next.onCourt = [];
     next.activeGameId = '';
     next.pending = [];
-    return next;
+    return normalizeQueue(next, players);
+  }
+
+  function resetQueueSession(queue, players) {
+    const next = normalizeQueue(queue, players);
+    return normalizeQueue({ courtCount: next.courtCount, sessionSeed: makeId('queue') }, players);
   }
 
   function removePlayerEverywhere(queue, playerId, players) {
@@ -608,9 +930,16 @@
     next.waiting = next.waiting.filter((item) => item !== id);
     next.pending = next.pending.filter((item) => item !== id);
     next.onCourt = next.onCourt.filter((item) => item !== id);
+    next.courts = next.courts.map((court, index) => ({
+      ...court,
+      id: `court-${index + 1}`,
+      players: court.players.filter((item) => item !== id),
+      teams: court.teams.map((team) => team.filter((item) => item !== id))
+    }));
     if (next.pending.length !== 4) next.pending = [];
     if (!next.onCourt.length) next.activeGameId = '';
-    return next;
+    delete next.stats[id];
+    return normalizeQueue(next, players);
   }
 
   function gameTimestamp(game) {
@@ -702,8 +1031,14 @@
     reorderQueue,
     prepareNextFour,
     cancelPending,
+    setCourtCount,
+    fillOpenCourts,
+    completeCourt,
+    cancelCourt,
     startQueuedGame,
     finishQueuedGame,
+    cancelQueuedGame,
+    resetQueueSession,
     removePlayerEverywhere,
     samePlayers,
     dedupeGames,
@@ -824,6 +1159,31 @@
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  }
+
+  function base64UrlEncode(value) {
+    const bytes = new TextEncoder().encode(String(value || ''));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  function base64UrlDecode(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function rosterShareUrl(players, href) {
+    const source = href || (globalThis.location && location.href) || 'https://example.test/';
+    const url = new URL(source);
+    url.search = '';
+    url.hash = '';
+    const names = Players.normalizePlayers(players).map((player) => player.name);
+    url.hash = `roster=${base64UrlEncode(JSON.stringify({ v: 1, names }))}`;
+    return url.toString();
   }
 
   function formatDuration(ms) {
@@ -999,6 +1359,9 @@
       this.showColors = false;
       this.showAudio = false;
       this.showTimerAdjust = false;
+      this.showGameReset = false;
+      this.showRosterShare = false;
+      this.editingGame = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
       this.allowPageLeave = false;
@@ -1074,6 +1437,7 @@
       }
       this.refreshVoices(false);
       this.applyTheme();
+      if (this.mode === 'controller') this.consumeRosterShare();
       this.render();
       if (this.shouldProtectScoring()) this.armScoringGuard();
       this.clock = window.setInterval(() => {
@@ -1165,6 +1529,48 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       } catch (error) {
         this.showToast(`Save failed: ${error.message}`);
+      }
+    }
+
+    consumeRosterShare() {
+      if (!globalThis.location || !String(location.hash || '').startsWith('#roster=')) return;
+      const encoded = String(location.hash || '').slice('#roster='.length);
+      try {
+        const payload = JSON.parse(base64UrlDecode(encoded));
+        const names = Array.isArray(payload && payload.names) ? payload.names.map(Players.cleanName).filter(Boolean) : [];
+        if (!names.length) throw new Error('No players found in roster link');
+        const existing = new Set(this.state.players.map((player) => Players.nameKey(player.name)));
+        const additions = names.filter((name) => !existing.has(Players.nameKey(name)));
+        if (confirm(`Import ${names.length} roster player${names.length === 1 ? '' : 's'}? Existing names will be kept and duplicates skipped.`)) {
+          additions.forEach((name) => this.state.players.push(Players.normalizePlayer({ name })));
+          this.state.players = Players.normalizePlayers(this.state.players);
+          this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
+          this.persist();
+          this.view = 'roster';
+          this.toast = `${additions.length} player${additions.length === 1 ? '' : 's'} added from QR`;
+        }
+      } catch (error) {
+        this.toast = error.message || 'Roster QR could not be read';
+      } finally {
+        try {
+          const clean = `${location.pathname}${location.search}`;
+          history.replaceState(history.state || {}, '', clean);
+        } catch (_error) {}
+      }
+    }
+
+    rosterQrMarkup() {
+      const link = rosterShareUrl(this.state.players);
+      if (typeof globalThis.qrcode !== 'function') {
+        return `<div class="qr-unavailable">QR generator unavailable. Use Copy link instead.</div>`;
+      }
+      try {
+        const qr = globalThis.qrcode(0, 'M');
+        qr.addData(link);
+        qr.make();
+        return qr.createSvgTag(5, 20);
+      } catch (_error) {
+        return `<div class="qr-unavailable">Roster is too large for one QR. Use Copy link instead.</div>`;
       }
     }
 
@@ -1813,7 +2219,9 @@
         this.showToast('A selected player is missing');
         return;
       }
-      if (this.state.currentGame && this.state.currentGame.status === 'active') {
+      const editing = Boolean(this.editingGame && this.state.currentGame && this.state.currentGame.status === 'active');
+      const previousGame = editing ? this.state.currentGame : null;
+      if (this.state.currentGame && this.state.currentGame.status === 'active' && !editing) {
         this.state.games.unshift(Engine.snapshotForSave(this.state.currentGame, Date.now()));
         this.state.queue = Players.finishQueuedGame(
           this.state.queue,
@@ -1837,7 +2245,21 @@
         startingTeam: Number(data.get('startingTeam')),
         durationMinutes: Number(data.get('durationMinutes')) || 15
       });
-      this.state.queue = Players.startQueuedGame(this.state.queue, selectedIds, game.id, this.state.players);
+      if (editing && previousGame) {
+        game.id = previousGame.id;
+        game.createdAt = previousGame.createdAt;
+        if (this.state.queue.activeGameId === previousGame.id) {
+          if (format === 'doubles' && Players.samePlayers(selectedIds, this.state.queue.onCourt)) {
+            this.state.queue.onCourt = selectedIds.slice();
+          } else {
+            this.state.queue = Players.cancelQueuedGame(this.state.queue, previousGame.id, this.state.players);
+          }
+        }
+      } else {
+        this.state.queue = Players.startQueuedGame(this.state.queue, selectedIds, game.id, this.state.players);
+      }
+      this.editingGame = false;
+      this.showGameReset = false;
       this.view = 'game';
       this.allowPageLeave = false;
       this.setCurrentGame(game, true, false);
@@ -2017,6 +2439,13 @@
         const doubles = event.target.value === 'doubles';
         this.querySelectorAll('.doubles-only').forEach((element) => { element.hidden = !doubles; });
       }
+      if (event.target.id === 'queue-court-count') {
+        this.state.queue = Players.setCourtCount(this.state.queue, Number(event.target.value), this.state.players);
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
       if (event.target.id === 'import-file' && event.target.files && event.target.files[0]) {
         this.importJson(event.target.files[0]);
       }
@@ -2026,6 +2455,97 @@
       const target = event.target.closest('[data-action]');
       if (!target) return;
       const action = target.dataset.action;
+
+      if (action === 'reset-game') {
+        if (!this.state.currentGame || this.state.currentGame.status === 'complete') return;
+        this.showGameReset = true;
+        this.showTimerAdjust = false;
+        this.showAudio = false;
+        this.render();
+        return;
+      }
+      if (action === 'reset-game-cancel') {
+        this.showGameReset = false;
+        this.render();
+        return;
+      }
+      if (action === 'reset-game-same') {
+        if (!this.state.currentGame) return;
+        this.showGameReset = false;
+        this.editingGame = false;
+        this.setCurrentGame(Engine.resetGame(this.state.currentGame, Date.now()), true, false);
+        this.lastVoiceSignature = '';
+        this.announceGame(this.state.currentGame, true);
+        return;
+      }
+      if (action === 'reset-game-edit') {
+        if (!this.state.currentGame) return;
+        this.showGameReset = false;
+        this.editingGame = true;
+        this.view = 'setup';
+        this.render();
+        return;
+      }
+      if (action === 'cancel-game-edit') {
+        this.editingGame = false;
+        this.view = this.state.currentGame ? 'game' : 'setup';
+        this.render();
+        return;
+      }
+      if (action === 'share-roster') {
+        if (!this.state.players.length) return;
+        this.showRosterShare = true;
+        this.render();
+        return;
+      }
+      if (action === 'close-roster-share') {
+        this.showRosterShare = false;
+        this.render();
+        return;
+      }
+      if (action === 'copy-roster-link') {
+        await this.copyText(target.dataset.link || rosterShareUrl(this.state.players), 'Roster link copied');
+        return;
+      }
+      if (action === 'native-share-roster') {
+        const link = target.dataset.link || rosterShareUrl(this.state.players);
+        if (navigator.share) {
+          try { await navigator.share({ title: 'PicklePulse roster', text: `${this.state.players.length} players`, url: link }); } catch (_error) {}
+        } else {
+          await this.copyText(link, 'Roster link copied');
+        }
+        return;
+      }
+      if (action === 'queue-fill-courts') {
+        this.state.queue = Players.fillOpenCourts(this.state.queue, this.state.players, Date.now());
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'court-done') {
+        this.state.queue = Players.completeCourt(this.state.queue, Number(target.dataset.court), this.state.players, Date.now());
+        this.state.queue = Players.fillOpenCourts(this.state.queue, this.state.players, Date.now());
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'court-cancel') {
+        this.state.queue = Players.cancelCourt(this.state.queue, Number(target.dataset.court), this.state.players, Date.now());
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'queue-new-session') {
+        if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Saved games and the roster stay intact.')) return;
+        this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
 
       if (action === 'view') {
         const nextView = target.dataset.view;
@@ -2458,9 +2978,11 @@
           ${this.showColors ? this.renderColorPanel() : ''}
           ${this.showAudio ? this.renderAudioPanel() : ''}
           ${this.showTimerAdjust ? this.renderTimeAdjustPanel() : ''}
+          ${this.showGameReset ? this.renderGameResetDialog() : ''}
+          ${this.showRosterShare ? this.renderRosterShare() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
-            ${this.view === 'setup' ? this.renderSetup() : this.view === 'history' ? this.renderHistory() : this.view === 'players' ? this.renderPlayers() : this.renderGame()}
+            ${this.view === 'setup' ? this.renderSetup() : this.view === 'history' ? this.renderHistory() : this.view === 'roster' ? this.renderRoster() : this.view === 'queue' ? this.renderQueue() : this.renderGame()}
           </main>
           ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
           <input id="import-file" type="file" accept="application/json,.json" hidden />
@@ -2490,7 +3012,8 @@
             <span class="network-dot ${this.network.level}" title="${escapeHtml(this.network.label)}">${icon(this.network.level === 'offline' ? 'wifiOff' : 'wifi')}</span>
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
             <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
-            <button class="icon-btn ${this.view === 'players' ? 'active' : ''}" type="button" data-action="view" data-view="players" aria-label="Players and queue" title="Players and queue">${icon('users')}</button>
+            <button class="icon-btn ${this.view === 'queue' ? 'active' : ''}" type="button" data-action="view" data-view="queue" aria-label="Fair queue" title="Fair queue">${icon('queue')}</button>
+            <button class="icon-btn ${this.view === 'roster' ? 'active' : ''}" type="button" data-action="view" data-view="roster" aria-label="Roster" title="Roster">${icon('users')}</button>
             <button class="icon-btn ${this.view === 'history' ? 'active' : ''}" type="button" data-action="view" data-view="history" aria-label="Standings and saved games" title="Standings and saved games">${icon('history')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
           </div>
@@ -2618,6 +3141,15 @@
     }
 
     pendingSelections() {
+      if (this.editingGame && this.state.currentGame) {
+        const game = this.state.currentGame;
+        return {
+          teamAPlayer1: game.teams[0].playerIds[0] || '',
+          teamAPlayer2: game.teams[0].playerIds[1] || '',
+          teamBPlayer1: game.teams[1].playerIds[0] || '',
+          teamBPlayer2: game.teams[1].playerIds[1] || ''
+        };
+      }
       const pending = this.state.queue.pending;
       if (!Array.isArray(pending) || pending.length !== 4) return {};
       return {
@@ -2630,10 +3162,16 @@
 
     renderSetup() {
       const hasPlayers = this.state.players.length >= 2;
-      const pending = this.state.queue.pending.length === 4;
+      const pending = !this.editingGame && this.state.queue.pending.length === 4;
       return `
         <section class="setup-view setup-stack">
-          ${pending ? `
+          ${this.editingGame ? `
+            <aside class="next-match-banner edit-game-banner">
+              <span class="next-match-icon" aria-hidden="true">${icon('reset')}</span>
+              <div><b>Reset game</b><span>Change players or settings. The current score and timer will be cleared.</span></div>
+              <button class="icon-btn compact" type="button" data-action="cancel-game-edit" aria-label="Cancel game reset" title="Cancel">${icon('x')}</button>
+            </aside>
+          ` : pending ? `
             <aside class="next-match-banner">
               <span class="next-match-icon" aria-hidden="true">${icon('users')}</span>
               <div><b>Next 4</b><span>${this.state.queue.pending.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</span></div>
@@ -2658,32 +3196,46 @@
             <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Player name" autocomplete="off" value="${escapeHtml(this.playerNameDraft)}" required></label>
             <button class="icon-only" type="submit" aria-label="Add player" title="Add player">${icon('plus')}</button>
           </form>
-          <button class="icon-btn" type="button" data-action="view" data-view="players" aria-label="Open players and queue" title="Players and queue">${icon('users')}</button>
+          <button class="icon-btn" type="button" data-action="view" data-view="roster" aria-label="Open roster" title="Roster">${icon('users')}</button>
         </article>
       `;
     }
 
     renderNewGameForm() {
+      const draft = this.editingGame && this.state.currentGame ? this.state.currentGame : null;
+      const format = draft && draft.format === 'singles' ? 'singles' : 'doubles';
+      const target = draft ? Number(draft.target) || 11 : 11;
+      const startingTeam = draft ? (Number(draft.startingTeam) === 1 ? 1 : 0) : 0;
+      const durationMinutes = draft ? Math.round((Number(draft.timer && draft.timer.durationMs) || 900000) / 60000) : 15;
+      const option = (value, label = value) => `<option value="${value}" ${Number(value) === Number(target) ? 'selected' : ''}>${label}</option>`;
+      const durationOption = (value) => `<option value="${value}" ${Number(value) === Number(durationMinutes) ? 'selected' : ''}>${value}m</option>`;
       return `
         <form id="new-game-form" class="setup-card">
           <div class="setup-title-row">
-            <h1>New game</h1>
-            <button class="icon-btn compact" type="button" data-action="view" data-view="players" aria-label="Open players and queue" title="Players and queue">${icon('users')}</button>
+            <h1>${this.editingGame ? 'Reset game' : 'New game'}</h1>
+            <div class="setup-title-actions">
+              <button class="icon-btn compact" type="button" data-action="view" data-view="queue" aria-label="Open queue" title="Queue">${icon('queue')}</button>
+              <button class="icon-btn compact" type="button" data-action="view" data-view="roster" aria-label="Open roster" title="Roster">${icon('users')}</button>
+            </div>
           </div>
           <div class="format-switch" aria-label="Match format">
-            <label><input type="radio" name="format" value="doubles" checked><span>2 × 2</span></label>
-            <label><input type="radio" name="format" value="singles"><span>1 × 1</span></label>
+            <label><input type="radio" name="format" value="doubles" ${format === 'doubles' ? 'checked' : ''}><span>2 × 2</span></label>
+            <label><input type="radio" name="format" value="singles" ${format === 'singles' ? 'checked' : ''}><span>1 × 1</span></label>
           </div>
           <div class="teams-form">
-            ${this.renderTeamFields('A')}
-            ${this.renderTeamFields('B')}
+            ${this.renderTeamFields('A', format)}
+            ${this.renderTeamFields('B', format)}
           </div>
-          <div class="setup-options">
-            <label><span>To</span><select name="target"><option>11</option><option>15</option><option>21</option></select></label>
-            <label><span>Serve</span><select name="startingTeam"><option value="0">A</option><option value="1">B</option></select></label>
-            <label><span>Timer</span><select name="durationMinutes"><option value="10">10m</option><option value="15" selected>15m</option><option value="20">20m</option><option value="30">30m</option></select></label>
+          <fieldset class="serve-picker">
+            <legend>Serving team</legend>
+            <label><input type="radio" name="startingTeam" value="0" ${startingTeam === 0 ? 'checked' : ''}><span>Team A</span></label>
+            <label><input type="radio" name="startingTeam" value="1" ${startingTeam === 1 ? 'checked' : ''}><span>Team B</span></label>
+          </fieldset>
+          <div class="setup-options setup-options-two">
+            <label><span>To</span><select name="target">${option(11)}${option(15)}${option(21)}</select></label>
+            <label><span>Timer</span><select name="durationMinutes">${durationOption(10)}${durationOption(15)}${durationOption(20)}${durationOption(30)}</select></label>
           </div>
-          <button class="start-btn" type="submit">${icon('play')}<span>Start</span></button>
+          <button class="start-btn" type="submit">${icon(this.editingGame ? 'reset' : 'play')}<span>${this.editingGame ? 'Reset & start' : 'Start'}</span></button>
         </form>
       `;
     }
@@ -2692,26 +3244,27 @@
       return `<option value="">${escapeHtml(placeholder)}</option>${this.state.players.map((player) => `<option value="${escapeHtml(player.id)}" ${player.id === selectedId ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}`;
     }
 
-    renderTeamFields(letter) {
+    renderTeamFields(letter, format = 'doubles') {
       const selected = this.pendingSelections();
       const lower = letter.toLowerCase();
       return `
         <fieldset class="team-fields team-${lower}">
           <legend>${letter}</legend>
           <label><span>P1 · Right</span><select name="team${letter}Player1" required>${this.playerOptions(selected[`team${letter}Player1`], 'Select player')}</select></label>
-          <label class="doubles-only"><span>P2 · Left</span><select name="team${letter}Player2">${this.playerOptions(selected[`team${letter}Player2`], 'Select player')}</select></label>
+          <label class="doubles-only" ${format === 'singles' ? 'hidden' : ''}><span>P2 · Left</span><select name="team${letter}Player2">${this.playerOptions(selected[`team${letter}Player2`], 'Select player')}</select></label>
         </fieldset>
       `;
     }
 
-    renderPlayers() {
+    renderRoster() {
       const queue = this.state.queue;
-      const queued = new Set([...queue.waiting, ...queue.onCourt]);
+      const queued = new Set([...queue.waiting, ...queue.onCourt, ...queue.courts.flatMap((court) => court.players)]);
       return `
-        <section class="players-view">
+        <section class="players-view roster-view">
           <div class="section-head">
-            <h1>Players</h1>
+            <div><h1>Roster</h1><p>Reusable player list for games and queue sessions.</p></div>
             <div>
+              <button class="icon-btn" type="button" data-action="share-roster" ${this.state.players.length ? '' : 'disabled'} aria-label="Share roster by QR" title="Share roster by QR">${icon('share')}</button>
               <button class="icon-btn" type="button" data-action="import" aria-label="Import backup" title="Import backup">${icon('upload')}</button>
               <button class="icon-btn" type="button" data-action="export" aria-label="Export backup" title="Export backup">${icon('download')}</button>
             </div>
@@ -2720,14 +3273,13 @@
             <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="Add player name" autocomplete="off" value="${escapeHtml(this.playerNameDraft)}" required></label>
             <button class="icon-only" type="submit" aria-label="Add player" title="Add player">${icon('plus')}</button>
           </form>
-          ${this.renderQueue()}
           <section class="roster-card">
-            <header><h2>Roster</h2><span>${this.state.players.length}</span></header>
+            <header><h2>Players</h2><span>${this.state.players.length}</span></header>
             ${this.state.players.length ? `<div class="roster-list">${this.state.players.map((player) => `
               <article class="roster-row">
                 <span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span>
                 <b>${escapeHtml(player.name)}</b>
-                <button class="queue-chip" type="button" data-action="queue-add" data-player="${escapeHtml(player.id)}" ${queued.has(player.id) ? 'disabled' : ''} aria-label="${queued.has(player.id) ? 'Already queued' : `Add ${escapeHtml(player.name)} to queue`}" title="${queued.has(player.id) ? 'Queued' : 'Add to queue'}">${icon(queued.has(player.id) ? 'check' : 'userPlus')}</button>
+                <button class="queue-chip" type="button" data-action="queue-add" data-player="${escapeHtml(player.id)}" ${queued.has(player.id) ? 'disabled' : ''} aria-label="${queued.has(player.id) ? 'Already in queue or on court' : `Add ${escapeHtml(player.name)} to queue`}" title="${queued.has(player.id) ? 'Queued' : 'Add to queue'}">${icon(queued.has(player.id) ? 'check' : 'userPlus')}</button>
                 <button class="icon-btn danger compact" type="button" data-action="delete-player" data-player="${escapeHtml(player.id)}" aria-label="Remove ${escapeHtml(player.name)}">${icon('trash')}</button>
               </article>
             `).join('')}</div>` : `<div class="empty-view compact"><p>No players yet</p></div>`}
@@ -2736,32 +3288,93 @@
       `;
     }
 
+    queueWaitLabel(id) {
+      const stat = this.state.queue.stats && this.state.queue.stats[id];
+      if (!stat || !stat.queuedAt) return 'just joined';
+      const seconds = Math.max(0, Math.floor((Date.now() - stat.queuedAt) / 1000));
+      if (seconds < 60) return '<1m waiting';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m waiting`;
+      return `${Math.floor(minutes / 60)}h ${minutes % 60}m waiting`;
+    }
+
+    renderQueueCourt(court, index) {
+      if (!court.players.length) {
+        return `<article class="court-card is-open"><header><b>Court ${index + 1}</b><span>Open</span></header><div class="court-open-mark">${icon('ball')}<span>Waiting for 4</span></div></article>`;
+      }
+      const teams = court.teams && court.teams.length === 2 ? court.teams : [court.players.slice(0, 2), court.players.slice(2, 4)];
+      return `
+        <article class="court-card is-active">
+          <header><b>Court ${index + 1}</b><span>Playing</span></header>
+          <div class="court-matchup">
+            <div><small>Team A</small><strong>${teams[0].map((id) => escapeHtml(this.playerName(id))).join(' + ')}</strong></div>
+            <i>vs</i>
+            <div><small>Team B</small><strong>${teams[1].map((id) => escapeHtml(this.playerName(id))).join(' + ')}</strong></div>
+          </div>
+          <div class="court-actions">
+            <button type="button" class="court-done" data-action="court-done" data-court="${index}">${icon('check')} Done</button>
+            <button type="button" class="court-cancel" data-action="court-cancel" data-court="${index}">${icon('x')} Cancel</button>
+          </div>
+        </article>
+      `;
+    }
+
     renderQueue() {
       const queue = this.state.queue;
-      const queued = new Set([...queue.waiting, ...queue.onCourt]);
-      const availableCount = this.state.players.filter((player) => !queued.has(player.id)).length;
+      const occupied = new Set([...queue.waiting, ...queue.onCourt, ...queue.courts.flatMap((court) => court.players)]);
+      const availableCount = this.state.players.filter((player) => !occupied.has(player.id)).length;
+      const openCourts = queue.courts.filter((court) => !court.players.length).length;
+      const canFill = openCourts > 0 && queue.waiting.length >= 4;
       return `
-        <section class="queue-card">
-          <header>
-            <h2>Queue</h2>
-            <div class="queue-header-actions">
-              <button type="button" class="queue-add-all" data-action="queue-add-all" ${availableCount ? '' : 'disabled'} aria-label="Add all players to queue" title="Add all">${icon('userPlus')}</button>
-              <button type="button" class="queue-next" data-action="prepare-next" ${queue.waiting.length >= 4 && !queue.onCourt.length ? '' : 'disabled'} aria-label="Prepare next four players" title="Next 4">${icon('play')}<span class="button-count">4</span></button>
-            </div>
-          </header>
-          ${queue.onCourt.length ? `<div class="on-court"><span title="On court">${icon('ball')}<span class="sr-only">On court</span></span><b>${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
-          ${queue.pending.length === 4 ? `<div class="queue-ready"><span title="Next four">${icon('users')}<span class="sr-only">Next four</span></span><b>1 ${escapeHtml(this.playerName(queue.pending[0]))} + 2 ${escapeHtml(this.playerName(queue.pending[1]))} vs 3 ${escapeHtml(this.playerName(queue.pending[2]))} + 4 ${escapeHtml(this.playerName(queue.pending[3]))}</b><button class="icon-btn compact" type="button" data-action="view" data-view="setup" aria-label="Set teams" title="Set teams">${icon('play')}</button></div>` : ''}
-          ${queue.waiting.length ? `<ol class="queue-list" aria-label="Player queue. Drag the handle or use the arrow buttons to reorder.">${queue.waiting.map((id, index) => `
-            <li data-queue-player="${escapeHtml(id)}" class="${queue.pending.includes(id) ? 'is-pending' : ''}">
-              <button class="queue-drag-handle" type="button" draggable="true" data-queue-drag data-player="${escapeHtml(id)}" aria-label="Drag ${escapeHtml(this.playerName(id))} to reorder" title="Drag to reorder">${icon('grip')}</button>
-              <span class="queue-position">${index + 1}</span><b>${escapeHtml(this.playerName(id))}</b>
-              <span class="queue-actions">
-                <button type="button" data-action="queue-up" data-player="${escapeHtml(id)}" ${index === 0 ? 'disabled' : ''} aria-label="Move up">${icon('arrowUp')}</button>
-                <button type="button" data-action="queue-down" data-player="${escapeHtml(id)}" ${index === queue.waiting.length - 1 ? 'disabled' : ''} aria-label="Move down">${icon('arrowDown')}</button>
-                <button type="button" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
-              </span>
-            </li>
-          `).join('')}</ol>` : `<div class="queue-empty" aria-label="Queue empty" title="Queue empty">${icon('users')}</div>`}
+        <section class="queue-view players-view">
+          <div class="section-head">
+            <div><h1>Fair queue</h1><p>One shared rotation across every court.</p></div>
+            <button class="icon-btn danger" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
+          </div>
+          <section class="queue-config-card">
+            <label><span>Queue courts</span><select id="queue-court-count" aria-label="Number of courts used for queueing">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${queue.courtCount === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
+            <p>This setting is only for queue rotation. The scorekeeper still runs one scored game at a time.</p>
+            <button type="button" class="fill-courts-btn" data-action="queue-fill-courts" ${canFill ? '' : 'disabled'}>${icon('play')} Fill open courts</button>
+          </section>
+          <aside class="fairness-note"><b>Fairness rules</b><span>Longest wait gets priority. Late arrivals join the back. Courts are filled from one shared pool, while repeat partners are avoided first and repeat opponents second.</span></aside>
+          <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
+          ${queue.onCourt.length ? `<div class="on-court scoring-queue"><span title="Scored game">${icon('radio')}<span class="sr-only">Scored game</span></span><b>Scorekeeper · ${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
+          <section class="queue-card">
+            <header>
+              <div><h2>Waiting</h2><p>${queue.waiting.length} player${queue.waiting.length === 1 ? '' : 's'} · automatic fair order</p></div>
+              <div class="queue-header-actions">
+                <button type="button" class="queue-add-all" data-action="queue-add-all" ${availableCount ? '' : 'disabled'} aria-label="Add all available roster players" title="Add all available">${icon('userPlus')}</button>
+                <button type="button" class="queue-next" data-action="prepare-next" ${queue.waiting.length >= 4 && !queue.onCourt.length ? '' : 'disabled'} aria-label="Use next four in scorekeeper" title="Score next 4">${icon('radio')}<span class="button-count">4</span></button>
+              </div>
+            </header>
+            ${queue.pending.length === 4 ? `<div class="queue-ready"><span title="Ready to score">${icon('users')}<span class="sr-only">Ready to score</span></span><b>${queue.pending.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b><button class="icon-btn compact" type="button" data-action="view" data-view="setup" aria-label="Set teams" title="Set teams">${icon('play')}</button></div>` : ''}
+            ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Fair player queue">${queue.waiting.map((id, index) => {
+              const stat = queue.stats[id] || { gamesPlayed: 0 };
+              return `
+                <li data-queue-player="${escapeHtml(id)}">
+                  <span class="queue-position">${index + 1}</span>
+                  <span class="queue-player-copy"><b>${escapeHtml(this.playerName(id))}</b><small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${escapeHtml(this.queueWaitLabel(id))}</small></span>
+                  <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
+                </li>
+              `;
+            }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
+          </section>
+        </section>
+      `;
+    }
+
+    renderRosterShare() {
+      const link = rosterShareUrl(this.state.players);
+      return `
+        <div class="guard-scrim" data-action="close-roster-share"></div>
+        <section class="roster-share-dialog" role="dialog" aria-modal="true" aria-label="Share roster by QR">
+          <header><div><b>Share roster</b><span>${this.state.players.length} player${this.state.players.length === 1 ? '' : 's'}</span></div><button class="icon-btn compact" type="button" data-action="close-roster-share" aria-label="Close">${icon('x')}</button></header>
+          <div class="roster-qr">${this.rosterQrMarkup()}</div>
+          <p>Scan with the other phone’s camera. PicklePulse opens and offers to merge these player names into its roster.</p>
+          <div class="roster-share-actions">
+            <button type="button" data-action="copy-roster-link" data-link="${escapeHtml(link)}">${icon('copy')} Copy link</button>
+            <button type="button" data-action="native-share-roster" data-link="${escapeHtml(link)}">${icon('share')} Share</button>
+          </div>
         </section>
       `;
     }
@@ -2779,6 +3392,24 @@
           <button class="icon-btn compact" type="button" data-action="copy-link" aria-label="Copy display link" title="Copy link">${icon('copy')}</button>
           <button class="icon-btn compact" type="button" data-action="share" aria-label="Share display link" title="Share">${icon('share')}</button>
         </aside>
+      `;
+    }
+
+    renderGameResetDialog() {
+      const game = this.state.currentGame;
+      if (!game) return '';
+      return `
+        <div class="guard-scrim" data-action="reset-game-cancel"></div>
+        <section class="game-reset-dialog" role="dialog" aria-modal="true" aria-label="Reset game">
+          <span class="guard-icon">${icon('reset')}</span>
+          <h2>Reset this game?</h2>
+          <p>Restart with the same players, or edit the players/settings first. The current score, rally history, and timer will be cleared without saving this game as final.</p>
+          <div class="game-reset-actions">
+            <button class="guard-primary" type="button" data-action="reset-game-same">Restart same players</button>
+            <button class="guard-secondary" type="button" data-action="reset-game-edit">Change players / settings</button>
+            <button class="guard-secondary" type="button" data-action="reset-game-cancel">Cancel</button>
+          </div>
+        </section>
       `;
     }
 
@@ -2815,6 +3446,7 @@
             <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
             <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
             <button class="tool-btn" type="button" data-action="save" aria-label="Save game" title="Save">${icon('save')}</button>
+            <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
             <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
             ${game.status === 'complete'
               ? `<button class="tool-btn" type="button" data-action="new" aria-label="New game" title="New game">${icon('plus')}</button>`
