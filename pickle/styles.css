@@ -674,6 +674,25 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .remote-call-detail { color: #c2cbc4 !important; font-size: clamp(.72rem, 1.7vw, 1.05rem) !important; font-weight: 800; white-space: nowrap; }
 .display-actions .icon-btn.active { color: #6ad49b; background: rgb(106 212 155 / 14%); }
 
+
+.queue-roster-history { display: grid; gap: 12px; }
+.subpage-tabs { position: sticky; top: 58px; z-index: 20; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); }
+.subpage-tabs button { min-height: 42px; border: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: transparent; font-weight: 850; cursor: pointer; }
+.subpage-tabs button.active { color: var(--accent); background: var(--accent-soft); }
+.subpage-tabs .icon { width: 17px; height: 17px; }
+.queue-header-actions { flex-wrap: wrap; }
+.queue-header-actions .fill-courts-btn { min-height: 42px; padding-inline: 12px; }
+.roster-share-dialog, .roster-import-dialog, .game-reset-dialog { position: fixed; z-index: 94; top: 50%; left: 50%; width: min(430px, calc(100vw - 28px)); transform: translate(-50%, -50%); border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 35%); }
+.roster-code-preview { max-height: 92px; overflow: auto; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--muted); font: 700 .68rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; user-select: all; }
+.roster-import-dialog { display: grid; gap: 12px; padding: 16px; }
+.roster-import-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.roster-import-dialog > header > div { display: grid; gap: 2px; }
+.roster-import-dialog > header span { color: var(--muted); font-size: .7rem; }
+.roster-import-dialog label { color: var(--muted); font-size: .72rem; font-weight: 850; }
+.roster-import-dialog textarea { width: 100%; min-height: 122px; resize: vertical; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: 700 .74rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.roster-import-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.roster-import-actions button { min-height: 44px; border: 0; border-radius: 12px; color: var(--text); background: var(--surface-2); font-weight: 850; cursor: pointer; }
+.roster-import-actions button:last-child { color: #fff; background: var(--accent); }
 @media (max-width: 700px) {
   .connect-card { grid-template-columns: 1fr; gap: 12px; }
   .setup-title-row { align-items: center; }
@@ -1176,17 +1195,14 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .section-head > div:first-child { min-width: 0; }
 .section-head > div:first-child p { margin: 3px 0 0; color: var(--muted); font-size: .76rem; }
 
-.queue-config-card, .fairness-note, .court-card { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
-.queue-config-card { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(220px, 1.4fr) auto; align-items: center; gap: 12px; padding: 14px; }
+.queue-config-card, .court-card { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.queue-config-card { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(220px, 1.4fr); align-items: center; gap: 12px; padding: 14px; }
 .queue-config-card label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; color: var(--text); font-size: .82rem; font-weight: 850; }
 .queue-config-card select { min-width: 72px; height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--text); font-weight: 850; }
 .queue-config-card p { margin: 0; color: var(--muted); font-size: .73rem; line-height: 1.4; }
 .fill-courts-btn { min-height: 42px; padding: 0 14px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: #fff; background: var(--accent); font-weight: 900; cursor: pointer; }
 .fill-courts-btn:disabled { opacity: .42; cursor: not-allowed; }
 .fill-courts-btn .icon { width: 17px; height: 17px; }
-.fairness-note { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px 14px; background: var(--surface-2); }
-.fairness-note b { color: var(--accent); font-size: .76rem; white-space: nowrap; }
-.fairness-note span { color: var(--muted); font-size: .74rem; line-height: 1.45; }
 .court-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .court-card { min-width: 0; overflow: hidden; }
 .court-card > header { min-height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 13px; border-bottom: 1px solid var(--line); }
@@ -1217,7 +1233,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .queue-empty { min-height: 90px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--muted); text-align: center; }
 .queue-empty p { margin: 0; font-size: .72rem; }
 
-.roster-share-dialog, .game-reset-dialog { position: fixed; z-index: 94; top: 50%; left: 50%; width: min(430px, calc(100vw - 28px)); transform: translate(-50%, -50%); border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 35%); }
+.game-reset-dialog { position: fixed; z-index: 94; top: 50%; left: 50%; width: min(430px, calc(100vw - 28px)); transform: translate(-50%, -50%); border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 35%); }
 .roster-share-dialog { display: grid; gap: 13px; padding: 16px; }
 .roster-share-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .roster-share-dialog > header > div { display: grid; gap: 2px; }
@@ -1240,13 +1256,16 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 @media (max-width: 700px) {
   .queue-config-card { grid-template-columns: 1fr auto; }
   .queue-config-card p { grid-column: 1 / -1; grid-row: 2; }
-  .fill-courts-btn { grid-column: 1 / -1; }
   .court-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
+  .subpage-tabs { top: 54px; }
+  .subpage-tabs button { min-height: 40px; font-size: .76rem; }
+  .queue-header-actions .fill-courts-btn span { display: none; }
+  .queue-header-actions .fill-courts-btn { width: 42px; padding: 0; }
+  .roster-import-actions { grid-template-columns: 1fr; }
   .serve-picker { grid-template-columns: 1fr 1fr; }
   .setup-options-two { grid-template-columns: 1fr; }
-  .fairness-note { grid-template-columns: 1fr; gap: 4px; }
   .roster-share-actions { grid-template-columns: 1fr; }
   .game-toolbar { gap: 5px; padding: 5px; }
   .tool-btn { min-width: 0; padding-inline: 4px; }

@@ -1176,14 +1176,29 @@
     return new TextDecoder().decode(bytes);
   }
 
+  function rosterShareCode(players) {
+    const names = Players.normalizePlayers(players).map((player) => player.name);
+    return base64UrlEncode(JSON.stringify({ v: 1, names }));
+  }
+
   function rosterShareUrl(players, href) {
     const source = href || (globalThis.location && location.href) || 'https://example.test/';
     const url = new URL(source);
     url.search = '';
     url.hash = '';
-    const names = Players.normalizePlayers(players).map((player) => player.name);
-    url.hash = `roster=${base64UrlEncode(JSON.stringify({ v: 1, names }))}`;
+    url.hash = `roster=${rosterShareCode(players)}`;
     return url.toString();
+  }
+
+  function rosterCodeFromInput(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const marker = 'roster=';
+    const markerIndex = raw.indexOf(marker);
+    if (markerIndex >= 0) {
+      return raw.slice(markerIndex + marker.length).split(/[&#\s]/, 1)[0].trim();
+    }
+    return raw.replace(/^#/, '').trim();
   }
 
   function formatDuration(ms) {
@@ -1361,6 +1376,7 @@
       this.showTimerAdjust = false;
       this.showGameReset = false;
       this.showRosterShare = false;
+      this.showRosterImport = false;
       this.editingGame = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
@@ -1534,21 +1550,9 @@
 
     consumeRosterShare() {
       if (!globalThis.location || !String(location.hash || '').startsWith('#roster=')) return;
-      const encoded = String(location.hash || '').slice('#roster='.length);
+      const code = rosterCodeFromInput(String(location.hash || ''));
       try {
-        const payload = JSON.parse(base64UrlDecode(encoded));
-        const names = Array.isArray(payload && payload.names) ? payload.names.map(Players.cleanName).filter(Boolean) : [];
-        if (!names.length) throw new Error('No players found in roster link');
-        const existing = new Set(this.state.players.map((player) => Players.nameKey(player.name)));
-        const additions = names.filter((name) => !existing.has(Players.nameKey(name)));
-        if (confirm(`Import ${names.length} roster player${names.length === 1 ? '' : 's'}? Existing names will be kept and duplicates skipped.`)) {
-          additions.forEach((name) => this.state.players.push(Players.normalizePlayer({ name })));
-          this.state.players = Players.normalizePlayers(this.state.players);
-          this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
-          this.persist();
-          this.view = 'roster';
-          this.toast = `${additions.length} player${additions.length === 1 ? '' : 's'} added from QR`;
-        }
+        this.importRosterCode(code, 'QR');
       } catch (error) {
         this.toast = error.message || 'Roster QR could not be read';
       } finally {
@@ -1559,18 +1563,37 @@
       }
     }
 
+    importRosterCode(value, source = 'code') {
+      const code = rosterCodeFromInput(value);
+      if (!code) throw new Error('Paste a roster code or roster link');
+      const payload = JSON.parse(base64UrlDecode(code));
+      const names = Array.isArray(payload && payload.names) ? payload.names.map(Players.cleanName).filter(Boolean) : [];
+      if (!names.length) throw new Error('No players found in roster code');
+      const existing = new Set(this.state.players.map((player) => Players.nameKey(player.name)));
+      const additions = names.filter((name) => !existing.has(Players.nameKey(name)));
+      if (!confirm(`Import ${names.length} roster player${names.length === 1 ? '' : 's'}? Existing names will be kept and duplicates skipped.`)) return false;
+      additions.forEach((name) => this.state.players.push(Players.normalizePlayer({ name })));
+      this.state.players = Players.normalizePlayers(this.state.players);
+      this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
+      this.persist();
+      this.view = 'roster';
+      this.showRosterImport = false;
+      this.toast = `${additions.length} player${additions.length === 1 ? '' : 's'} added from ${source}`;
+      return true;
+    }
+
     rosterQrMarkup() {
-      const link = rosterShareUrl(this.state.players);
+      const code = rosterShareCode(this.state.players);
       if (typeof globalThis.qrcode !== 'function') {
-        return `<div class="qr-unavailable">QR generator unavailable. Use Copy link instead.</div>`;
+        return `<div class="qr-unavailable">QR generator unavailable. Use Copy code instead.</div>`;
       }
       try {
         const qr = globalThis.qrcode(0, 'M');
-        qr.addData(link);
+        qr.addData(code);
         qr.make();
         return qr.createSvgTag(5, 20);
       } catch (_error) {
-        return `<div class="qr-unavailable">Roster is too large for one QR. Use Copy link instead.</div>`;
+        return `<div class="qr-unavailable">Roster is too large for one QR. Use Copy code instead.</div>`;
       }
     }
 
@@ -2495,6 +2518,7 @@
       if (action === 'share-roster') {
         if (!this.state.players.length) return;
         this.showRosterShare = true;
+        this.showRosterImport = false;
         this.render();
         return;
       }
@@ -2503,16 +2527,36 @@
         this.render();
         return;
       }
-      if (action === 'copy-roster-link') {
-        await this.copyText(target.dataset.link || rosterShareUrl(this.state.players), 'Roster link copied');
+      if (action === 'open-roster-import') {
+        this.showRosterImport = true;
+        this.showRosterShare = false;
+        this.render();
+        return;
+      }
+      if (action === 'close-roster-import') {
+        this.showRosterImport = false;
+        this.render();
+        return;
+      }
+      if (action === 'import-roster-code') {
+        const input = this.querySelector('#roster-import-code');
+        try {
+          if (this.importRosterCode(input ? input.value : '', 'code')) this.render();
+        } catch (error) {
+          this.showToast(error.message || 'Roster code could not be imported');
+        }
+        return;
+      }
+      if (action === 'copy-roster-code') {
+        await this.copyText(target.dataset.code || rosterShareCode(this.state.players), 'Roster code copied');
         return;
       }
       if (action === 'native-share-roster') {
-        const link = target.dataset.link || rosterShareUrl(this.state.players);
+        const code = target.dataset.code || rosterShareCode(this.state.players);
         if (navigator.share) {
-          try { await navigator.share({ title: 'PicklePulse roster', text: `${this.state.players.length} players`, url: link }); } catch (_error) {}
+          try { await navigator.share({ title: 'PicklePulse roster', text: `PicklePulse roster code:\n${code}` }); } catch (_error) {}
         } else {
-          await this.copyText(link, 'Roster link copied');
+          await this.copyText(code, 'Roster code copied');
         }
         return;
       }
@@ -2980,9 +3024,10 @@
           ${this.showTimerAdjust ? this.renderTimeAdjustPanel() : ''}
           ${this.showGameReset ? this.renderGameResetDialog() : ''}
           ${this.showRosterShare ? this.renderRosterShare() : ''}
+          ${this.showRosterImport ? this.renderRosterImport() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
-            ${this.view === 'setup' ? this.renderSetup() : this.view === 'history' ? this.renderHistory() : this.view === 'roster' ? this.renderRoster() : this.view === 'queue' ? this.renderQueue() : this.renderGame()}
+            ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'history'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
           </main>
           ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
           <input id="import-file" type="file" accept="application/json,.json" hidden />
@@ -3012,9 +3057,7 @@
             <span class="network-dot ${this.network.level}" title="${escapeHtml(this.network.label)}">${icon(this.network.level === 'offline' ? 'wifiOff' : 'wifi')}</span>
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
             <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
-            <button class="icon-btn ${this.view === 'queue' ? 'active' : ''}" type="button" data-action="view" data-view="queue" aria-label="Fair queue" title="Fair queue">${icon('queue')}</button>
-            <button class="icon-btn ${this.view === 'roster' ? 'active' : ''}" type="button" data-action="view" data-view="roster" aria-label="Roster" title="Roster">${icon('users')}</button>
-            <button class="icon-btn ${this.view === 'history' ? 'active' : ''}" type="button" data-action="view" data-view="history" aria-label="Standings and saved games" title="Standings and saved games">${icon('history')}</button>
+            <button class="icon-btn ${['queue', 'roster', 'history'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'history'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster and history" title="Queue, roster and history">${icon('queue')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
           </div>
         </header>
@@ -3256,6 +3299,20 @@
       `;
     }
 
+    renderQueueRosterHistory() {
+      const current = ['queue', 'roster', 'history'].includes(this.view) ? this.view : 'queue';
+      return `
+        <section class="queue-roster-history">
+          <nav class="subpage-tabs" aria-label="Queue, roster and history">
+            <button type="button" class="${current === 'queue' ? 'active' : ''}" data-action="view" data-view="queue">${icon('queue')}<span>Queue</span></button>
+            <button type="button" class="${current === 'roster' ? 'active' : ''}" data-action="view" data-view="roster">${icon('users')}<span>Roster</span></button>
+            <button type="button" class="${current === 'history' ? 'active' : ''}" data-action="view" data-view="history">${icon('history')}<span>History</span></button>
+          </nav>
+          ${current === 'queue' ? this.renderQueue() : current === 'roster' ? this.renderRoster() : this.renderHistory()}
+        </section>
+      `;
+    }
+
     renderRoster() {
       const queue = this.state.queue;
       const queued = new Set([...queue.waiting, ...queue.onCourt, ...queue.courts.flatMap((court) => court.players)]);
@@ -3264,7 +3321,8 @@
           <div class="section-head">
             <div><h1>Roster</h1><p>Reusable player list for games and queue sessions.</p></div>
             <div>
-              <button class="icon-btn" type="button" data-action="share-roster" ${this.state.players.length ? '' : 'disabled'} aria-label="Share roster by QR" title="Share roster by QR">${icon('share')}</button>
+              <button class="icon-btn" type="button" data-action="share-roster" ${this.state.players.length ? '' : 'disabled'} aria-label="Share roster code or QR" title="Share roster">${icon('share')}</button>
+              <button class="icon-btn" type="button" data-action="open-roster-import" aria-label="Import roster code or link" title="Import roster code">${icon('copy')}</button>
               <button class="icon-btn" type="button" data-action="import" aria-label="Import backup" title="Import backup">${icon('upload')}</button>
               <button class="icon-btn" type="button" data-action="export" aria-label="Export backup" title="Export backup">${icon('download')}</button>
             </div>
@@ -3328,15 +3386,13 @@
       return `
         <section class="queue-view players-view">
           <div class="section-head">
-            <div><h1>Fair queue</h1><p>One shared rotation across every court.</p></div>
+            <div><h1>Queue</h1></div>
             <button class="icon-btn danger" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
           </div>
           <section class="queue-config-card">
             <label><span>Queue courts</span><select id="queue-court-count" aria-label="Number of courts used for queueing">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${queue.courtCount === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
             <p>This setting is only for queue rotation. The scorekeeper still runs one scored game at a time.</p>
-            <button type="button" class="fill-courts-btn" data-action="queue-fill-courts" ${canFill ? '' : 'disabled'}>${icon('play')} Fill open courts</button>
           </section>
-          <aside class="fairness-note"><b>Fairness rules</b><span>Longest wait gets priority. Late arrivals join the back. Courts are filled from one shared pool, while repeat partners are avoided first and repeat opponents second.</span></aside>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
           ${queue.onCourt.length ? `<div class="on-court scoring-queue"><span title="Scored game">${icon('radio')}<span class="sr-only">Scored game</span></span><b>Scorekeeper · ${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
           <section class="queue-card">
@@ -3344,6 +3400,7 @@
               <div><h2>Waiting</h2><p>${queue.waiting.length} player${queue.waiting.length === 1 ? '' : 's'} · automatic fair order</p></div>
               <div class="queue-header-actions">
                 <button type="button" class="queue-add-all" data-action="queue-add-all" ${availableCount ? '' : 'disabled'} aria-label="Add all available roster players" title="Add all available">${icon('userPlus')}</button>
+                <button type="button" class="fill-courts-btn" data-action="queue-fill-courts" ${canFill ? '' : 'disabled'} aria-label="Fill open courts" title="Fill open courts">${icon('play')}<span>Fill courts</span></button>
                 <button type="button" class="queue-next" data-action="prepare-next" ${queue.waiting.length >= 4 && !queue.onCourt.length ? '' : 'disabled'} aria-label="Use next four in scorekeeper" title="Score next 4">${icon('radio')}<span class="button-count">4</span></button>
               </div>
             </header>
@@ -3364,16 +3421,32 @@
     }
 
     renderRosterShare() {
-      const link = rosterShareUrl(this.state.players);
+      const code = rosterShareCode(this.state.players);
       return `
         <div class="guard-scrim" data-action="close-roster-share"></div>
-        <section class="roster-share-dialog" role="dialog" aria-modal="true" aria-label="Share roster by QR">
+        <section class="roster-share-dialog" role="dialog" aria-modal="true" aria-label="Share roster code or QR">
           <header><div><b>Share roster</b><span>${this.state.players.length} player${this.state.players.length === 1 ? '' : 's'}</span></div><button class="icon-btn compact" type="button" data-action="close-roster-share" aria-label="Close">${icon('x')}</button></header>
           <div class="roster-qr">${this.rosterQrMarkup()}</div>
-          <p>Scan with the other phone’s camera. PicklePulse opens and offers to merge these player names into its roster.</p>
+          <p>Scan the QR to read the roster code, or copy/share the code below. On the other device, open Roster → Import roster code.</p>
+          <div class="roster-code-preview" title="Roster import code">${escapeHtml(code)}</div>
           <div class="roster-share-actions">
-            <button type="button" data-action="copy-roster-link" data-link="${escapeHtml(link)}">${icon('copy')} Copy link</button>
-            <button type="button" data-action="native-share-roster" data-link="${escapeHtml(link)}">${icon('share')} Share</button>
+            <button type="button" data-action="copy-roster-code" data-code="${escapeHtml(code)}">${icon('copy')} Copy code</button>
+            <button type="button" data-action="native-share-roster" data-code="${escapeHtml(code)}">${icon('share')} Share code</button>
+          </div>
+        </section>
+      `;
+    }
+
+    renderRosterImport() {
+      return `
+        <div class="guard-scrim" data-action="close-roster-import"></div>
+        <section class="roster-import-dialog" role="dialog" aria-modal="true" aria-label="Import roster code">
+          <header><div><b>Import roster</b><span>Paste a roster code or an older roster link</span></div><button class="icon-btn compact" type="button" data-action="close-roster-import" aria-label="Close">${icon('x')}</button></header>
+          <label for="roster-import-code">Roster code / link</label>
+          <textarea id="roster-import-code" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste roster code or link here"></textarea>
+          <div class="roster-import-actions">
+            <button type="button" data-action="close-roster-import">Cancel</button>
+            <button type="button" data-action="import-roster-code">Import roster</button>
           </div>
         </section>
       `;

@@ -10,9 +10,9 @@ Finalized: 2026-09-11
   - restart the same players/settings at 0-0; or
   - change players/settings, then restart at 0-0.
   The interrupted score/rallies are not saved as a completed History entry.
-- Roster and Queue are separate top-level pages.
+- Queue, Roster, and History share one top-level area and switch with sub-page tabs.
 - Queueing was redesigned around one shared multi-court fairness state instead of independent court lines.
-- Roster can be handed to another PicklePulse instance using a QR/import link. Duplicate names are skipped on merge.
+- Roster can be handed to another PicklePulse instance using a compact roster code or QR. The import popup accepts the new code and legacy roster links; duplicate names are skipped on merge.
 
 ## Queue fairness model
 
@@ -57,16 +57,16 @@ Queue-only courts and the scored game are intentionally separate concepts:
 
 ## Roster QR transfer
 
-Roster Share creates a same-app URL whose `#roster=` fragment contains a compact JSON payload of player names encoded as base64url. The receiving PicklePulse instance detects the fragment, asks whether to import, merges new names, skips duplicate names, then removes the fragment from the address bar.
+Roster Share now creates a compact base64url roster code containing the player-name payload. QR, Copy, and native Share use that code directly. On the receiving device, open Roster → Import roster code and paste the code. For backward compatibility, the same popup also accepts older PicklePulse URLs containing `#roster=...`.
 
 QR rendering is done in the browser with `qrcode-generator` 1.4.4 loaded from cdnjs:
 
 - Library project: https://github.com/kazuhikoarase/qrcode-generator/blob/master/js/README.md
 - CDN listing: https://cdnjs.com/libraries/qrcode-generator/1.4.4
 
-The roster payload is not sent to a QR-image web service. If the QR library is unavailable/offline or the roster is too large for a single QR code, Copy link / native Share remains available.
+The roster payload is not sent to a QR-image web service. If the QR library is unavailable/offline or the roster is too large for a single QR code, Copy code / native Share remains available.
 
-Deployment note: for QR transfer between devices, both devices need to be able to open the same hosted PicklePulse URL. Local-only file URLs are not suitable for cross-device scanning.
+Deployment note: QR transfer is code-first, so the QR no longer needs to open the hosted app URL. The receiving device only needs access to its own PicklePulse instance and the Import roster code popup.
 
 ## State / migration
 
@@ -94,14 +94,14 @@ No manual migration step is required; loading/persisting normalizes legacy state
 - `src/picklepulse-core.js`
   - state schema v5
   - multi-court fair queue engine
-  - separate Roster and Queue views
+  - Queue / Roster / History sub-page tab hub
   - serving-team radios
   - game reset/edit flow
-  - roster QR link import/share
+  - roster QR/code import/share with legacy-link compatibility
 - `styles.css`
-  - queue courts, fairness UI, roster QR, reset dialog, and responsive layout
+  - queue courts, sub-page tabs, roster QR/code dialogs, reset dialog, and responsive layout
 - `sw.js`
-  - service-worker cache bumped to `picklepulse-v8-0-0`
+  - service-worker cache bumped to `picklepulse-v8-0-2`
 
 Existing `src/live-sync.js`, manifest, and app icon are retained.
 
@@ -134,7 +134,7 @@ A Chromium headless smoke run was attempted in the handoff environment, but the 
 ## Production browser checklist
 
 1. Existing install/state loads and roster/history remain present.
-2. Roster and Queue open as separate pages.
+2. Queue, Roster, and History switch inside the same top-level area using the three sub-page tabs.
 3. Set Queue courts to 2+; Add All; Fill open courts; complete courts in different orders.
 4. Confirm no player appears on two queue courts or both court + waiting list.
 5. Confirm late arrivals enter behind current eligible waiters.
@@ -142,8 +142,8 @@ A Chromium headless smoke run was attempted in the handoff environment, but the 
 7. New Game serving-team radio starts the correct team.
 8. During a live game, test Restart same players and Change players/settings.
 9. Confirm reset does not create an unwanted History entry.
-10. Share a roster QR from device A and scan/import on device B; verify duplicate names are skipped.
-11. Test QR fallback by disabling network after the app is loaded; Copy link should remain usable even if QR rendering is unavailable.
+10. Share/copy a roster code from device A and paste it into Roster → Import roster code on device B; verify duplicate names are skipped.
+11. Test QR fallback by disabling network after the app is loaded; Copy code should remain usable even if QR rendering is unavailable.
 12. Confirm PWA refresh/update behavior after the service worker activates.
 
 ## Turnover notes
@@ -153,3 +153,11 @@ A Chromium headless smoke run was attempted in the handoff environment, but the 
 - Do not make each physical court maintain its own queue; that would reintroduce multi-court bias.
 - If fairness behavior changes later, preserve the key ordering invariant: fairness level first, waiting time second, then use partner/opponent history only to form matches among already-eligible players.
 - Keep QR payloads limited to roster names unless a future product decision explicitly expands what users agree to transfer.
+
+
+## UI / roster transfer update
+- Queue, Roster, and History now live under one top-level area with sub-page tabs.
+- The previous fairness explainer card/copy was removed; the scheduler logic itself is unchanged.
+- Fill courts now sits with the waiting-list actions beside Add all.
+- Roster sharing is code-first: QR, Copy, and Share use the compact roster code rather than a URL.
+- Roster has a dedicated Import roster code button. Its popup accepts either the new raw code or legacy links containing `#roster=...`.
