@@ -3,6 +3,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+:root {
+  --vvh: 100svh;
+  --vvtop: 0px;
+}
+
 html,
 body {
   margin: 0;
@@ -18,68 +23,148 @@ body {
   height: 100svh;
 }
 
+button,
+input {
+  font: inherit;
+}
+
 .app {
   width: 100%;
   height: 100%;
-  padding: clamp(10px, 3vw, 24px);
+  min-height: 0;
+  padding: clamp(8px, 2vw, 18px);
   display: grid;
-  place-items: center;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+}
+
+.time {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 8;
+  font-size: clamp(10px, 2.2vw, 18px);
+  font-weight: 800;
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.quote-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 1.4vw, 12px);
+}
+
+.quote-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: clamp(16px, 4vw, 26px);
+  background: rgba(255, 255, 255, 0.025);
+  padding: clamp(9px, 2.2vw, 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
 }
 
-.pair-form,
-.time,
-.controls,
-.dot {
-  position: fixed;
-  z-index: 5;
+.card-head {
+  position: absolute;
+  top: clamp(8px, 2vw, 12px);
+  left: clamp(8px, 2vw, 12px);
+  right: clamp(8px, 2vw, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  z-index: 3;
 }
 
 .pair-form {
-  top: clamp(10px, 2.5vw, 18px);
-  left: clamp(10px, 3vw, 22px);
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .pair-input {
-  width: clamp(64px, 18vw, 96px);
-  height: clamp(32px, 8vw, 42px);
+  width: clamp(64px, 17vw, 104px);
+  height: clamp(30px, 7.5vw, 40px);
   border: 0;
   border-radius: 999px;
-  padding: 0 12px;
+  padding: 0 10px;
   background: rgba(255, 255, 255, 0.13);
   color: #fff;
-  font-size: clamp(13px, 3.5vw, 18px);
+  font-size: clamp(13px, 3vw, 17px);
   font-weight: 900;
   text-align: center;
+  text-transform: uppercase;
   outline: none;
+}
+
+.pair-input:focus {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .pair-input::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
 
-.time {
-  top: clamp(10px, 2.5vw, 18px);
-  right: clamp(12px, 3vw, 22px);
-  font-size: clamp(11px, 2.4vw, 20px);
-  font-weight: 800;
-  opacity: 0.45;
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.quote {
+.dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #666;
+}
+
+.dot.live { background: #30d158; }
+.dot.warn { background: #ff9f0a; }
+.dot.dead { background: #ff453a; }
+
+.icon-btn,
+.controls button {
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.icon-btn {
+  width: clamp(30px, 7.5vw, 38px);
+  height: clamp(30px, 7.5vw, 38px);
+  font-size: clamp(16px, 4vw, 20px);
+}
+
+.icon-btn:active,
+.controls button:active,
+.panel-actions button:active {
+  transform: scale(0.95);
+}
+
+.quote-content {
   width: 100%;
-  max-width: 100vw;
-  min-height: 76svh;
-  padding: clamp(34px, 8vh, 70px) 0 clamp(58px, 11vh, 90px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  min-width: 0;
+  padding-top: clamp(28px, 5vh, 42px);
 }
 
 .pair-label {
-  margin-bottom: clamp(8px, 1.7vh, 16px);
-  font-size: clamp(13px, 3.3vw, 24px);
+  margin-bottom: clamp(5px, 1vh, 10px);
+  font-size: clamp(11px, 2.7vw, 20px);
   line-height: 1;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -88,19 +173,19 @@ body {
 
 .price {
   width: 100%;
-  max-width: 100%;
-  font-size: clamp(50px, 16vw, 230px);
+  min-width: 0;
+  font-size: clamp(42px, 13vw, 132px);
   line-height: 0.88;
   font-weight: 900;
-  letter-spacing: -0.075em;
+  letter-spacing: -0.065em;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .range {
   min-height: 1.1em;
-  margin-top: clamp(9px, 1.8vh, 18px);
-  font-size: clamp(12px, 3vw, 24px);
+  margin-top: clamp(6px, 1.2vh, 12px);
+  font-size: clamp(10px, 2.5vw, 18px);
   line-height: 1.1;
   font-weight: 900;
   opacity: 0.42;
@@ -108,13 +193,13 @@ body {
 }
 
 .alert-status {
-  min-height: 1.2em;
-  margin-top: clamp(10px, 2vh, 18px);
-  max-width: 96vw;
-  font-size: clamp(12px, 3vw, 22px);
+  min-height: 1.1em;
+  margin-top: clamp(5px, 1vh, 10px);
+  max-width: 96%;
+  font-size: clamp(10px, 2.35vw, 16px);
   line-height: 1.15;
   font-weight: 800;
-  opacity: 0.65;
+  opacity: 0.62;
   overflow-wrap: anywhere;
 }
 
@@ -124,64 +209,47 @@ body {
 }
 
 .controls {
-  right: clamp(10px, 3vw, 16px);
-  bottom: clamp(10px, 3vw, 16px);
+  min-height: 40px;
   display: flex;
-  gap: clamp(7px, 2vw, 10px);
+  justify-content: flex-end;
+  gap: 8px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-button {
-  width: clamp(38px, 10vw, 48px);
-  height: clamp(38px, 10vw, 48px);
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-size: clamp(18px, 5vw, 24px);
-  font-weight: 900;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
+.controls button {
+  width: clamp(38px, 9vw, 46px);
+  height: clamp(38px, 9vw, 46px);
+  font-size: clamp(18px, 4.5vw, 23px);
 }
 
-button:active {
-  transform: scale(0.94);
-  background: rgba(255, 255, 255, 0.24);
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  background: rgba(0, 0, 0, 0.34);
 }
 
-.dot {
-  left: clamp(14px, 4vw, 20px);
-  bottom: clamp(26px, 6vw, 35px);
-  width: clamp(8px, 2vw, 10px);
-  height: clamp(8px, 2vw, 10px);
-  border-radius: 50%;
-  background: #666;
-}
-
-.dot.live {
-  background: #30d158;
-}
-
-.dot.warn {
-  background: #ff9f0a;
-}
-
-.dot.dead {
-  background: #ff453a;
+.panel-backdrop.open {
+  display: block;
 }
 
 .panel {
   position: fixed;
-  left: clamp(10px, 3vw, 18px);
-  right: clamp(10px, 3vw, 18px);
-  bottom: clamp(64px, 13vw, 78px);
-  max-height: calc(100svh - 92px);
+  z-index: 21;
+  left: 50%;
+  top: calc(var(--vvtop) + 8px);
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 16px));
+  max-height: calc(var(--vvh) - 16px);
   overflow-y: auto;
-  padding: clamp(14px, 4vw, 18px);
-  border-radius: 22px;
-  background: rgba(28, 28, 30, 0.96);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: clamp(12px, 3vw, 18px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  background: rgba(28, 28, 30, 0.985);
   backdrop-filter: blur(18px);
-  z-index: 10;
   display: none;
   text-align: left;
 }
@@ -191,23 +259,42 @@ button:active {
 }
 
 .panel-title {
-  margin-bottom: 14px;
-  font-size: clamp(15px, 4vw, 18px);
+  padding-right: 38px;
+  font-size: clamp(15px, 3.5vw, 18px);
   font-weight: 900;
-  opacity: 0.9;
+  opacity: 0.92;
+}
+
+.panel-close-x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.alert-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .field {
   display: grid;
-  grid-template-columns: minmax(82px, 112px) 1fr;
-  gap: 10px;
-  align-items: center;
-  margin-top: 10px;
+  gap: 6px;
 }
 
 .field label,
 .check-row {
-  font-size: clamp(13px, 3.5vw, 16px);
+  font-size: clamp(12px, 3vw, 15px);
   font-weight: 800;
   opacity: 0.75;
 }
@@ -215,14 +302,18 @@ button:active {
 .field input[type="number"] {
   width: 100%;
   min-width: 0;
-  padding: 12px 13px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: clamp(16px, 4.5vw, 19px);
+  font-size: 16px;
   font-weight: 800;
   outline: none;
+}
+
+.field input[type="number"]:focus {
+  background: rgba(255, 255, 255, 0.19);
 }
 
 .field input::placeholder {
@@ -230,30 +321,35 @@ button:active {
 }
 
 .check-row {
-  margin-top: 12px;
+  margin-top: 11px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .check-row input {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   accent-color: #30d158;
 }
 
 .panel-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .panel-actions button {
-  width: auto;
-  height: 44px;
+  min-width: 0;
+  height: 40px;
   flex: 1;
-  border-radius: 14px;
-  font-size: clamp(14px, 3.8vw, 16px);
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: clamp(13px, 3vw, 15px);
+  font-weight: 900;
+  cursor: pointer;
 }
 
 #saveAlertBtn {
@@ -265,76 +361,134 @@ button:active {
   background: rgba(255, 69, 58, 0.26);
 }
 
-@media (max-width: 430px) and (orientation: portrait) {
-  .price {
-    font-size: clamp(54px, 19vw, 108px);
-    line-height: 0.86;
-  }
-}
-
-@media (max-width: 360px) and (orientation: portrait) {
-  .price {
-    font-size: clamp(48px, 18vw, 88px);
+@media (orientation: landscape), (min-width: 900px) {
+  .quote-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 1fr;
   }
 
-  .field {
-    grid-template-columns: 82px 1fr;
-  }
-}
-
-@media (min-width: 901px) {
   .price {
-    font-size: clamp(120px, 13vw, 240px);
+    font-size: clamp(42px, 8.2vw, 140px);
+  }
+
+  .alert-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
   .app {
-    padding-left: clamp(54px, 10vw, 90px);
-    padding-right: clamp(54px, 10vw, 90px);
+    padding: 7px;
+    gap: 6px;
   }
 
-  .quote {
-    min-height: 70svh;
-    padding-top: 28px;
-    padding-bottom: 48px;
+  .quote-card {
+    border-radius: 16px;
+    padding: 8px;
+  }
+
+  .card-head {
+    top: 7px;
+    left: 7px;
+    right: 7px;
+  }
+
+  .pair-input {
+    width: 74px;
+    height: 30px;
+    font-size: 13px;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  .quote-content {
+    padding-top: 24px;
+  }
+
+  .pair-label {
+    margin-bottom: 5px;
+    font-size: clamp(10px, 3.2vh, 15px);
   }
 
   .price {
-    font-size: clamp(46px, 23vh, 128px);
-    line-height: 0.82;
+    font-size: clamp(38px, 17vh, 86px);
+    line-height: 0.84;
   }
 
   .range,
   .alert-status {
-    font-size: clamp(11px, 3.6vh, 18px);
+    margin-top: 5px;
+    font-size: clamp(9px, 3vh, 13px);
+  }
+
+  .controls {
+    min-height: 34px;
+  }
+
+  .controls button {
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
   }
 
   .panel {
-    left: clamp(58px, 11vw, 90px);
-    right: clamp(58px, 11vw, 90px);
-    bottom: 58px;
+    width: min(680px, calc(100vw - 12px));
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .panel-title {
+    font-size: 14px;
+  }
+
+  .alert-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .field {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+  }
+
+  .field label,
+  .check-row {
+    font-size: 12px;
+  }
+
+  .field input[type="number"] {
+    height: 36px;
+    padding: 7px 9px;
+  }
+
+  .check-row {
+    margin-top: 8px;
+  }
+
+  .panel-actions {
+    margin-top: 8px;
+  }
+
+  .panel-actions button {
+    height: 36px;
+    font-size: 13px;
   }
 }
 
-@media (orientation: landscape) and (max-height: 360px) {
-  .price {
-    font-size: clamp(42px, 21vh, 88px);
-  }
-
-  .time,
+@media (orientation: landscape) and (max-height: 300px) {
+  .pair-label,
   .range,
   .alert-status {
-    font-size: 11px;
+    display: none;
   }
 
-  .pair-input,
-  button {
-    height: 34px;
-  }
-
-  button {
-    width: 34px;
-    font-size: 17px;
+  .price {
+    font-size: clamp(34px, 19vh, 68px);
   }
 }

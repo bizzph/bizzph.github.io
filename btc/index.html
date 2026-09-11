@@ -2,70 +2,1285 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
-  <title>BTC/PHP</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
+  <title>BTC/PHP · ETH/PHP</title>
+  <style>
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
 
+:root {
+  --vvh: 100svh;
+  --vvtop: 0px;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+}
+
+body {
+  height: 100svh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: clamp(8px, 2vw, 18px);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+}
+
+.time {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 8;
+  font-size: clamp(10px, 2.2vw, 18px);
+  font-weight: 800;
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.quote-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 1.4vw, 12px);
+}
+
+.quote-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: clamp(16px, 4vw, 26px);
+  background: rgba(255, 255, 255, 0.025);
+  padding: clamp(9px, 2.2vw, 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.card-head {
+  position: absolute;
+  top: clamp(8px, 2vw, 12px);
+  left: clamp(8px, 2vw, 12px);
+  right: clamp(8px, 2vw, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  z-index: 3;
+}
+
+.pair-form {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pair-input {
+  width: clamp(64px, 17vw, 104px);
+  height: clamp(30px, 7.5vw, 40px);
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font-size: clamp(13px, 3vw, 17px);
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+  outline: none;
+}
+
+.pair-input:focus {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pair-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #666;
+}
+
+.dot.live { background: #30d158; }
+.dot.warn { background: #ff9f0a; }
+.dot.dead { background: #ff453a; }
+
+.icon-btn,
+.controls button {
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.icon-btn {
+  width: clamp(30px, 7.5vw, 38px);
+  height: clamp(30px, 7.5vw, 38px);
+  font-size: clamp(16px, 4vw, 20px);
+}
+
+.icon-btn:active,
+.controls button:active,
+.panel-actions button:active {
+  transform: scale(0.95);
+}
+
+.quote-content {
+  width: 100%;
+  min-width: 0;
+  padding-top: clamp(28px, 5vh, 42px);
+}
+
+.pair-label {
+  margin-bottom: clamp(5px, 1vh, 10px);
+  font-size: clamp(11px, 2.7vw, 20px);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  opacity: 0.35;
+}
+
+.price {
+  width: 100%;
+  min-width: 0;
+  font-size: clamp(42px, 13vw, 132px);
+  line-height: 0.88;
+  font-weight: 900;
+  letter-spacing: -0.065em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.range {
+  min-height: 1.1em;
+  margin-top: clamp(6px, 1.2vh, 12px);
+  font-size: clamp(10px, 2.5vw, 18px);
+  line-height: 1.1;
+  font-weight: 900;
+  opacity: 0.42;
+  overflow-wrap: anywhere;
+}
+
+.alert-status {
+  min-height: 1.1em;
+  margin-top: clamp(5px, 1vh, 10px);
+  max-width: 96%;
+  font-size: clamp(10px, 2.35vw, 16px);
+  line-height: 1.15;
+  font-weight: 800;
+  opacity: 0.62;
+  overflow-wrap: anywhere;
+}
+
+.alert-status.triggered {
+  color: #ff9f0a;
+  opacity: 1;
+}
+
+.controls {
+  min-height: 40px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.controls button {
+  width: clamp(38px, 9vw, 46px);
+  height: clamp(38px, 9vw, 46px);
+  font-size: clamp(18px, 4.5vw, 23px);
+}
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.panel-backdrop.open {
+  display: block;
+}
+
+.panel {
+  position: fixed;
+  z-index: 21;
+  left: 50%;
+  top: calc(var(--vvtop) + 8px);
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 16px));
+  max-height: calc(var(--vvh) - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: clamp(12px, 3vw, 18px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  background: rgba(28, 28, 30, 0.985);
+  backdrop-filter: blur(18px);
+  display: none;
+  text-align: left;
+}
+
+.panel.open {
+  display: block;
+}
+
+.panel-title {
+  padding-right: 38px;
+  font-size: clamp(15px, 3.5vw, 18px);
+  font-weight: 900;
+  opacity: 0.92;
+}
+
+.panel-close-x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.alert-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label,
+.check-row {
+  font-size: clamp(12px, 3vw, 15px);
+  font-weight: 800;
+  opacity: 0.75;
+}
+
+.field input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  outline: none;
+}
+
+.field input[type="number"]:focus {
+  background: rgba(255, 255, 255, 0.19);
+}
+
+.field input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.check-row {
+  margin-top: 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.check-row input {
+  width: 19px;
+  height: 19px;
+  accent-color: #30d158;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.panel-actions button {
+  min-width: 0;
+  height: 40px;
+  flex: 1;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: clamp(13px, 3vw, 15px);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#saveAlertBtn {
+  background: #30d158;
+  color: #000;
+}
+
+#clearAlertBtn {
+  background: rgba(255, 69, 58, 0.26);
+}
+
+@media (orientation: landscape), (min-width: 900px) {
+  .quote-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 1fr;
+  }
+
+  .price {
+    font-size: clamp(42px, 8.2vw, 140px);
+  }
+
+  .alert-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .app {
+    padding: 7px;
+    gap: 6px;
+  }
+
+  .quote-card {
+    border-radius: 16px;
+    padding: 8px;
+  }
+
+  .card-head {
+    top: 7px;
+    left: 7px;
+    right: 7px;
+  }
+
+  .pair-input {
+    width: 74px;
+    height: 30px;
+    font-size: 13px;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  .quote-content {
+    padding-top: 24px;
+  }
+
+  .pair-label {
+    margin-bottom: 5px;
+    font-size: clamp(10px, 3.2vh, 15px);
+  }
+
+  .price {
+    font-size: clamp(38px, 17vh, 86px);
+    line-height: 0.84;
+  }
+
+  .range,
+  .alert-status {
+    margin-top: 5px;
+    font-size: clamp(9px, 3vh, 13px);
+  }
+
+  .controls {
+    min-height: 34px;
+  }
+
+  .controls button {
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
+  }
+
+  .panel {
+    width: min(680px, calc(100vw - 12px));
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .panel-title {
+    font-size: 14px;
+  }
+
+  .alert-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .field {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+  }
+
+  .field label,
+  .check-row {
+    font-size: 12px;
+  }
+
+  .field input[type="number"] {
+    height: 36px;
+    padding: 7px 9px;
+  }
+
+  .check-row {
+    margin-top: 8px;
+  }
+
+  .panel-actions {
+    margin-top: 8px;
+  }
+
+  .panel-actions button {
+    height: 36px;
+    font-size: 13px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 300px) {
+  .pair-label,
+  .range,
+  .alert-status {
+    display: none;
+  }
+
+  .price {
+    font-size: clamp(34px, 19vh, 68px);
+  }
+}
+  </style>
+</head>
 <body>
   <main class="app">
-    <form id="pairForm" class="pair-form">
-      <input
-        id="pairInput"
-        class="pair-input"
-        type="text"
-        autocomplete="off"
-        autocapitalize="characters"
-        spellcheck="false"
-        placeholder="BTC"
-        aria-label="Coin or pair"
-      />
-    </form>
-
     <div id="time" class="time">--:--</div>
 
-    <section class="quote">
-      <div id="pairLabel" class="pair-label">BTC/PHP</div>
-      <div id="price" class="price">---</div>
-      <div id="range" class="range"></div>
-      <div id="alertStatus" class="alert-status"></div>
+    <section class="quote-grid" aria-label="Crypto prices">
+      <article class="quote-card">
+        <div class="card-head">
+          <form id="pairForm1" class="pair-form">
+            <input id="pairInput1" class="pair-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="BTC" aria-label="First coin or pair" />
+          </form>
+          <div class="card-actions">
+            <div id="dot1" class="dot" aria-hidden="true"></div>
+            <button type="button" id="alertBtn1" class="icon-btn" aria-label="First pair price alert">!</button>
+          </div>
+        </div>
+        <div class="quote-content">
+          <div id="pairLabel1" class="pair-label">BTC/PHP</div>
+          <div id="price1" class="price">---</div>
+          <div id="range1" class="range"></div>
+          <div id="alertStatus1" class="alert-status"></div>
+        </div>
+      </article>
+
+      <article class="quote-card">
+        <div class="card-head">
+          <form id="pairForm2" class="pair-form">
+            <input id="pairInput2" class="pair-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ETH" aria-label="Second coin or pair" />
+          </form>
+          <div class="card-actions">
+            <div id="dot2" class="dot" aria-hidden="true"></div>
+            <button type="button" id="alertBtn2" class="icon-btn" aria-label="Second pair price alert">!</button>
+          </div>
+        </div>
+        <div class="quote-content">
+          <div id="pairLabel2" class="pair-label">ETH/PHP</div>
+          <div id="price2" class="price">---</div>
+          <div id="range2" class="range"></div>
+          <div id="alertStatus2" class="alert-status"></div>
+        </div>
+      </article>
     </section>
 
-    <div id="dot" class="dot"></div>
-
-    <div id="alertPanel" class="panel">
-      <div id="panelTitle" class="panel-title">BTC/PHP Price Alert</div>
-
-      <div class="field">
-        <label for="aboveInput">Went above</label>
-        <input id="aboveInput" type="number" inputmode="decimal" placeholder="optional" />
-      </div>
-
-      <div class="field">
-        <label for="belowInput">Went below</label>
-        <input id="belowInput" type="number" inputmode="decimal" placeholder="optional" />
-      </div>
-
-      <label class="check-row">
-        <input id="repeatInput" type="checkbox" />
-        repeat every crossing
-      </label>
-
-      <div class="panel-actions">
-        <button type="button" id="saveAlertBtn">Save</button>
-        <button type="button" id="clearAlertBtn">Clear</button>
-        <button type="button" id="closeAlertBtn">Close</button>
-      </div>
-    </div>
-
     <div class="controls">
-      <button type="button" id="refreshBtn" aria-label="Refresh">↻</button>
-      <button type="button" id="alertBtn" aria-label="Price alert">!</button>
+      <button type="button" id="refreshBtn" aria-label="Refresh both pairs">↻</button>
       <button type="button" id="fullscreenBtn" aria-label="Fullscreen">⛶</button>
     </div>
   </main>
 
-  <script src="app.js" defer></script>
+  <div id="panelBackdrop" class="panel-backdrop"></div>
+  <div id="alertPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="panelTitle">
+    <button type="button" id="panelCloseX" class="panel-close-x" aria-label="Close alert editor">×</button>
+    <div id="panelTitle" class="panel-title">Price Alert</div>
+
+    <div class="alert-fields">
+      <div class="field">
+        <label for="aboveInput">Went above</label>
+        <input id="aboveInput" type="number" inputmode="decimal" step="any" placeholder="optional" />
+      </div>
+
+      <div class="field">
+        <label for="belowInput">Went below</label>
+        <input id="belowInput" type="number" inputmode="decimal" step="any" placeholder="optional" />
+      </div>
+    </div>
+
+    <label class="check-row">
+      <input id="repeatInput" type="checkbox" />
+      repeat every crossing
+    </label>
+
+    <div class="panel-actions">
+      <button type="button" id="saveAlertBtn">Save</button>
+      <button type="button" id="clearAlertBtn">Clear</button>
+      <button type="button" id="closeAlertBtn">Close</button>
+    </div>
+  </div>
+
+  <script>
+(() => {
+  "use strict";
+
+  const API = "https://api.pro.coins.ph";
+  const WS = "wss://wsapi.pro.coins.ph/openapi/quote/ws/v3";
+  const QUOTE = "PHP";
+
+  const PAIR_KEYS = ["crypto_php_pair_1_v2", "crypto_php_pair_2_v2"];
+  const ALERT_PREFIX = "crypto_php_alert_";
+
+  const REST_MS = 15000;
+  const HIDDEN_REST_MS = 60000;
+  const STALE_MS = 20000;
+  const HIDDEN_STALE_MS = 60000;
+  const TIMEOUT_MS = 10000;
+  const MAX_RECONNECT_MS = 30000;
+
+  const $ = id => document.getElementById(id);
+
+  const timeEl = $("time");
+  const alertPanel = $("alertPanel");
+  const panelBackdrop = $("panelBackdrop");
+  const panelTitle = $("panelTitle");
+  const aboveInput = $("aboveInput");
+  const belowInput = $("belowInput");
+  const repeatInput = $("repeatInput");
+
+  let fallbackTimer = null;
+  let timeTimer = null;
+  let destroyed = false;
+  let activeAlertSlot = null;
+
+  function blankAlert() {
+    return {
+      above: null,
+      below: null,
+      repeat: false,
+      aboveTriggered: false,
+      belowTriggered: false
+    };
+  }
+
+  function makeSlot(index, defaultPair) {
+    const n = index + 1;
+
+    return {
+      index,
+      defaultPair,
+      pair: defaultPair,
+      base: baseFromPair(defaultPair),
+      pairForm: $(`pairForm${n}`),
+      pairInput: $(`pairInput${n}`),
+      pairLabel: $(`pairLabel${n}`),
+      priceEl: $(`price${n}`),
+      rangeEl: $(`range${n}`),
+      alertStatus: $(`alertStatus${n}`),
+      alertBtn: $(`alertBtn${n}`),
+      dot: $(`dot${n}`),
+      socket: null,
+      reconnectTimer: null,
+      aborter: null,
+      reconnects: 0,
+      manualClose: false,
+      lastUpdate: 0,
+      currentPrice: null,
+      previousPrice: null,
+      shownPrice: "",
+      shownRange: "",
+      dotState: "",
+      alertConfig: blankAlert()
+    };
+  }
+
+  const slots = [
+    makeSlot(0, "BTCPHP"),
+    makeSlot(1, "ETHPHP")
+  ];
+
+  function pairFromInput(value, fallback = "BTCPHP") {
+    const clean = String(value || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+
+    if (!clean) return fallback;
+    return clean.endsWith(QUOTE) ? clean : `${clean}${QUOTE}`;
+  }
+
+  function baseFromPair(value) {
+    return String(value || "BTCPHP").replace(new RegExp(`${QUOTE}$`), "") || "BTC";
+  }
+
+  function setDot(slot, state) {
+    if (slot.dotState === state) return;
+    slot.dotState = state;
+    slot.dot.className = `dot ${state}`;
+  }
+
+  function updateTime() {
+    timeEl.textContent = new Date().toLocaleTimeString("en-PH", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    }).toLowerCase();
+  }
+
+  function updateVisualViewport() {
+    const viewport = window.visualViewport;
+    const height = viewport ? viewport.height : window.innerHeight;
+    const offsetTop = viewport ? viewport.offsetTop : 0;
+
+    document.documentElement.style.setProperty("--vvh", `${Math.max(120, height)}px`);
+    document.documentElement.style.setProperty("--vvtop", `${Math.max(0, offsetTop)}px`);
+
+    if (alertPanel.classList.contains("open") && document.activeElement?.matches("#aboveInput, #belowInput")) {
+      requestAnimationFrame(() => document.activeElement.scrollIntoView({ block: "center", behavior: "smooth" }));
+    }
+  }
+
+  function compact(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "--";
+
+    if (Math.abs(n) >= 1000000) {
+      return `${Number((n / 1000000).toFixed(2))}e`;
+    }
+
+    if (Math.abs(n) >= 1000) {
+      return n.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    return n.toLocaleString("en-PH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6
+    });
+  }
+
+  function normalize(payload, expectedPair) {
+    let data = payload?.data || payload;
+
+    if (Array.isArray(data)) {
+      data = data.find(item =>
+        String(item.symbol || item.s || "").toUpperCase() === expectedPair
+      );
+    }
+
+    if (!data || typeof data !== "object") return null;
+
+    return {
+      symbol: String(data.symbol || data.s || expectedPair).toUpperCase(),
+      last: data.lastPrice ?? data.c,
+      high: data.highPrice ?? data.h,
+      low: data.lowPrice ?? data.l
+    };
+  }
+
+  function alertKey(slot) {
+    return `${ALERT_PREFIX}${slot.pair}`;
+  }
+
+  function nullablePositive(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function loadAlert(slot) {
+    slot.alertConfig = blankAlert();
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(alertKey(slot)));
+      if (!saved || typeof saved !== "object") return;
+
+      slot.alertConfig.above = nullablePositive(saved.above);
+      slot.alertConfig.below = nullablePositive(saved.below);
+      slot.alertConfig.repeat = Boolean(saved.repeat);
+      slot.alertConfig.aboveTriggered = Boolean(saved.aboveTriggered);
+      slot.alertConfig.belowTriggered = Boolean(saved.belowTriggered);
+    } catch (_) {}
+  }
+
+  function saveAlertState(slot) {
+    try {
+      localStorage.setItem(alertKey(slot), JSON.stringify(slot.alertConfig));
+    } catch (_) {}
+  }
+
+  function syncAlertInputs(slot) {
+    aboveInput.value = slot.alertConfig.above ?? "";
+    belowInput.value = slot.alertConfig.below ?? "";
+    repeatInput.checked = slot.alertConfig.repeat;
+  }
+
+  function renderAlertStatus(slot, message, triggered = false) {
+    if (message) {
+      slot.alertStatus.textContent = message;
+      slot.alertStatus.classList.toggle("triggered", triggered);
+      return;
+    }
+
+    const parts = [];
+
+    if (slot.alertConfig.above !== null) parts.push(`above ${compact(slot.alertConfig.above)}`);
+    if (slot.alertConfig.below !== null) parts.push(`below ${compact(slot.alertConfig.below)}`);
+    if (parts.length && slot.alertConfig.repeat) parts.push("repeat");
+
+    slot.alertStatus.textContent = parts.length ? `Alert: ${parts.join(" / ")}` : "";
+    slot.alertStatus.classList.remove("triggered");
+  }
+
+  function notify(slot, message) {
+    renderAlertStatus(slot, message, true);
+
+    if ("vibrate" in navigator) {
+      navigator.vibrate([250, 120, 250]);
+    }
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(`${slot.base}/${QUOTE} Alert`, { body: message });
+    }
+  }
+
+  function checkAlert(slot, price, force = false) {
+    if (!Number.isFinite(price)) return;
+
+    const prev = Number.isFinite(slot.previousPrice) ? slot.previousPrice : null;
+    let changed = false;
+
+    if (slot.alertConfig.above !== null) {
+      const crossed = force
+        ? price >= slot.alertConfig.above
+        : prev === null
+          ? price >= slot.alertConfig.above
+          : prev < slot.alertConfig.above && price >= slot.alertConfig.above;
+
+      if (slot.alertConfig.repeat && price < slot.alertConfig.above && slot.alertConfig.aboveTriggered) {
+        slot.alertConfig.aboveTriggered = false;
+        changed = true;
+      }
+
+      if (!slot.alertConfig.aboveTriggered && crossed) {
+        slot.alertConfig.aboveTriggered = true;
+        changed = true;
+        notify(slot, `${slot.base}/${QUOTE} went above ${compact(slot.alertConfig.above)}`);
+      }
+    }
+
+    if (slot.alertConfig.below !== null) {
+      const crossed = force
+        ? price <= slot.alertConfig.below
+        : prev === null
+          ? price <= slot.alertConfig.below
+          : prev > slot.alertConfig.below && price <= slot.alertConfig.below;
+
+      if (slot.alertConfig.repeat && price > slot.alertConfig.below && slot.alertConfig.belowTriggered) {
+        slot.alertConfig.belowTriggered = false;
+        changed = true;
+      }
+
+      if (!slot.alertConfig.belowTriggered && crossed) {
+        slot.alertConfig.belowTriggered = true;
+        changed = true;
+        notify(slot, `${slot.base}/${QUOTE} went below ${compact(slot.alertConfig.below)}`);
+      }
+    }
+
+    if (changed) saveAlertState(slot);
+  }
+
+  function render(slot, payload, source) {
+    const data = normalize(payload, slot.pair);
+    if (!data) return;
+
+    const price = Number(data.last);
+    if (!Number.isFinite(price)) return;
+
+    const nextPrice = compact(price);
+
+    if (nextPrice !== slot.shownPrice) {
+      slot.shownPrice = nextPrice;
+      slot.priceEl.textContent = nextPrice;
+    }
+
+    const high = Number(data.high);
+    const low = Number(data.low);
+
+    if (Number.isFinite(high) && Number.isFinite(low)) {
+      const nextRange = `H ${compact(high)} · L ${compact(low)}`;
+
+      if (nextRange !== slot.shownRange) {
+        slot.shownRange = nextRange;
+        slot.rangeEl.textContent = nextRange;
+      }
+    }
+
+    slot.currentPrice = price;
+    checkAlert(slot, price);
+    slot.previousPrice = price;
+    slot.lastUpdate = Date.now();
+
+    setDot(slot, source === "ws" ? "live" : "warn");
+  }
+
+  function resetDisplay(slot) {
+    slot.currentPrice = null;
+    slot.previousPrice = null;
+    slot.shownPrice = "";
+    slot.shownRange = "";
+    slot.lastUpdate = 0;
+
+    slot.priceEl.textContent = "---";
+    slot.rangeEl.textContent = "";
+  }
+
+  function applyPair(slot, nextPair) {
+    slot.pair = pairFromInput(nextPair, slot.defaultPair);
+    slot.base = baseFromPair(slot.pair);
+
+    slot.pairInput.value = slot.base;
+    slot.pairLabel.textContent = `${slot.base}/${QUOTE}`;
+
+    try {
+      localStorage.setItem(PAIR_KEYS[slot.index], slot.pair);
+    } catch (_) {}
+
+    resetDisplay(slot);
+    loadAlert(slot);
+    renderAlertStatus(slot);
+    updateDocumentTitle();
+  }
+
+  function updateDocumentTitle() {
+    document.title = `${slots[0].base}/${QUOTE} · ${slots[1].base}/${QUOTE}`;
+  }
+
+  function abortRest(slot) {
+    if (!slot.aborter) return;
+    slot.aborter.abort();
+    slot.aborter = null;
+  }
+
+  async function fetchRest(slot) {
+    abortRest(slot);
+
+    const controller = new AbortController();
+    slot.aborter = controller;
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const url = `${API}/openapi/quote/v1/ticker/24hr?symbol=${slot.pair}&_=${Date.now()}`;
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: controller.signal
+      });
+
+      if (!response.ok) throw new Error(`REST ${response.status}`);
+
+      const payload = await response.json();
+      render(slot, payload, "rest");
+    } finally {
+      clearTimeout(timer);
+      if (slot.aborter === controller) slot.aborter = null;
+    }
+  }
+
+  function closeSocket(slot) {
+    if (!slot.socket) return;
+
+    slot.socket.onopen = null;
+    slot.socket.onmessage = null;
+    slot.socket.onerror = null;
+    slot.socket.onclose = null;
+
+    try {
+      slot.socket.close();
+    } catch (_) {}
+
+    slot.socket = null;
+  }
+
+  function clearReconnect(slot) {
+    clearTimeout(slot.reconnectTimer);
+    slot.reconnectTimer = null;
+  }
+
+  function reconnectDelay(slot) {
+    const baseDelay = Math.min(
+      MAX_RECONNECT_MS,
+      1000 * Math.pow(2, Math.min(slot.reconnects, 5))
+    );
+
+    return baseDelay + Math.floor(Math.random() * 1000);
+  }
+
+  function connectSocket(slot) {
+    if (destroyed) return;
+
+    if (
+      slot.socket &&
+      (slot.socket.readyState === WebSocket.OPEN || slot.socket.readyState === WebSocket.CONNECTING)
+    ) return;
+
+    clearReconnect(slot);
+    closeSocket(slot);
+
+    slot.manualClose = false;
+    setDot(slot, "warn");
+
+    try {
+      slot.socket = new WebSocket(`${WS}/${slot.pair.toLowerCase()}@ticker`);
+    } catch (_) {
+      scheduleReconnect(slot);
+      return;
+    }
+
+    slot.socket.onopen = () => {
+      slot.reconnects = 0;
+      setDot(slot, "live");
+    };
+
+    slot.socket.onmessage = event => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.pong || payload.result === null) return;
+        render(slot, payload, "ws");
+      } catch (_) {}
+    };
+
+    slot.socket.onerror = () => setDot(slot, "warn");
+
+    slot.socket.onclose = () => {
+      slot.socket = null;
+      if (!slot.manualClose && !destroyed) scheduleReconnect(slot);
+    };
+  }
+
+  function scheduleReconnect(slot) {
+    if (destroyed) return;
+
+    clearReconnect(slot);
+    slot.reconnects += 1;
+    setDot(slot, "dead");
+    slot.reconnectTimer = setTimeout(() => connectSocket(slot), reconnectDelay(slot));
+  }
+
+  async function refreshSlot(slot) {
+    slot.manualClose = true;
+    slot.reconnects = 0;
+
+    clearReconnect(slot);
+    closeSocket(slot);
+    abortRest(slot);
+
+    try {
+      await fetchRest(slot);
+    } catch (error) {
+      console.error(error);
+      setDot(slot, "dead");
+    }
+
+    connectSocket(slot);
+  }
+
+  async function refreshAll() {
+    await Promise.allSettled(slots.map(slot => refreshSlot(slot)));
+  }
+
+  function scheduleFallback() {
+    clearTimeout(fallbackTimer);
+    if (destroyed) return;
+
+    const hidden = document.visibilityState === "hidden";
+    const interval = hidden ? HIDDEN_REST_MS : REST_MS;
+    const staleLimit = hidden ? HIDDEN_STALE_MS : STALE_MS;
+
+    fallbackTimer = setTimeout(async () => {
+      const staleSlots = slots.filter(slot => Date.now() - slot.lastUpdate > staleLimit);
+
+      await Promise.allSettled(staleSlots.map(async slot => {
+        try {
+          await fetchRest(slot);
+        } catch (error) {
+          console.error(error);
+          setDot(slot, "dead");
+        }
+      }));
+
+      scheduleFallback();
+    }, interval);
+  }
+
+  async function changePair(slot, value) {
+    const nextPair = pairFromInput(value, slot.defaultPair);
+
+    if (nextPair === slot.pair) {
+      slot.pairInput.value = slot.base;
+      return;
+    }
+
+    slot.manualClose = true;
+    slot.reconnects = 0;
+
+    clearReconnect(slot);
+    closeSocket(slot);
+    abortRest(slot);
+
+    applyPair(slot, nextPair);
+    setDot(slot, "warn");
+
+    try {
+      await fetchRest(slot);
+      connectSocket(slot);
+    } catch (error) {
+      console.error(error);
+      resetDisplay(slot);
+      slot.pairLabel.textContent = "NO PRICE";
+      slot.rangeEl.textContent = "Try BTC, ETH, XRP, SOL, DOGE";
+      setDot(slot, "dead");
+    }
+  }
+
+  function parsePrice(value) {
+    const n = Number(String(value || "").trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function openAlert(slot) {
+    activeAlertSlot = slot;
+    panelTitle.textContent = `${slot.base}/${QUOTE} Price Alert`;
+    syncAlertInputs(slot);
+    alertPanel.classList.add("open");
+    panelBackdrop.classList.add("open");
+    updateVisualViewport();
+  }
+
+  function closeAlert() {
+    alertPanel.classList.remove("open");
+    panelBackdrop.classList.remove("open");
+    activeAlertSlot = null;
+
+    if (document.activeElement?.matches("#aboveInput, #belowInput")) {
+      document.activeElement.blur();
+    }
+  }
+
+  async function saveAlert() {
+    const slot = activeAlertSlot;
+    if (!slot) return;
+
+    slot.alertConfig = {
+      above: parsePrice(aboveInput.value),
+      below: parsePrice(belowInput.value),
+      repeat: repeatInput.checked,
+      aboveTriggered: false,
+      belowTriggered: false
+    };
+
+    saveAlertState(slot);
+    renderAlertStatus(slot);
+
+    if ("Notification" in window && Notification.permission === "default") {
+      try {
+        await Notification.requestPermission();
+      } catch (_) {}
+    }
+
+    if (slot.currentPrice !== null) {
+      checkAlert(slot, slot.currentPrice, true);
+    }
+
+    closeAlert();
+  }
+
+  function clearAlert() {
+    const slot = activeAlertSlot;
+    if (!slot) return;
+
+    slot.alertConfig = blankAlert();
+
+    try {
+      localStorage.removeItem(alertKey(slot));
+    } catch (_) {}
+
+    syncAlertInputs(slot);
+    renderAlertStatus(slot);
+  }
+
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (_) {}
+  }
+
+  function bindSlot(slot) {
+    slot.pairForm.addEventListener("submit", event => {
+      event.preventDefault();
+      changePair(slot, slot.pairInput.value);
+      slot.pairInput.blur();
+    });
+
+    slot.pairInput.addEventListener("input", () => {
+      slot.pairInput.value = slot.pairInput.value
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+    });
+
+    slot.pairInput.addEventListener("change", () => changePair(slot, slot.pairInput.value));
+    slot.alertBtn.addEventListener("click", () => openAlert(slot));
+  }
+
+  function bind() {
+    slots.forEach(bindSlot);
+
+    $("refreshBtn").addEventListener("click", refreshAll);
+    $("fullscreenBtn").addEventListener("click", fullscreen);
+    $("saveAlertBtn").addEventListener("click", saveAlert);
+    $("clearAlertBtn").addEventListener("click", clearAlert);
+    $("closeAlertBtn").addEventListener("click", closeAlert);
+    $("panelCloseX").addEventListener("click", closeAlert);
+    panelBackdrop.addEventListener("click", closeAlert);
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && alertPanel.classList.contains("open")) closeAlert();
+    });
+
+    [aboveInput, belowInput].forEach(input => {
+      input.addEventListener("focus", updateVisualViewport);
+    });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateVisualViewport);
+      window.visualViewport.addEventListener("scroll", updateVisualViewport);
+    }
+
+    window.addEventListener("resize", updateVisualViewport);
+
+    document.addEventListener("visibilitychange", () => {
+      scheduleFallback();
+
+      if (document.visibilityState === "visible") {
+        updateTime();
+        slots.forEach(slot => {
+          fetchRest(slot).catch(error => {
+            console.error(error);
+            setDot(slot, "warn");
+          });
+          connectSocket(slot);
+        });
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      destroyed = true;
+      clearTimeout(fallbackTimer);
+      clearInterval(timeTimer);
+
+      slots.forEach(slot => {
+        slot.manualClose = true;
+        clearReconnect(slot);
+        closeSocket(slot);
+        abortRest(slot);
+      });
+    });
+  }
+
+  function start() {
+    bind();
+
+    slots.forEach(slot => {
+      let savedPair = slot.defaultPair;
+
+      try {
+        savedPair = localStorage.getItem(PAIR_KEYS[slot.index]) || slot.defaultPair;
+      } catch (_) {}
+
+      applyPair(slot, savedPair);
+    });
+
+    updateVisualViewport();
+    updateTime();
+    timeTimer = setInterval(updateTime, 1000);
+
+    slots.forEach(slot => {
+      fetchRest(slot).catch(error => {
+        console.error(error);
+        setDot(slot, "warn");
+      });
+      connectSocket(slot);
+    });
+
+    scheduleFallback();
+  }
+
+  start();
+})();
+  </script>
 </body>
 </html>
