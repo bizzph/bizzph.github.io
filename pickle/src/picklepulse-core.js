@@ -666,11 +666,18 @@
     return levels.length ? Math.min(...levels) : 0;
   }
 
-  function prepareFirstJoin(next, id, baseline = fairnessBaseline(next)) {
+  function prepareQueueJoin(next, id, baseline = fairnessBaseline(next)) {
     if (!next.stats[id]) next.stats[id] = { gamesPlayed: 0, fairTurns: 0, queuedAt: 0, lastPlayedAt: 0, tie: 0, hasJoined: false };
+    const floor = Math.max(0, Math.floor(Number(baseline) || 0));
     if (!next.stats[id].hasJoined) {
-      next.stats[id].fairTurns = Math.max(0, Math.floor(Number(baseline) || 0));
+      next.stats[id].fairTurns = floor;
       next.stats[id].hasJoined = true;
+      return;
+    }
+    // A player explicitly removed from the queue has queuedAt=0. If they rejoin
+    // later, do not give artificial catch-up priority over players who stayed.
+    if (!next.stats[id].queuedAt) {
+      next.stats[id].fairTurns = Math.max(Math.max(0, Number(next.stats[id].fairTurns) || 0), floor);
     }
   }
 
@@ -688,7 +695,7 @@
     const valid = normalizePlayers(players).some((player) => player.id === id);
     const occupied = new Set([...next.onCourt, ...next.courts.flatMap((court) => court.players)]);
     if (!valid || next.waiting.includes(id) || occupied.has(id)) return next;
-    prepareFirstJoin(next, id);
+    prepareQueueJoin(next, id);
     stampQueued(next, id);
     next.waiting.push(id);
     return normalizeQueue(next, players);
@@ -706,7 +713,7 @@
     });
     const base = Date.now();
     available.forEach((player) => {
-      prepareFirstJoin(next, player.id, baseline);
+      prepareQueueJoin(next, player.id, baseline);
       stampQueued(next, player.id, base);
       next.waiting.push(player.id);
     });
@@ -834,10 +841,13 @@
     const next = normalizeQueue(queue, players);
     const desired = clampCourtCount(count);
     if (desired < next.courts.length) {
-      const returning = next.courts.slice(desired).flatMap((court) => court.players.map((id) => ({ id, queuedAt: court.assignedAt || Date.now() })));
-      returning.forEach(({ id, queuedAt }) => {
+      const returning = next.courts.slice(desired).flatMap((court) => court.players);
+      const returnedAt = Date.now();
+      returning.forEach((id) => {
         if (!next.waiting.includes(id)) {
-          stampQueued(next, id, queuedAt);
+          // Court time is not waiting time. Return cancelled/removed-court players
+          // at the back of their current fairness tier without completion credit.
+          stampQueued(next, id, returnedAt);
           next.waiting.push(id);
         }
       });
@@ -847,6 +857,15 @@
     return normalizeQueue(next, players);
   }
 
+  function consumeDeferralsPassedByDispatch(next, selectedIds) {
+    const selected = unique(selectedIds).filter((id) => next.waiting.includes(id));
+    if (!selected.length || !next.deferred.length) return;
+    let frontier = -1;
+    selected.forEach((id) => { frontier = Math.max(frontier, next.waiting.indexOf(id)); });
+    if (frontier < 0) return;
+    next.deferred = next.deferred.filter((id) => next.waiting.indexOf(id) > frontier);
+  }
+
   function fillOpenCourts(queue, players, now = Date.now()) {
     const next = normalizeQueue(queue, players);
     const openIndexes = next.courts.map((court, index) => court.players.length ? -1 : index).filter((index) => index >= 0);
@@ -854,6 +873,7 @@
     const fillCount = Math.min(openIndexes.length, Math.floor(eligible.length / 4));
     if (!fillCount) return next;
     const selected = eligible.slice(0, fillCount * 4);
+    consumeDeferralsPassedByDispatch(next, selected);
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
     let remaining = selected.slice();
     for (let i = 0; i < fillCount; i += 1) {
@@ -868,7 +888,6 @@
       };
     }
     next.pending = [];
-    next.deferred = [];
     return normalizeQueue(next, players);
   }
 
@@ -913,7 +932,8 @@
     if (!court || !court.players.length) return next;
     court.players.forEach((id) => {
       if (!next.waiting.includes(id)) {
-        stampQueued(next, id, court.assignedAt || now);
+        // Do not count time spent on a cancelled court as queue waiting time.
+        stampQueued(next, id, now);
         next.waiting.push(id);
       }
     });
@@ -928,9 +948,9 @@
       next.pending = [];
       return next;
     }
+    consumeDeferralsPassedByDispatch(next, selected);
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
     next.pending = [];
-    next.deferred = [];
     next.onCourt = selected;
     next.activeGameId = String(gameId || '');
     return normalizeQueue(next, players);
@@ -3531,13 +3551,13 @@
             <button type="button" class="${isLink ? 'active' : ''}" data-action="set-roster-qr-mode" data-mode="link" aria-pressed="${isLink}" ${linkAvailable ? '' : 'disabled'}>Open app</button>
           </div>
           <div class="roster-qr">${this.rosterQrMarkup(mode)}</div>
-          <p>${isLink ? 'Scan to open this same PicklePulse app on the other device and import the roster.' : 'Scan to read/copy the roster code, then paste it in Roster → Import roster code.'}</p>
+          <p>${isLink ? 'Scan to open this same PicklePulse app on the other device and import the roster. The receiving device must be able to open the hosted app.' : 'Works offline: scan to read/copy the roster code, then paste it in Roster → Import roster code.'}</p>
           <div class="roster-code-preview" title="${isLink ? 'Roster import link' : 'Roster import code'}">${escapeHtml(payload)}</div>
           <div class="roster-share-actions">
             <button type="button" data-action="copy-roster-payload" data-mode="${mode}">${icon('copy')} Copy ${isLink ? 'link' : 'code'}</button>
             <button type="button" data-action="native-share-roster" data-mode="${mode}">${icon('share')} Share ${isLink ? 'link' : 'code'}</button>
           </div>
-          ${!linkAvailable ? '<small class="roster-link-note">Open the app from HTTPS/HTTP to enable an Open app QR for another device.</small>' : ''}
+          ${!linkAvailable ? '<small class="roster-link-note">Open the app from HTTPS/HTTP to enable an Open app QR for another device. Code QR stays available offline.</small>' : '<small class="roster-link-note">QR generation is bundled locally. Code QR needs no internet; Open app QR still depends on access to the hosted app.</small>'}
         </section>
       `;
     }
