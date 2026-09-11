@@ -1,6 +1,6 @@
-# PicklePulse v8 Turnover / Handoff
+# PicklePulse v9 Turnover / Handoff
 
-Finalized: 2026-09-11
+Finalized: 2026-09-12
 
 ## What changed
 
@@ -57,7 +57,12 @@ Queue-only courts and the scored game are intentionally separate concepts:
 
 ## Roster QR transfer
 
-Roster Share now creates a compact base64url roster code containing the player-name payload. QR, Copy, and native Share use that code directly. On the receiving device, open Roster → Import roster code and paste the code. For backward compatibility, the same popup also accepts older PicklePulse URLs containing `#roster=...`.
+Roster Share creates a compact base64url roster code containing the player-name payload and now offers two QR modes:
+
+- **Show code** — the QR contains only the roster token. The receiving scanner shows/copies the token, then the user pastes it into Roster → Import roster code.
+- **Open app** — the QR contains this same PicklePulse app URL with `#roster=<token>`. Scanning visits the app and the existing roster-import flow prompts to merge the roster. This mode is available only when PicklePulse is running from HTTP/HTTPS; a `file://` path is not portable to another device.
+
+Copy and native Share follow the selected QR mode. The Import popup continues to accept either raw roster codes or PicklePulse links containing `#roster=...`, preserving backward compatibility.
 
 QR rendering is done in the browser with `qrcode-generator` 1.4.4 loaded from cdnjs:
 
@@ -66,13 +71,13 @@ QR rendering is done in the browser with `qrcode-generator` 1.4.4 loaded from cd
 
 The roster payload is not sent to a QR-image web service. If the QR library is unavailable/offline or the roster is too large for a single QR code, Copy code / native Share remains available.
 
-Deployment note: QR transfer is code-first, so the QR no longer needs to open the hosted app URL. The receiving device only needs access to its own PicklePulse instance and the Import roster code popup.
+Deployment note: code QR works between separate PicklePulse instances without requiring the QR itself to navigate. Open-app QR requires the deployed app to be reachable from the receiving device over HTTP/HTTPS.
 
 ## State / migration
 
 Local storage key remains `picklepulse-state-v1`.
 
-Root state schema is now **v5**. Queue normalization automatically accepts older state that only had `waiting`, `pending`, `onCourt`, and `activeGameId` and adds the new queue fields.
+Root state schema is now **v6**. Queue normalization automatically accepts older state that only had `waiting`, `pending`, `onCourt`, and `activeGameId` and adds the new queue fields.
 
 New queue state includes:
 
@@ -83,6 +88,7 @@ New queue state includes:
 - `opponentCounts`
 - `sequence`
 - `sessionSeed`
+- `deferred[]` for one-batch voluntary queue deferrals
 
 No manual migration step is required; loading/persisting normalizes legacy state into the new shape.
 
@@ -101,7 +107,7 @@ No manual migration step is required; loading/persisting normalizes legacy state
 - `styles.css`
   - queue courts, sub-page tabs, roster QR/code dialogs, reset dialog, and responsive layout
 - `sw.js`
-  - service-worker cache bumped to `picklepulse-v8-0-2`
+  - service-worker cache bumped to `picklepulse-v9-0-0`
 
 Existing `src/live-sync.js`, manifest, and app icon are retained.
 
@@ -154,10 +160,24 @@ A Chromium headless smoke run was attempted in the handoff environment, but the 
 - If fairness behavior changes later, preserve the key ordering invariant: fairness level first, waiting time second, then use partner/opponent history only to form matches among already-eligible players.
 - Keep QR payloads limited to roster names unless a future product decision explicitly expands what users agree to transfer.
 
+## v9 queue defer + dual QR update
 
-## UI / roster transfer update
-- Queue, Roster, and History now live under one top-level area with sub-page tabs.
-- The previous fairness explainer card/copy was removed; the scheduler logic itself is unchanged.
-- Fill courts now sits with the waiting-list actions beside Add all.
-- Roster sharing is code-first: QR, Copy, and Share use the compact roster code rather than a URL.
-- Roster has a dedicated Import roster code button. Its popup accepts either the new raw code or legacy links containing `#roster=...`.
+- Players currently eligible for the next queue batch can choose **Next** to voluntarily skip exactly one upcoming fill cycle.
+- A defer does **not** add a game, increase `fairTurns`, or otherwise penalize fairness. Once the next batch actually starts, the defer flag is consumed and the skipped player remains at the front of the next eligible opportunity.
+- The option is only actionable when enough non-deferred waiting players remain to fill the intended court batch. This prevents a player from voluntarily deferring and accidentally leaving a court unfillable.
+- Multiple players may defer together only while sufficient replacements remain.
+- `Score Next 4` also respects deferrals. Preparing and then cancelling the pending scored game does not consume the defer; starting the queued game does.
+- With multiple simultaneously open courts, the defer applies to the current fill batch across those courts. If all courts are occupied, the next batch is the next four players for whichever court opens first.
+- Roster Share now lets the sender choose **Show code** or **Open app** QR behavior. Both formats are generated/handled by PicklePulse; the phone's QR scanner itself is still the device/browser feature that reads the QR.
+- Raw-code and legacy/new roster links are both accepted by the same Import roster field.
+
+## v9 validation
+
+- JavaScript syntax check: PASS
+- One-court defer with 8 waiting: #1 defers, #2–#5 fill court, #1 remains first afterward: PASS
+- Defer blocked with only 4 waiting/no replacement: PASS
+- Multiple deferrals with sufficient replacements: PASS
+- `Score Next 4` respects defer and only consumes it when the game starts: PASS
+- Two-open-court batch with 9 waiting: deferred #1 is skipped from the 8-player fill and remains next: PASS
+- Roster QR payload modes: raw code vs same-app HTTPS `#roster=` link: PASS
+- Link QR disabled for `file://` use: PASS

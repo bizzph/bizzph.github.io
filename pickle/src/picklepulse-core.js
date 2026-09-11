@@ -457,7 +457,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 5;
+  const ROOT_SCHEMA_VERSION = 6;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -565,7 +565,8 @@
     const onCourt = safe(source.onCourt, 4).filter((id) => !queueCourtIds.has(id));
     const occupiedIds = new Set([...queueCourtIds, ...onCourt]);
     const waiting = safe(source.waiting).filter((id) => !occupiedIds.has(id));
-    const pendingRaw = safe(source.pending, 4).filter((id) => waiting.includes(id));
+    const deferred = safe(source.deferred).filter((id) => waiting.includes(id));
+    const pendingRaw = safe(source.pending, 4).filter((id) => waiting.includes(id) && !deferred.includes(id));
     const pending = pendingRaw.length === 4 ? pendingRaw : [];
     const sourceStats = source.stats && typeof source.stats === 'object' ? source.stats : {};
     let sequence = Math.max(0, Math.floor(Number(source.sequence) || 0));
@@ -591,6 +592,7 @@
     const next = {
       waiting,
       pending,
+      deferred,
       onCourt,
       activeGameId: source.activeGameId ? String(source.activeGameId) : '',
       courtCount,
@@ -611,8 +613,45 @@
       if ((left.tie || 0) !== (right.tie || 0)) return (left.tie || 0) - (right.tie || 0);
       return a.localeCompare(b);
     });
-    if (next.pending.length) next.pending = next.waiting.slice(0, 4);
+    if (next.pending.length) {
+      const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
+      next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+    }
     return next;
+  }
+
+  function nextQueueBatchSize(queue) {
+    const next = queue && typeof queue === 'object' ? queue : {};
+    const waitingCount = Array.isArray(next.waiting) ? next.waiting.length : 0;
+    if (waitingCount < 4) return 0;
+    const courts = Array.isArray(next.courts) ? next.courts : [];
+    const openCourts = courts.filter((court) => !court || !Array.isArray(court.players) || !court.players.length).length;
+    const courtSlots = openCourts > 0 ? Math.min(openCourts, Math.floor(waitingCount / 4)) : 1;
+    return Math.max(0, courtSlots * 4);
+  }
+
+  function nextQueueBatchPlayers(queue) {
+    const batchSize = nextQueueBatchSize(queue);
+    const deferred = new Set(Array.isArray(queue && queue.deferred) ? queue.deferred : []);
+    return batchSize ? (Array.isArray(queue && queue.waiting) ? queue.waiting : []).filter((id) => !deferred.has(id)).slice(0, batchSize) : [];
+  }
+
+  function toggleDeferNext(queue, playerId, players) {
+    const next = normalizeQueue(queue, players);
+    const id = String(playerId || '');
+    if (!id || !next.waiting.includes(id)) return next;
+    if (next.deferred.includes(id)) {
+      next.deferred = next.deferred.filter((item) => item !== id);
+      next.pending = [];
+      return normalizeQueue(next, players);
+    }
+    const batchSize = nextQueueBatchSize(next);
+    if (!batchSize || !nextQueueBatchPlayers(next).includes(id)) return next;
+    const nonDeferredOthers = next.waiting.filter((item) => item !== id && !next.deferred.includes(item)).length;
+    if (nonDeferredOthers < batchSize) return next;
+    next.deferred.push(id);
+    next.pending = [];
+    return normalizeQueue(next, players);
   }
 
   function activeQueueIds(next) {
@@ -679,6 +718,7 @@
     const id = String(playerId || '');
     next.waiting = next.waiting.filter((item) => item !== id);
     next.pending = next.pending.filter((item) => item !== id);
+    next.deferred = next.deferred.filter((item) => item !== id);
     if (next.pending.length !== 4) next.pending = [];
     if (next.stats[id]) next.stats[id].queuedAt = 0;
     return next;
@@ -725,7 +765,8 @@
 
   function prepareNextFour(queue, players) {
     const next = normalizeQueue(queue, players);
-    next.pending = next.waiting.length >= 4 ? next.waiting.slice(0, 4) : [];
+    const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
+    next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
     return next;
   }
 
@@ -809,9 +850,10 @@
   function fillOpenCourts(queue, players, now = Date.now()) {
     const next = normalizeQueue(queue, players);
     const openIndexes = next.courts.map((court, index) => court.players.length ? -1 : index).filter((index) => index >= 0);
-    const fillCount = Math.min(openIndexes.length, Math.floor(next.waiting.length / 4));
+    const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
+    const fillCount = Math.min(openIndexes.length, Math.floor(eligible.length / 4));
     if (!fillCount) return next;
-    const selected = next.waiting.slice(0, fillCount * 4);
+    const selected = eligible.slice(0, fillCount * 4);
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
     let remaining = selected.slice();
     for (let i = 0; i < fillCount; i += 1) {
@@ -826,6 +868,7 @@
       };
     }
     next.pending = [];
+    next.deferred = [];
     return normalizeQueue(next, players);
   }
 
@@ -887,6 +930,7 @@
     }
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
     next.pending = [];
+    next.deferred = [];
     next.onCourt = selected;
     next.activeGameId = String(gameId || '');
     return normalizeQueue(next, players);
@@ -929,6 +973,7 @@
     const id = String(playerId || '');
     next.waiting = next.waiting.filter((item) => item !== id);
     next.pending = next.pending.filter((item) => item !== id);
+    next.deferred = next.deferred.filter((item) => item !== id);
     next.onCourt = next.onCourt.filter((item) => item !== id);
     next.courts = next.courts.map((court, index) => ({
       ...court,
@@ -1029,6 +1074,9 @@
     removeFromQueue,
     moveInQueue,
     reorderQueue,
+    nextQueueBatchSize,
+    nextQueueBatchPlayers,
+    toggleDeferNext,
     prepareNextFour,
     cancelPending,
     setCourtCount,
@@ -1377,6 +1425,7 @@
       this.showGameReset = false;
       this.showRosterShare = false;
       this.showRosterImport = false;
+      this.rosterQrMode = 'code';
       this.editingGame = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
@@ -1582,18 +1631,30 @@
       return true;
     }
 
-    rosterQrMarkup() {
-      const code = rosterShareCode(this.state.players);
+    rosterLinkAvailable() {
+      return Boolean(globalThis.location && /^https?:$/.test(String(location.protocol || '')));
+    }
+
+    rosterSharePayload(mode = this.rosterQrMode) {
+      if (mode === 'link' && this.rosterLinkAvailable()) return rosterShareUrl(this.state.players, location.href);
+      return rosterShareCode(this.state.players);
+    }
+
+    rosterQrMarkup(mode = this.rosterQrMode) {
+      if (mode === 'link' && !this.rosterLinkAvailable()) {
+        return `<div class="qr-unavailable">Open PicklePulse from an HTTPS/HTTP address to create a QR that another device can visit.</div>`;
+      }
+      const payload = this.rosterSharePayload(mode);
       if (typeof globalThis.qrcode !== 'function') {
-        return `<div class="qr-unavailable">QR generator unavailable. Use Copy code instead.</div>`;
+        return `<div class="qr-unavailable">QR generator unavailable. Use Copy instead.</div>`;
       }
       try {
         const qr = globalThis.qrcode(0, 'M');
-        qr.addData(code);
+        qr.addData(payload);
         qr.make();
         return qr.createSvgTag(5, 20);
       } catch (_error) {
-        return `<div class="qr-unavailable">Roster is too large for one QR. Use Copy code instead.</div>`;
+        return `<div class="qr-unavailable">Roster is too large for one QR. Use Copy instead.</div>`;
       }
     }
 
@@ -2527,6 +2588,16 @@
         this.render();
         return;
       }
+      if (action === 'set-roster-qr-mode') {
+        const mode = target.dataset.mode === 'link' ? 'link' : 'code';
+        if (mode === 'link' && !this.rosterLinkAvailable()) {
+          this.showToast('Link QR needs PicklePulse to be opened from an HTTPS/HTTP address');
+          return;
+        }
+        this.rosterQrMode = mode;
+        this.render();
+        return;
+      }
       if (action === 'open-roster-import') {
         this.showRosterImport = true;
         this.showRosterShare = false;
@@ -2547,17 +2618,30 @@
         }
         return;
       }
-      if (action === 'copy-roster-code') {
-        await this.copyText(target.dataset.code || rosterShareCode(this.state.players), 'Roster code copied');
+      if (action === 'copy-roster-payload') {
+        const mode = target.dataset.mode === 'link' ? 'link' : 'code';
+        const value = this.rosterSharePayload(mode);
+        await this.copyText(value, mode === 'link' ? 'Roster link copied' : 'Roster code copied');
         return;
       }
       if (action === 'native-share-roster') {
-        const code = target.dataset.code || rosterShareCode(this.state.players);
+        const mode = target.dataset.mode === 'link' ? 'link' : 'code';
+        const value = this.rosterSharePayload(mode);
         if (navigator.share) {
-          try { await navigator.share({ title: 'PicklePulse roster', text: `PicklePulse roster code:\n${code}` }); } catch (_error) {}
+          try {
+            if (mode === 'link') await navigator.share({ title: 'PicklePulse roster', text: 'Open this PicklePulse roster', url: value });
+            else await navigator.share({ title: 'PicklePulse roster', text: `PicklePulse roster code:\n${value}` });
+          } catch (_error) {}
         } else {
-          await this.copyText(code, 'Roster code copied');
+          await this.copyText(value, mode === 'link' ? 'Roster link copied' : 'Roster code copied');
         }
+        return;
+      }
+      if (action === 'queue-defer-next') {
+        this.state.queue = Players.toggleDeferNext(this.state.queue, target.dataset.player, this.state.players);
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
         return;
       }
       if (action === 'queue-fill-courts') {
@@ -3382,7 +3466,8 @@
       const occupied = new Set([...queue.waiting, ...queue.onCourt, ...queue.courts.flatMap((court) => court.players)]);
       const availableCount = this.state.players.filter((player) => !occupied.has(player.id)).length;
       const openCourts = queue.courts.filter((court) => !court.players.length).length;
-      const canFill = openCourts > 0 && queue.waiting.length >= 4;
+      const eligibleWaiting = queue.waiting.filter((id) => !(queue.deferred || []).includes(id)).length;
+      const canFill = openCourts > 0 && eligibleWaiting >= 4;
       return `
         <section class="queue-view players-view">
           <div class="section-head">
@@ -3405,34 +3490,54 @@
               </div>
             </header>
             ${queue.pending.length === 4 ? `<div class="queue-ready"><span title="Ready to score">${icon('users')}<span class="sr-only">Ready to score</span></span><b>${queue.pending.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b><button class="icon-btn compact" type="button" data-action="view" data-view="setup" aria-label="Set teams" title="Set teams">${icon('play')}</button></div>` : ''}
-            ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Fair player queue">${queue.waiting.map((id, index) => {
-              const stat = queue.stats[id] || { gamesPlayed: 0 };
-              return `
-                <li data-queue-player="${escapeHtml(id)}">
-                  <span class="queue-position">${index + 1}</span>
-                  <span class="queue-player-copy"><b>${escapeHtml(this.playerName(id))}</b><small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${escapeHtml(this.queueWaitLabel(id))}</small></span>
-                  <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
-                </li>
-              `;
-            }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
+            ${queue.waiting.length ? (() => {
+              const batchSize = Players.nextQueueBatchSize(queue);
+              const batchPlayers = new Set(Players.nextQueueBatchPlayers(queue));
+              const deferred = new Set(queue.deferred || []);
+              return `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
+                const stat = queue.stats[id] || { gamesPlayed: 0 };
+                const isDeferred = deferred.has(id);
+                const canDefer = batchPlayers.has(id) && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
+                const showDefer = isDeferred || batchPlayers.has(id);
+                return `
+                  <li data-queue-player="${escapeHtml(id)}" class="${isDeferred ? 'is-deferred' : ''}">
+                    <span class="queue-position">${index + 1}</span>
+                    <span class="queue-player-copy"><b>${escapeHtml(this.playerName(id))}</b><small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${isDeferred ? 'skips next fill' : escapeHtml(this.queueWaitLabel(id))}</small></span>
+                    <span class="queue-row-actions">
+                      ${showDefer ? `<button type="button" class="queue-defer-next ${isDeferred ? 'is-active' : ''}" data-action="queue-defer-next" data-player="${escapeHtml(id)}" ${!isDeferred && !canDefer ? 'disabled' : ''} aria-label="${isDeferred ? 'Undo next-batch defer for' : 'Move to next batch:'} ${escapeHtml(this.playerName(id))}" title="${isDeferred ? 'Undo next batch' : canDefer ? 'Skip the next batch once' : 'Needs another waiting player'}">${icon('arrowDown')}<span>${isDeferred ? 'Undo' : 'Next'}</span></button>` : ''}
+                      <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
+                    </span>
+                  </li>
+                `;
+              }).join('')}</ol>`;
+            })() : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
           </section>
         </section>
       `;
     }
 
     renderRosterShare() {
-      const code = rosterShareCode(this.state.players);
+      const linkAvailable = this.rosterLinkAvailable();
+      if (this.rosterQrMode === 'link' && !linkAvailable) this.rosterQrMode = 'code';
+      const mode = this.rosterQrMode === 'link' ? 'link' : 'code';
+      const payload = this.rosterSharePayload(mode);
+      const isLink = mode === 'link';
       return `
         <div class="guard-scrim" data-action="close-roster-share"></div>
         <section class="roster-share-dialog" role="dialog" aria-modal="true" aria-label="Share roster code or QR">
           <header><div><b>Share roster</b><span>${this.state.players.length} player${this.state.players.length === 1 ? '' : 's'}</span></div><button class="icon-btn compact" type="button" data-action="close-roster-share" aria-label="Close">${icon('x')}</button></header>
-          <div class="roster-qr">${this.rosterQrMarkup()}</div>
-          <p>Scan the QR to read the roster code, or copy/share the code below. On the other device, open Roster → Import roster code.</p>
-          <div class="roster-code-preview" title="Roster import code">${escapeHtml(code)}</div>
-          <div class="roster-share-actions">
-            <button type="button" data-action="copy-roster-code" data-code="${escapeHtml(code)}">${icon('copy')} Copy code</button>
-            <button type="button" data-action="native-share-roster" data-code="${escapeHtml(code)}">${icon('share')} Share code</button>
+          <div class="roster-qr-modes" role="group" aria-label="Roster QR type">
+            <button type="button" class="${!isLink ? 'active' : ''}" data-action="set-roster-qr-mode" data-mode="code" aria-pressed="${!isLink}">Show code</button>
+            <button type="button" class="${isLink ? 'active' : ''}" data-action="set-roster-qr-mode" data-mode="link" aria-pressed="${isLink}" ${linkAvailable ? '' : 'disabled'}>Open app</button>
           </div>
+          <div class="roster-qr">${this.rosterQrMarkup(mode)}</div>
+          <p>${isLink ? 'Scan to open this same PicklePulse app on the other device and import the roster.' : 'Scan to read/copy the roster code, then paste it in Roster → Import roster code.'}</p>
+          <div class="roster-code-preview" title="${isLink ? 'Roster import link' : 'Roster import code'}">${escapeHtml(payload)}</div>
+          <div class="roster-share-actions">
+            <button type="button" data-action="copy-roster-payload" data-mode="${mode}">${icon('copy')} Copy ${isLink ? 'link' : 'code'}</button>
+            <button type="button" data-action="native-share-roster" data-mode="${mode}">${icon('share')} Share ${isLink ? 'link' : 'code'}</button>
+          </div>
+          ${!linkAvailable ? '<small class="roster-link-note">Open the app from HTTPS/HTTP to enable an Open app QR for another device.</small>' : ''}
         </section>
       `;
     }

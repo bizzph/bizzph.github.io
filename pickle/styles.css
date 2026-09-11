@@ -1270,3 +1270,21 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   .game-toolbar { gap: 5px; padding: 5px; }
   .tool-btn { min-width: 0; padding-inline: 4px; }
 }
+
+/* v9: one-batch defer + dual roster QR modes */
+.queue-row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.queue-defer-next { min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--accent); background: var(--bg); font-size: .68rem; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.queue-defer-next .icon { width: 14px; height: 14px; }
+.queue-defer-next.is-active { color: var(--text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.queue-defer-next:disabled { opacity: .42; cursor: not-allowed; }
+.fair-queue-list li.is-deferred { border-style: dashed; }
+.roster-qr-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.roster-qr-modes button { min-height: 38px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-weight: 850; cursor: pointer; }
+.roster-qr-modes button.active { color: var(--accent); background: var(--accent-soft); }
+.roster-qr-modes button:disabled { opacity: .42; cursor: not-allowed; }
+.roster-link-note { color: var(--muted); font-size: .66rem; line-height: 1.4; text-align: center; }
+@media (max-width: 480px) {
+  .queue-row-actions { gap: 4px; }
+  .queue-defer-next { width: 34px; padding: 0; }
+  .queue-defer-next span { display: none; }
+}
