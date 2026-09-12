@@ -1,3 +1,32 @@
+# PicklePulse v22 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v22 changes - mobile player picker viewport fix
+
+- Fixed **New Game -> Choose player** on short/narrow mobile screens where the bottom of the picker could sit below the actually visible browser area.
+- Picker sizing now tracks `window.visualViewport` while open, including live viewport height/offset changes caused by mobile browser chrome and the on-screen keyboard.
+- Browsers without `visualViewport` fall back to `window.innerHeight`.
+- On narrow portrait phones, the picker uses the available visible height and keeps the player list as the dedicated scroll region.
+- On short landscape phones, the picker is inset inside the visible viewport and the full header/search/footer remain reachable while the player grid scrolls independently.
+- Background page scrolling is locked only while the player picker is open, preventing the page behind the sheet from moving instead of the player list.
+- Safe-area insets remain accounted for on notched/home-indicator devices.
+- Automatic player advance, recent players, search behavior, duplicate prevention, Singles behavior, Swap sides, queue scheduling/fairness, scoring, roster, and History logic were not changed.
+- Service-worker cache bumped to `picklepulse-v22-0-0`.
+
+## v22 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `src/live-sync.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- Source diff against v21 confirms production JavaScript changes are confined to player-picker viewport tracking/cleanup: PASS.
+- Source diff against v21 confirms CSS changes are confined to player-picker viewport/scroll behavior plus picker viewport variables: PASS.
+- Queue/fairness scheduling code is unchanged from v21: PASS.
+- Production ZIP contains no test harness files: PASS.
+
+---
+
 # PicklePulse v21 Turnover / Handoff
 
 Finalized: 2026-09-13

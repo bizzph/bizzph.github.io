@@ -15,6 +15,8 @@
   --team-b-soft: #e7eaf4;
   --shadow: 0 10px 32px rgb(17 28 20 / 8%);
   --radius: 22px;
+  --picker-visual-height: 100dvh;
+  --picker-visual-top: 0px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -1473,22 +1475,40 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .picker-clear { min-height: 34px; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-size: .7rem; font-weight: 850; cursor: pointer; }
 .picker-progress { margin-left: auto; color: var(--muted); font-size: .68rem; font-weight: 800; }
 
+body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
+
 @media (max-width: 560px) {
   .player-picker-dialog {
-    left: 0; right: 0; top: auto; bottom: 0; width: 100%; max-height: min(84dvh, 680px); transform: none; border-width: 1px 0 0; border-radius: 22px 22px 0 0;
+    left: 0; right: 0;
+    top: calc(var(--picker-visual-top, 0px) + 8px + env(safe-area-inset-top));
+    bottom: auto; width: 100%;
+    height: calc(var(--picker-visual-height, 100dvh) - 8px - env(safe-area-inset-top));
+    max-height: none; min-height: 0; transform: none; overflow: hidden;
+    border-width: 1px 0 0; border-radius: 22px 22px 0 0;
     padding: 15px 14px calc(14px + env(safe-area-inset-bottom));
   }
+  .player-picker-scroll { min-height: 0; max-height: none; overflow-y: auto; scrollbar-gutter: stable; }
   .picker-player-grid { grid-template-columns: 1fr; gap: 7px; }
   .picker-player-option { min-height: 50px; }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .player-picker-dialog { max-height: calc(100dvh - 16px); width: min(620px, calc(100vw - 24px)); padding: 12px; gap: 8px; }
-  .player-picker-scroll { gap: 9px; }
+  .player-picker-dialog {
+    left: calc(8px + env(safe-area-inset-left));
+    right: calc(8px + env(safe-area-inset-right));
+    top: calc(var(--picker-visual-top, 0px) + 8px + env(safe-area-inset-top));
+    bottom: auto; width: auto;
+    height: calc(var(--picker-visual-height, 100dvh) - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: none; min-height: 0; transform: none; overflow: hidden;
+    padding: 10px 12px; gap: 7px; border-radius: 18px;
+  }
+  .player-picker-dialog > header h2 { font-size: .98rem; }
+  .player-picker-scroll { min-height: 0; max-height: none; overflow-y: auto; gap: 8px; }
   .picker-player-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .picker-player-option { min-height: 44px; padding: 5px 7px; }
   .picker-player-option .player-avatar { width: 30px; height: 30px; }
-  .player-picker-search input { height: 40px; }
+  .player-picker-search input { height: 38px; }
+  .player-picker-dialog > footer { min-height: 30px; }
 }
 
 /* v21: clearer next-up queue hierarchy for compact portrait and landscape */

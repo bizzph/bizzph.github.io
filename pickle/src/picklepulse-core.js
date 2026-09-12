@@ -1616,6 +1616,7 @@
       this.boundPointerDown = this.onQueuePointerDown.bind(this);
       this.boundPointerMove = this.onQueuePointerMove.bind(this);
       this.boundPointerUp = this.onQueuePointerUp.bind(this);
+      this.boundPickerViewport = this.syncPlayerPickerViewport.bind(this);
     }
 
     connectedCallback() {
@@ -1674,6 +1675,8 @@
       window.removeEventListener('offline', this.boundNetwork);
       window.removeEventListener('beforeunload', this.boundBeforeUnload);
       window.removeEventListener('popstate', this.boundPopState);
+      this.stopPlayerPickerViewportTracking();
+      document.body.classList.remove('player-picker-open');
       document.removeEventListener('fullscreenchange', this.boundFullscreen);
       document.removeEventListener('webkitfullscreenchange', this.boundFullscreen);
       if (globalThis.speechSynthesis && speechSynthesis.removeEventListener) speechSynthesis.removeEventListener('voiceschanged', this.boundVoicesChanged);
@@ -4075,6 +4078,34 @@ No completed games in this range.`;
       `;
     }
 
+    syncPlayerPickerViewport() {
+      const viewport = globalThis.visualViewport;
+      const height = Math.max(240, Math.round(viewport ? viewport.height : window.innerHeight));
+      const top = Math.max(0, Math.round(viewport ? viewport.offsetTop : 0));
+      document.documentElement.style.setProperty('--picker-visual-height', `${height}px`);
+      document.documentElement.style.setProperty('--picker-visual-top', `${top}px`);
+    }
+
+    startPlayerPickerViewportTracking() {
+      this.syncPlayerPickerViewport();
+      const viewport = globalThis.visualViewport;
+      if (!viewport) return;
+      viewport.removeEventListener('resize', this.boundPickerViewport);
+      viewport.removeEventListener('scroll', this.boundPickerViewport);
+      viewport.addEventListener('resize', this.boundPickerViewport);
+      viewport.addEventListener('scroll', this.boundPickerViewport);
+    }
+
+    stopPlayerPickerViewportTracking() {
+      const viewport = globalThis.visualViewport;
+      if (viewport) {
+        viewport.removeEventListener('resize', this.boundPickerViewport);
+        viewport.removeEventListener('scroll', this.boundPickerViewport);
+      }
+      document.documentElement.style.removeProperty('--picker-visual-height');
+      document.documentElement.style.removeProperty('--picker-visual-top');
+    }
+
     openPlayerPicker(field) {
       const valid = ['teamAPlayer1', 'teamAPlayer2', 'teamBPlayer1', 'teamBPlayer2'];
       if (!valid.includes(field)) return;
@@ -4086,10 +4117,14 @@ No completed games in this range.`;
       this.playerPickerField = field;
       const shell = this.querySelector('.app-shell');
       if (shell) shell.insertAdjacentHTML('beforeend', this.renderPlayerPickerDialog());
+      document.body.classList.add('player-picker-open');
+      this.startPlayerPickerViewportTracking();
     }
 
     closePlayerPicker(clearField = true) {
       this.querySelectorAll('.player-picker-scrim, .player-picker-dialog').forEach((element) => element.remove());
+      document.body.classList.remove('player-picker-open');
+      this.stopPlayerPickerViewportTracking();
       if (clearField) this.playerPickerField = '';
     }
 
