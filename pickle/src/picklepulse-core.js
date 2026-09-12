@@ -1566,6 +1566,7 @@
       this.shareResultsStart = '';
       this.shareResultsEnd = '';
       this.rosterQrMode = 'code';
+      this.playerPickerField = '';
       this.editingGame = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
@@ -2198,11 +2199,15 @@ No completed games in this range.`;
     }
 
     onFullscreenChange() {
-      if (this.mode === 'display') this.render();
+      this.render();
     }
 
     onInput(event) {
       if (event.target && event.target.name === 'playerName') this.playerNameDraft = String(event.target.value || '');
+      if (event.target && event.target.id === 'player-picker-search') {
+        this.filterPlayerPicker(event.target.value);
+        return;
+      }
       if (event.target && event.target.id === 'voice-volume') {
         const output = this.querySelector('#voice-volume-value');
         if (output) output.textContent = `${Math.round(Number(event.target.value) || 100)}%`;
@@ -3212,14 +3217,32 @@ No completed games in this range.`;
         }
         return;
       }
+      if (action === 'open-player-picker') {
+        this.openPlayerPicker(String(target.dataset.field || ''));
+        return;
+      }
+      if (action === 'close-player-picker') {
+        this.closePlayerPicker();
+        return;
+      }
+      if (action === 'choose-player') {
+        this.choosePlayer(String(target.dataset.player || ''));
+        return;
+      }
+      if (action === 'clear-player-selection') {
+        const field = String(target.dataset.field || this.playerPickerField || '');
+        this.updatePlayerSlot(field, '');
+        this.closePlayerPicker();
+        return;
+      }
       if (action === 'swap-team-players') {
         const team = target.dataset.team === 'B' ? 'B' : 'A';
-        const right = this.querySelector(`#new-game-form select[name="team${team}Player1"]`);
-        const left = this.querySelector(`#new-game-form select[name="team${team}Player2"]`);
+        const right = this.querySelector(`#new-game-form input[type="hidden"][name="team${team}Player1"]`);
+        const left = this.querySelector(`#new-game-form input[type="hidden"][name="team${team}Player2"]`);
         if (!right || !left) return;
         const value = right.value;
-        right.value = left.value;
-        left.value = value;
+        this.updatePlayerSlot(`team${team}Player1`, left.value);
+        this.updatePlayerSlot(`team${team}Player2`, value);
         return;
       }
       if (action === 'queue-defer-next') {
@@ -3716,6 +3739,7 @@ No completed games in this range.`;
           <div class="top-actions">
             <span class="network-dot ${this.network.level}" title="${escapeHtml(this.network.label)}">${icon(this.network.level === 'offline' ? 'wifiOff' : 'wifi')}</span>
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
+            <button class="icon-btn fullscreen-controller ${this.isFullscreen() ? 'active' : ''}" type="button" data-action="toggle-fullscreen" aria-label="${this.isFullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'}" title="${this.isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}">${icon(this.isFullscreen() ? 'fullscreenExit' : 'fullscreen')}</button>
             <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
             <button class="icon-btn ${['queue', 'roster', 'history'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'history'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster and history" title="Queue, roster and history">${icon('queue')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
@@ -3943,8 +3967,180 @@ No completed games in this range.`;
       `;
     }
 
-    playerOptions(selectedId, placeholder) {
-      return `<option value="">${escapeHtml(placeholder)}</option>${this.state.players.map((player) => `<option value="${escapeHtml(player.id)}" ${player.id === selectedId ? 'selected' : ''}>${escapeHtml(player.name)}</option>`).join('')}`;
+    playerFieldLabel(field) {
+      const labels = {
+        teamAPlayer1: 'Team A · Right',
+        teamAPlayer2: 'Team A · Left',
+        teamBPlayer1: 'Team B · Right',
+        teamBPlayer2: 'Team B · Left'
+      };
+      return labels[field] || 'Player';
+    }
+
+    playerFieldOrder() {
+      const format = this.querySelector('#new-game-form input[name="format"]:checked');
+      return format && format.value === 'singles'
+        ? ['teamAPlayer1', 'teamBPlayer1']
+        : ['teamAPlayer1', 'teamAPlayer2', 'teamBPlayer1', 'teamBPlayer2'];
+    }
+
+    currentPlayerSelections() {
+      const form = this.querySelector('#new-game-form');
+      const output = {};
+      ['teamAPlayer1', 'teamAPlayer2', 'teamBPlayer1', 'teamBPlayer2'].forEach((field) => {
+        const input = form && form.querySelector(`input[type="hidden"][name="${field}"]`);
+        output[field] = input ? String(input.value || '') : '';
+      });
+      return output;
+    }
+
+    recentPlayerIds(limit = 6) {
+      const ids = [];
+      const seen = new Set();
+      const addPlayer = (id, name) => {
+        let player = id ? this.playerById(String(id)) : null;
+        if (!player && name) {
+          const key = Players.nameKey(name);
+          player = this.state.players.find((candidate) => Players.nameKey(candidate.name) === key) || null;
+        }
+        if (!player || seen.has(player.id)) return;
+        seen.add(player.id);
+        ids.push(player.id);
+      };
+      const addGame = (game) => {
+        if (!game || !Array.isArray(game.teams)) return;
+        game.teams.forEach((team) => {
+          const playerIds = Array.isArray(team.playerIds) ? team.playerIds : [];
+          const players = Array.isArray(team.players) ? team.players : [];
+          for (let index = 0; index < Math.max(playerIds.length, players.length); index += 1) {
+            addPlayer(playerIds[index], players[index]);
+          }
+        });
+      };
+      addGame(this.state.currentGame);
+      (this.state.games || []).forEach(addGame);
+      return ids.slice(0, Math.max(0, Number(limit) || 0));
+    }
+
+    renderPlayerSlot(name, label, selectedId) {
+      const player = selectedId ? this.playerById(selectedId) : null;
+      const displayName = player ? player.name : 'Choose player';
+      const initial = player ? player.name.slice(0, 1).toUpperCase() : '+';
+      return `
+        <div class="player-slot-wrap">
+          <span class="player-slot-label">${escapeHtml(label)}</span>
+          <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(player ? player.id : '')}">
+          <button class="player-slot ${player ? 'has-player' : ''}" type="button" data-action="open-player-picker" data-field="${escapeHtml(name)}" aria-label="Choose ${escapeHtml(label)}">
+            <span class="player-slot-avatar">${escapeHtml(initial)}</span>
+            <span class="player-slot-name">${escapeHtml(displayName)}</span>
+            <span class="player-slot-hint">Tap to choose</span>
+          </button>
+        </div>
+      `;
+    }
+
+    playerOptionButton(player, recent = false) {
+      return `<button class="picker-player-option" type="button" data-action="choose-player" data-player="${escapeHtml(player.id)}" data-search="${escapeHtml(player.name.toLocaleLowerCase())}"><span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span><b>${escapeHtml(player.name)}</b>${recent ? '<small>Recent</small>' : ''}</button>`;
+    }
+
+    renderPlayerPickerDialog() {
+      const field = this.playerPickerField;
+      if (!field) return '';
+      const selections = this.currentPlayerSelections();
+      const selectedId = selections[field] || '';
+      const used = new Set(Object.entries(selections).filter(([key, id]) => key !== field && id).map(([, id]) => id));
+      const available = this.state.players.filter((player) => !used.has(player.id));
+      const recentSet = new Set(this.recentPlayerIds(6).filter((id) => available.some((player) => player.id === id)));
+      const recent = [...recentSet].map((id) => this.playerById(id)).filter(Boolean);
+      const others = available.filter((player) => !recentSet.has(player.id));
+      const showSearch = available.length > 12;
+      return `
+        <div class="player-picker-scrim" data-action="close-player-picker"></div>
+        <section class="player-picker-dialog" role="dialog" aria-modal="true" aria-label="Choose ${escapeHtml(this.playerFieldLabel(field))}">
+          <header>
+            <div><span>Choose player</span><h2>${escapeHtml(this.playerFieldLabel(field))}</h2></div>
+            <button class="icon-btn compact" type="button" data-action="close-player-picker" aria-label="Close player picker">${icon('x')}</button>
+          </header>
+          ${showSearch ? `<label class="player-picker-search"><span class="sr-only">Find player</span><input id="player-picker-search" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="Find player…"></label>` : ''}
+          <div class="player-picker-scroll">
+            ${recent.length ? `<section class="picker-player-section" data-picker-section><h3>Recent</h3><div class="picker-player-grid">${recent.map((player) => this.playerOptionButton(player, true)).join('')}</div></section>` : ''}
+            ${others.length ? `<section class="picker-player-section" data-picker-section><h3>${recent.length ? 'All players' : 'Players'}</h3><div class="picker-player-grid">${others.map((player) => this.playerOptionButton(player)).join('')}</div></section>` : ''}
+            <p class="picker-empty" data-picker-empty hidden>No matching available player.</p>
+          </div>
+          <footer>
+            ${selectedId ? `<button type="button" class="picker-clear" data-action="clear-player-selection" data-field="${escapeHtml(field)}">Clear selection</button>` : '<span></span>'}
+            <span class="picker-progress">${escapeHtml(this.playerFieldOrder().filter((item) => selections[item]).length)} / ${this.playerFieldOrder().length} selected</span>
+          </footer>
+        </section>
+      `;
+    }
+
+    openPlayerPicker(field) {
+      const valid = ['teamAPlayer1', 'teamAPlayer2', 'teamBPlayer1', 'teamBPlayer2'];
+      if (!valid.includes(field)) return;
+      const form = this.querySelector('#new-game-form');
+      if (!form) return;
+      const format = form.querySelector('input[name="format"]:checked');
+      if (format && format.value === 'singles' && (field === 'teamAPlayer2' || field === 'teamBPlayer2')) return;
+      this.closePlayerPicker(false);
+      this.playerPickerField = field;
+      const shell = this.querySelector('.app-shell');
+      if (shell) shell.insertAdjacentHTML('beforeend', this.renderPlayerPickerDialog());
+    }
+
+    closePlayerPicker(clearField = true) {
+      this.querySelectorAll('.player-picker-scrim, .player-picker-dialog').forEach((element) => element.remove());
+      if (clearField) this.playerPickerField = '';
+    }
+
+    filterPlayerPicker(query) {
+      const normalized = String(query || '').trim().toLocaleLowerCase();
+      this.querySelectorAll('.picker-player-option').forEach((button) => {
+        button.hidden = Boolean(normalized && !String(button.dataset.search || '').includes(normalized));
+      });
+      this.querySelectorAll('[data-picker-section]').forEach((section) => {
+        section.hidden = !section.querySelector('.picker-player-option:not([hidden])');
+      });
+      const empty = this.querySelector('[data-picker-empty]');
+      if (empty) empty.hidden = Boolean(this.querySelector('.picker-player-option:not([hidden])'));
+    }
+
+    updatePlayerSlot(field, playerId) {
+      const form = this.querySelector('#new-game-form');
+      if (!form) return false;
+      const input = form.querySelector(`input[type="hidden"][name="${field}"]`);
+      const button = form.querySelector(`[data-action="open-player-picker"][data-field="${field}"]`);
+      if (!input || !button) return false;
+      const player = playerId ? this.playerById(playerId) : null;
+      input.value = player ? player.id : '';
+      button.classList.toggle('has-player', Boolean(player));
+      const avatar = button.querySelector('.player-slot-avatar');
+      const name = button.querySelector('.player-slot-name');
+      if (avatar) avatar.textContent = player ? player.name.slice(0, 1).toUpperCase() : '+';
+      if (name) name.textContent = player ? player.name : 'Choose player';
+      return true;
+    }
+
+    choosePlayer(playerId) {
+      const field = this.playerPickerField;
+      const player = this.playerById(playerId);
+      if (!field || !player) return;
+      const selections = this.currentPlayerSelections();
+      const duplicate = Object.entries(selections).some(([key, id]) => key !== field && id === player.id);
+      if (duplicate) {
+        this.showToast('Player is already selected');
+        return;
+      }
+      this.updatePlayerSlot(field, player.id);
+      const order = this.playerFieldOrder();
+      const index = order.indexOf(field);
+      const nextOrder = index >= 0 ? order.slice(index + 1).concat(order.slice(0, index)) : order;
+      const nextField = nextOrder.find((item) => {
+        const input = this.querySelector(`#new-game-form input[type="hidden"][name="${item}"]`);
+        return input && !input.value;
+      });
+      if (nextField) this.openPlayerPicker(nextField);
+      else this.closePlayerPicker();
     }
 
     renderTeamFields(letter, format = 'doubles') {
@@ -3953,9 +4149,9 @@ No completed games in this range.`;
       return `
         <fieldset class="team-fields team-${lower}">
           <legend>${letter}</legend>
-          <label><span>P1 · Right</span><select name="team${letter}Player1" required>${this.playerOptions(selected[`team${letter}Player1`], 'Select player')}</select></label>
+          ${this.renderPlayerSlot(`team${letter}Player1`, 'P1 · Right', selected[`team${letter}Player1`])}
           <button class="team-side-swap doubles-only" type="button" data-action="swap-team-players" data-team="${letter}" ${format === 'singles' ? 'hidden' : ''} aria-label="Swap Team ${letter} left and right players" title="Swap left and right">${icon('swap')}<span>Swap sides</span></button>
-          <label class="doubles-only" ${format === 'singles' ? 'hidden' : ''}><span>P2 · Left</span><select name="team${letter}Player2">${this.playerOptions(selected[`team${letter}Player2`], 'Select player')}</select></label>
+          <div class="doubles-only" ${format === 'singles' ? 'hidden' : ''}>${this.renderPlayerSlot(`team${letter}Player2`, 'P2 · Left', selected[`team${letter}Player2`])}</div>
         </fieldset>
       `;
     }

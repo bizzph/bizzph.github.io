@@ -1,3 +1,68 @@
+# PicklePulse v20 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v20 changes - fast New Game player picker
+
+- Replaced the four separate **Search player + dropdown** controls on New Game with large tap-friendly player slots.
+- Tapping a slot opens one shared mobile player picker for that position.
+- Player selection automatically advances through the remaining required positions:
+  - Doubles: Team A Right -> Team A Left -> Team B Right -> Team B Left.
+  - Singles: Team A Right -> Team B Right.
+- Players already selected in another position are excluded from the picker, preventing duplicate assignment before submit.
+- Added a **Recent** section based on players used in the current/recent recorded games.
+- Search is intentionally secondary and only appears when more than 12 players are available for the active slot.
+- Player selection stays explicit: typing/filtering never auto-selects a player.
+- Added **Clear selection** for an already-filled slot.
+- Existing per-team **Swap sides** now swaps the hidden player IDs and visible player cards together.
+- Picker uses a bottom-sheet layout on narrow phones and a compact multi-column dialog on short landscape phones.
+- Queue scheduling/fairness, scoring, history, roster sharing, result sharing, and Live Display logic were not changed.
+- Service-worker cache bumped to `picklepulse-v20-0-0`.
+
+## v20 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- Phone-size Chromium runtime: four-player automatic advance sequence: PASS.
+- Duplicate selected players are removed from subsequent picker choices: PASS.
+- Team A Swap sides still exchanges the correct two player IDs/names: PASS.
+- Large-roster picker shows search and filters to matching available players: PASS.
+- Singles automatic advance skips left-side partner slots: PASS.
+- Small portrait and short-landscape picker dialogs remain inside the viewport: PASS.
+- No `.player-search` inputs or legacy `filterPlayerSelect`/`playerOptions` code remains in the New Game flow: PASS.
+- Queue/fairness engine prefix is byte-identical to v19: PASS.
+
+---
+
+# PicklePulse v19 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v19 changes - landscape queue, fullscreen, player search
+
+- Added a controller **Fullscreen** button in the top bar. It uses the standard Fullscreen API with the existing WebKit fallback and reports `Fullscreen unavailable` when the browser does not expose a supported method.
+- Fullscreen state now rerenders the controller header so the icon/label switches between enter and exit correctly.
+- Added a search input above every **New Game** player dropdown. Search filters that dropdown by roster name without changing the selected player until the user explicitly chooses another option.
+- Kept the existing per-team **Swap sides** control and Singles behavior unchanged.
+- Added a short-landscape queue layout for phone-sized viewports (landscape, <=520px high, <=950px wide):
+  - reduced header/tab vertical footprint;
+  - restored multi-column courts instead of the old <=700px single-court column;
+  - compacted court cards while preserving actionable button sizes;
+  - uses a two-column waiting list where landscape width is sufficient (>=620px);
+  - keeps DOM/fairness order unchanged, so visual positions still follow queue positions 1, 2, 3, 4...;
+  - hides only the explanatory queue-court paragraph on extremely short (<=400px high) landscape screens.
+- Queue scheduling/fairness, scoring, roster, history, saved-image, and Live Display logic were not changed.
+- Service-worker cache bumped to `picklepulse-v19-0-0`.
+
+## v19 validation
+
+- Queue scheduling engine block is byte-identical to v18: PASS.
+- Core JavaScript syntax: PASS.
+- Fullscreen action available in controller header: PASS.
+- Search fields present for all four doubles player selectors: PASS.
+- Landscape queue media rules present after generic <=700px court rule, so they win the cascade on short landscape phones: PASS.
+
+---
+
 # PicklePulse v18 Turnover / Handoff
 
 Finalized: 2026-09-12
