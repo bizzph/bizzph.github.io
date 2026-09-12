@@ -1,3 +1,36 @@
+# PicklePulse v21 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v21 changes - clearer compact queue hierarchy
+
+- Removed the Queue page `h1`. The Queue/Roster/History sub-page tab already identifies the current area, so the redundant heading no longer consumes vertical space on small phones.
+- Moved **New queue session** reset into the Queue courts configuration card so the reset action remains easy to reach without a standalone heading row.
+- The actual next-fill batch is now visually distinct from later waiting players using multiple cues:
+  - accent-tinted row background;
+  - accent leading edge;
+  - highlighted queue-position tile;
+  - visible **Up next** badge.
+- The distinction does not rely on color alone, and it uses `Players.nextQueueBatchPlayers(queue)`, so it stays accurate for one or multiple open courts and respects one-batch deferrals.
+- Waiting summary now states how many players are **next up**.
+- Narrow portrait keeps one ordered column with approximately 50 px rows.
+- Short landscape keeps the existing compact courts and two-column waiting layout where width allows, with smaller badges/spacing to preserve names and actions.
+- Queue fairness, court assignment, defer behavior, scoring, roster, history, and game logic were not changed.
+- Service-worker cache bumped to `picklepulse-v21-0-0`.
+
+## v21 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `src/live-sync.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- Queue scheduling/fairness engine section before UI rendering is byte-identical to v20: PASS.
+- No `<h1>Queue</h1>` remains in the production source: PASS.
+- Next-fill styling is driven only by the scheduler's existing `nextQueueBatchPlayers()` result: PASS.
+- Deferred players are excluded from **Up next** unless the scheduler actually selects them again: PASS.
+
+---
+
 # PicklePulse v20 Turnover / Handoff
 
 Finalized: 2026-09-13

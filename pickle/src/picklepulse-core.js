@@ -4241,21 +4241,21 @@ No completed games in this range.`;
       const openCourts = queue.courts.filter((court) => !court.players.length).length;
       const eligibleWaiting = queue.waiting.filter((id) => !(queue.deferred || []).includes(id)).length;
       const canFill = openCourts > 0 && eligibleWaiting >= 4;
+      const batchSize = Players.nextQueueBatchSize(queue);
+      const batchPlayers = new Set(Players.nextQueueBatchPlayers(queue));
+      const deferred = new Set(queue.deferred || []);
       return `
         <section class="queue-view players-view">
-          <div class="section-head">
-            <div><h1>Queue</h1></div>
-            <button class="icon-btn danger" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
-          </div>
           <section class="queue-config-card">
             <label><span>Queue courts</span><select id="queue-court-count" aria-label="Number of courts used for queueing">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${queue.courtCount === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
             <p>This setting is only for queue rotation. The scorekeeper still runs one scored game at a time.</p>
+            <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
           </section>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
           ${queue.onCourt.length ? `<div class="on-court scoring-queue"><span title="Scored game">${icon('radio')}<span class="sr-only">Scored game</span></span><b>Scorekeeper · ${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
           <section class="queue-card">
             <header>
-              <div><h2>Waiting</h2><p>${queue.waiting.length} player${queue.waiting.length === 1 ? '' : 's'} · automatic fair order</p></div>
+              <div><h2>Waiting</h2><p>${queue.waiting.length} player${queue.waiting.length === 1 ? '' : 's'}${batchPlayers.size ? ` · ${batchPlayers.size} next up` : ''}</p></div>
               <div class="queue-header-actions">
                 <button type="button" class="queue-add-all" data-action="queue-add-all" ${availableCount ? '' : 'disabled'} aria-label="Add all available roster players" title="Add all available">${icon('userPlus')}</button>
                 <button type="button" class="fill-courts-btn" data-action="queue-fill-courts" ${canFill ? '' : 'disabled'} aria-label="Fill open courts" title="Fill open courts">${icon('play')}<span>Fill courts</span></button>
@@ -4263,27 +4263,27 @@ No completed games in this range.`;
               </div>
             </header>
             ${queue.pending.length === 4 ? `<div class="queue-ready"><span title="Ready to score">${icon('users')}<span class="sr-only">Ready to score</span></span><b>${queue.pending.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b><button class="icon-btn compact" type="button" data-action="view" data-view="setup" aria-label="Set teams" title="Set teams">${icon('play')}</button></div>` : ''}
-            ${queue.waiting.length ? (() => {
-              const batchSize = Players.nextQueueBatchSize(queue);
-              const batchPlayers = new Set(Players.nextQueueBatchPlayers(queue));
-              const deferred = new Set(queue.deferred || []);
-              return `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
-                const stat = queue.stats[id] || { gamesPlayed: 0 };
-                const isDeferred = deferred.has(id);
-                const canDefer = batchPlayers.has(id) && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
-                const showDefer = isDeferred || batchPlayers.has(id);
-                return `
-                  <li data-queue-player="${escapeHtml(id)}" class="${isDeferred ? 'is-deferred' : ''}">
-                    <span class="queue-position">${index + 1}</span>
-                    <span class="queue-player-copy"><b>${escapeHtml(this.playerName(id))}</b><small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${isDeferred ? 'skips next fill' : escapeHtml(this.queueWaitLabel(id))}</small></span>
-                    <span class="queue-row-actions">
-                      ${showDefer ? `<button type="button" class="queue-defer-next ${isDeferred ? 'is-active' : ''}" data-action="queue-defer-next" data-player="${escapeHtml(id)}" ${!isDeferred && !canDefer ? 'disabled' : ''} aria-label="${isDeferred ? 'Undo next-batch defer for' : 'Move to next batch:'} ${escapeHtml(this.playerName(id))}" title="${isDeferred ? 'Undo next batch' : canDefer ? 'Skip the next batch once' : 'Needs another waiting player'}">${icon('arrowDown')}<span>${isDeferred ? 'Undo' : 'Next'}</span></button>` : ''}
-                      <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
-                    </span>
-                  </li>
-                `;
-              }).join('')}</ol>`;
-            })() : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
+            ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
+              const stat = queue.stats[id] || { gamesPlayed: 0 };
+              const isDeferred = deferred.has(id);
+              const isNextBatch = batchPlayers.has(id);
+              const canDefer = isNextBatch && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
+              const showDefer = isDeferred || isNextBatch;
+              const rowClasses = [isNextBatch ? 'is-next-batch' : '', isDeferred ? 'is-deferred' : ''].filter(Boolean).join(' ');
+              return `
+                <li data-queue-player="${escapeHtml(id)}" class="${rowClasses}">
+                  <span class="queue-position">${index + 1}</span>
+                  <span class="queue-player-copy">
+                    <span class="queue-player-name-row"><b>${escapeHtml(this.playerName(id))}</b>${isNextBatch ? '<em class="queue-next-badge">Up next</em>' : ''}</span>
+                    <small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${isDeferred ? 'skips next fill' : escapeHtml(this.queueWaitLabel(id))}</small>
+                  </span>
+                  <span class="queue-row-actions">
+                    ${showDefer ? `<button type="button" class="queue-defer-next ${isDeferred ? 'is-active' : ''}" data-action="queue-defer-next" data-player="${escapeHtml(id)}" ${!isDeferred && !canDefer ? 'disabled' : ''} aria-label="${isDeferred ? 'Undo next-batch defer for' : 'Move to next batch:'} ${escapeHtml(this.playerName(id))}" title="${isDeferred ? 'Undo next batch' : canDefer ? 'Skip the next batch once' : 'Needs another waiting player'}">${icon('arrowDown')}<span>${isDeferred ? 'Undo' : 'Next'}</span></button>` : ''}
+                    <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
+                  </span>
+                </li>
+              `;
+            }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
           </section>
         </section>
       `;
