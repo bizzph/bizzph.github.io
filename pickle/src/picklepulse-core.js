@@ -2673,7 +2673,6 @@
       }
       if (action === 'court-done') {
         this.state.queue = Players.completeCourt(this.state.queue, Number(target.dataset.court), this.state.players, Date.now());
-        this.state.queue = Players.fillOpenCourts(this.state.queue, this.state.players, Date.now());
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();

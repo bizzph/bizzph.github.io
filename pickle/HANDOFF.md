@@ -1,4 +1,19 @@
-# PicklePulse v10 Turnover / Handoff
+# PicklePulse v11 Turnover / Handoff
+
+## v11 change
+
+- Queue court **Done** now only completes/clears that court and returns its four players to the waiting queue with normal completion/fairness credit.
+- **Done no longer auto-fills any open court.** The next batch starts only when the operator explicitly uses **Fill courts** (or the separate scorekeeper flow).
+- This is intentionally manual so a finished court can remain open while the organizer reviews the next group, accepts a voluntary **Next** defer, waits for players, or chooses when to dispatch.
+- Service-worker cache bumped to `picklepulse-v11-0-0` so installed copies fetch the updated core script.
+
+## Regression note
+
+The queue engine itself is unchanged from v10: completion still increments completed-turn fairness, requeues the four finished players, preserves partner/opponent history, and leaves other active courts untouched. Only the UI handler's automatic call to `fillOpenCourts()` after **Done** was removed.
+
+---
+
+## Previous v10 Turnover / Handoff
 
 Finalized: 2026-09-12
 
