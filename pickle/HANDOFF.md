@@ -1,4 +1,35 @@
-# PicklePulse v11 Turnover / Handoff
+# PicklePulse v12 Turnover / Handoff
+
+## v12 change — smart pasted roster import
+
+- **Roster → Import roster** now supports two import paths in the same popup:
+  - existing roster **code / link** import; and
+  - a new **Player list** paste area.
+- Pasted lists are cleaned before import. Supported examples include:
+  - `1.lebron`, `2. ayo`, `3.ilaw`
+  - `1) LeBron`, `2) Ayo`
+  - consecutive bare numbering such as `1 LeBron`, `2 Ayo`
+  - bullet lists using `-`, `*`, `•`, and common checkbox/bullet glyphs
+  - semicolon-separated inline lists.
+- Empty lines and extra whitespace are ignored.
+- Duplicate names inside the pasted list are collapsed case-insensitively, and names already in the roster are skipped.
+- Commas are intentionally preserved inside names rather than treated as separators.
+- Bare numeric prefixes are removed only when the whole pasted block looks like a consecutive numbered list. This prevents legitimate names such as `50 Cent` or `21 Savage` from being mangled.
+- Existing roster normalization remains unchanged, so the displayed roster continues using the app's existing alphabetical ordering.
+- No queue scheduling behavior was changed in v12.
+- Service-worker cache bumped to `picklepulse-v12-0-0`.
+
+## v12 validation
+
+- JavaScript syntax check: PASS.
+- Requested numbered-list sample parses to `lebron`, `ayo`, `ilaw`: PASS.
+- Numbered, bulleted, blank-line, semicolon, duplicate, comma-containing-name, and numeric-name parser cases: PASS.
+- Bulk-import integration with an existing duplicate roster name: PASS.
+- Import popup contains both code/link and player-list actions: PASS.
+
+---
+
+## Previous v11 Turnover / Handoff
 
 ## v11 change
 

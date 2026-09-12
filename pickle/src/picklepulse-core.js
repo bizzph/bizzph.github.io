@@ -474,6 +474,49 @@
     return cleanName(value).toLocaleLowerCase();
   }
 
+  function parsePastedPlayerList(value) {
+    const raw = String(value || '').replace(/\r\n?/g, '\n').trim();
+    if (!raw) return [];
+
+    const lines = raw.split(/\n+/).flatMap((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return [];
+      // Semicolons are commonly used as an inline list delimiter; commas are not,
+      // because they can legitimately appear in a person's name.
+      return trimmed.includes(';') ? trimmed.split(/\s*;\s*/) : [trimmed];
+    }).map((line) => String(line || '')
+      .trim()
+      .replace(/^\s*(?:[-*•▪◦‣]+|[☐☑✓✔])\s*/, '')
+      .trim())
+      .filter(Boolean);
+
+    // Treat bare forms such as "1 LeBron" as numbering only when the whole pasted
+    // block looks like a consecutive numbered list. This preserves legitimate
+    // names such as "50 Cent" or "21 Savage".
+    const bareNumbered = lines.map((line) => line.match(/^\s*(\d{1,4})\s+(.+)$/));
+    const stripBareNumbers = bareNumbered.length > 1
+      && bareNumbered.every(Boolean)
+      && bareNumbered.every((match, index) => Number(match[1]) === Number(bareNumbered[0][1]) + index);
+
+    const seen = new Set();
+    const names = [];
+    lines.forEach((line, index) => {
+      let candidate = String(line || '').trim();
+      if (!candidate) return;
+      candidate = candidate
+        .replace(/^\s*\d{1,4}\s*[.)\]:-]+\s*/, '')
+        .trim();
+      if (stripBareNumbers && bareNumbered[index]) candidate = bareNumbered[index][2].trim();
+      const name = cleanName(candidate);
+      if (!name) return;
+      const key = nameKey(name);
+      if (seen.has(key)) return;
+      seen.add(key);
+      names.push(name);
+    });
+    return names;
+  }
+
   function unique(values) {
     return [...new Set((Array.isArray(values) ? values : []).filter(Boolean).map(String))];
   }
@@ -1086,6 +1129,7 @@
     makeId,
     cleanName,
     nameKey,
+    parsePastedPlayerList,
     normalizePlayer,
     normalizePlayers,
     normalizeQueue,
@@ -1632,23 +1676,47 @@
       }
     }
 
-    importRosterCode(value, source = 'code') {
-      const code = rosterCodeFromInput(value);
-      if (!code) throw new Error('Paste a roster code or roster link');
-      const payload = JSON.parse(base64UrlDecode(code));
-      const names = Array.isArray(payload && payload.names) ? payload.names.map(Players.cleanName).filter(Boolean) : [];
-      if (!names.length) throw new Error('No players found in roster code');
+    importRosterNames(names, source = 'list') {
+      const normalized = [];
+      const incoming = new Set();
+      (Array.isArray(names) ? names : []).forEach((rawName) => {
+        const name = Players.cleanName(rawName);
+        if (!name) return;
+        const key = Players.nameKey(name);
+        if (incoming.has(key)) return;
+        incoming.add(key);
+        normalized.push(name);
+      });
+      if (!normalized.length) throw new Error('No player names found');
+
       const existing = new Set(this.state.players.map((player) => Players.nameKey(player.name)));
-      const additions = names.filter((name) => !existing.has(Players.nameKey(name)));
-      if (!confirm(`Import ${names.length} roster player${names.length === 1 ? '' : 's'}? Existing names will be kept and duplicates skipped.`)) return false;
+      const additions = normalized.filter((name) => !existing.has(Players.nameKey(name)));
+      if (!confirm(`Import ${normalized.length} roster player${normalized.length === 1 ? '' : 's'}? Existing names will be kept and duplicates skipped.`)) return false;
       additions.forEach((name) => this.state.players.push(Players.normalizePlayer({ name })));
       this.state.players = Players.normalizePlayers(this.state.players);
       this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
       this.persist();
       this.view = 'roster';
       this.showRosterImport = false;
-      this.toast = `${additions.length} player${additions.length === 1 ? '' : 's'} added from ${source}`;
+      this.toast = additions.length
+        ? `${additions.length} player${additions.length === 1 ? '' : 's'} added from ${source}`
+        : 'No new players to add';
       return true;
+    }
+
+    importRosterCode(value, source = 'code') {
+      const code = rosterCodeFromInput(value);
+      if (!code) throw new Error('Paste a roster code or roster link');
+      const payload = JSON.parse(base64UrlDecode(code));
+      const names = Array.isArray(payload && payload.names) ? payload.names : [];
+      if (!names.length) throw new Error('No players found in roster code');
+      return this.importRosterNames(names, source);
+    }
+
+    importRosterList(value) {
+      const names = Players.parsePastedPlayerList(value);
+      if (!names.length) throw new Error('Paste one or more player names');
+      return this.importRosterNames(names, 'pasted list');
     }
 
     rosterLinkAvailable() {
@@ -2638,6 +2706,15 @@
         }
         return;
       }
+      if (action === 'import-roster-list') {
+        const input = this.querySelector('#roster-import-list');
+        try {
+          if (this.importRosterList(input ? input.value : '')) this.render();
+        } catch (error) {
+          this.showToast(error.message || 'Player list could not be imported');
+        }
+        return;
+      }
       if (action === 'copy-roster-payload') {
         const mode = target.dataset.mode === 'link' ? 'link' : 'code';
         const value = this.rosterSharePayload(mode);
@@ -3425,7 +3502,7 @@
             <div><h1>Roster</h1><p>Reusable player list for games and queue sessions.</p></div>
             <div>
               <button class="icon-btn" type="button" data-action="share-roster" ${this.state.players.length ? '' : 'disabled'} aria-label="Share roster code or QR" title="Share roster">${icon('share')}</button>
-              <button class="icon-btn" type="button" data-action="open-roster-import" aria-label="Import roster code or link" title="Import roster code">${icon('copy')}</button>
+              <button class="icon-btn" type="button" data-action="open-roster-import" aria-label="Import roster" title="Import roster">${icon('copy')}</button>
               <button class="icon-btn" type="button" data-action="import" aria-label="Import backup" title="Import backup">${icon('upload')}</button>
               <button class="icon-btn" type="button" data-action="export" aria-label="Export backup" title="Export backup">${icon('download')}</button>
             </div>
@@ -3550,7 +3627,7 @@
             <button type="button" class="${isLink ? 'active' : ''}" data-action="set-roster-qr-mode" data-mode="link" aria-pressed="${isLink}" ${linkAvailable ? '' : 'disabled'}>Open app</button>
           </div>
           <div class="roster-qr">${this.rosterQrMarkup(mode)}</div>
-          <p>${isLink ? 'Scan to open this same PicklePulse app on the other device and import the roster. The receiving device must be able to open the hosted app.' : 'Works offline: scan to read/copy the roster code, then paste it in Roster → Import roster code.'}</p>
+          <p>${isLink ? 'Scan to open this same PicklePulse app on the other device and import the roster. The receiving device must be able to open the hosted app.' : 'Works offline: scan to read/copy the roster code, then paste it in Roster → Import roster.'}</p>
           <div class="roster-code-preview" title="${isLink ? 'Roster import link' : 'Roster import code'}">${escapeHtml(payload)}</div>
           <div class="roster-share-actions">
             <button type="button" data-action="copy-roster-payload" data-mode="${mode}">${icon('copy')} Copy ${isLink ? 'link' : 'code'}</button>
@@ -3564,13 +3641,22 @@
     renderRosterImport() {
       return `
         <div class="guard-scrim" data-action="close-roster-import"></div>
-        <section class="roster-import-dialog" role="dialog" aria-modal="true" aria-label="Import roster code">
-          <header><div><b>Import roster</b><span>Paste a roster code or an older roster link</span></div><button class="icon-btn compact" type="button" data-action="close-roster-import" aria-label="Close">${icon('x')}</button></header>
-          <label for="roster-import-code">Roster code / link</label>
-          <textarea id="roster-import-code" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste roster code or link here"></textarea>
-          <div class="roster-import-actions">
+        <section class="roster-import-dialog" role="dialog" aria-modal="true" aria-label="Import roster">
+          <header><div><b>Import roster</b><span>Use a roster code/link or paste a player list</span></div><button class="icon-btn compact" type="button" data-action="close-roster-import" aria-label="Close">${icon('x')}</button></header>
+          <div class="roster-import-section">
+            <label for="roster-import-code">Roster code / link</label>
+            <textarea id="roster-import-code" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste roster code or link here"></textarea>
+            <button class="roster-import-primary" type="button" data-action="import-roster-code">Import code</button>
+          </div>
+          <div class="roster-import-divider"><span>or</span></div>
+          <div class="roster-import-section">
+            <label for="roster-import-list">Player list</label>
+            <textarea id="roster-import-list" rows="6" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="1. lebron&#10;2. ayo&#10;3. ilaw"></textarea>
+            <small>Numbers, bullets, blank lines, and extra spaces are cleaned automatically. Duplicate names are skipped.</small>
+            <button class="roster-import-primary" type="button" data-action="import-roster-list">Import player list</button>
+          </div>
+          <div class="roster-import-actions single">
             <button type="button" data-action="close-roster-import">Cancel</button>
-            <button type="button" data-action="import-roster-code">Import roster</button>
           </div>
         </section>
       `;
