@@ -1955,13 +1955,15 @@ No completed games in this range.`;
       const contentW = W - padX * 2;
       const resultRowH = 82;
       const resultGap = 10;
-      const headerH = 230;
+      const topLabelY = 286;
+      const boardTop = 306;
       const boardH = 238;
-      const boardTop = headerH + 18;
       const resultsTitleTop = boardTop + boardH + 58;
       const resultsTop = resultsTitleTop + 34;
       const footerSpace = 72;
-      const H = Math.max(1350, resultsTop + games.length * (resultRowH + resultGap) + footerSpace);
+      const resultListH = games.length * resultRowH + Math.max(0, games.length - 1) * resultGap;
+      // The app does not cap or truncate game rows. The canvas grows with the selected range.
+      const H = Math.max(1350, resultsTop + resultListH + footerSpace);
 
       const canvas = document.createElement('canvas');
       canvas.width = W;
@@ -2021,12 +2023,12 @@ No completed games in this range.`;
       drawText(`${plural(games.length, 'game')}  \u2022  ${plural(stats.participantCount, 'player')}`, padX + 18, 222, 18, 800, colors.accent, 316);
 
       // Top 3 stays the main highlight, but is compact enough to leave room for the complete game list.
-      drawText('TOP 3', padX, boardTop - 12, 20, 900, colors.muted, 220);
-      roundedRect(48, boardTop + 10, W - 96, boardH, 30, colors.card);
+      drawText('TOP 3', padX, topLabelY, 20, 900, colors.muted, 220);
+      roundedRect(48, boardTop, W - 96, boardH, 30, colors.card);
       if (top.length) {
         const medalColors = [colors.gold, colors.silver, colors.bronze];
         top.forEach((row, index) => {
-          const rowY = boardTop + 28 + index * 70;
+          const rowY = boardTop + 18 + index * 70;
           if (index === 0) roundedRect(62, rowY - 6, W - 124, 62, 18, colors.accentSoft);
           roundedRect(78, rowY + 4, 42, 42, 14, index === 0 ? colors.accent : colors.bg);
           drawText(String(index + 1), 92, rowY + 35, 22, 900, index === 0 ? colors.white : medalColors[index], 22);
@@ -2035,8 +2037,8 @@ No completed games in this range.`;
           if (hasSameWins(row)) drawText('tie-break', W - 132, rowY + 33, 15, 800, colors.muted, 70);
         });
       } else {
-        drawText('No Top 3 yet', 78, boardTop + 102, 34, 850, colors.ink, 420);
-        drawText('Tied games stay in the recap but do not count as wins.', 78, boardTop + 146, 21, 650, colors.muted, 760);
+        drawText('No Top 3 yet', 78, boardTop + 92, 34, 850, colors.ink, 420);
+        drawText('Tied games stay in the recap but do not count as wins.', 78, boardTop + 136, 21, 650, colors.muted, 760);
       }
 
       // Complete results list. Nothing is summarized or hidden.
@@ -3210,6 +3212,16 @@ No completed games in this range.`;
         }
         return;
       }
+      if (action === 'swap-team-players') {
+        const team = target.dataset.team === 'B' ? 'B' : 'A';
+        const right = this.querySelector(`#new-game-form select[name="team${team}Player1"]`);
+        const left = this.querySelector(`#new-game-form select[name="team${team}Player2"]`);
+        if (!right || !left) return;
+        const value = right.value;
+        right.value = left.value;
+        left.value = value;
+        return;
+      }
       if (action === 'queue-defer-next') {
         this.state.queue = Players.toggleDeferNext(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
@@ -3533,15 +3545,6 @@ No completed games in this range.`;
         this.state.games.splice(Number(target.dataset.index), 1);
         this.persist();
         this.render();
-        return;
-      }
-      if (action === 'load-save') {
-        const saved = this.state.games[Number(target.dataset.index)];
-        if (!saved) return;
-        const clone = JSON.parse(JSON.stringify(saved));
-        clone.status = clone.status || 'active';
-        this.view = 'game';
-        this.setCurrentGame(clone, true, false);
         return;
       }
       if (action === 'clear-history') {
@@ -3951,6 +3954,7 @@ No completed games in this range.`;
         <fieldset class="team-fields team-${lower}">
           <legend>${letter}</legend>
           <label><span>P1 · Right</span><select name="team${letter}Player1" required>${this.playerOptions(selected[`team${letter}Player1`], 'Select player')}</select></label>
+          <button class="team-side-swap doubles-only" type="button" data-action="swap-team-players" data-team="${letter}" ${format === 'singles' ? 'hidden' : ''} aria-label="Swap Team ${letter} left and right players" title="Swap left and right">${icon('swap')}<span>Swap sides</span></button>
           <label class="doubles-only" ${format === 'singles' ? 'hidden' : ''}><span>P2 · Left</span><select name="team${letter}Player2">${this.playerOptions(selected[`team${letter}Player2`], 'Select player')}</select></label>
         </fieldset>
       `;
@@ -4295,11 +4299,11 @@ No completed games in this range.`;
       const b = game.teams && game.teams[1] ? game.teams[1] : { name: 'B', players: [], score: 0 };
       return `
         <article class="saved-row">
-          <button class="saved-open" type="button" data-action="load-save" data-index="${index}">
+          <div class="saved-summary">
             <span class="saved-date">${escapeHtml(formatDate(game.savedAt || game.updatedAt))}</span>
             <span class="saved-teams"><b>${escapeHtml(teamTitle(a, 0))}</b><strong>${Number(a.score) || 0}</strong><i>–</i><strong>${Number(b.score) || 0}</strong><b>${escapeHtml(teamTitle(b, 1))}</b></span>
             <span class="saved-meta">${escapeHtml(game.format || 'doubles')} · ${formatDuration(game.timer ? game.timer.elapsedMs : 0)}</span>
-          </button>
+          </div>
           <button class="icon-btn danger compact" type="button" data-action="delete-save" data-index="${index}" aria-label="Delete saved game">${icon('trash')}</button>
         </article>
       `;

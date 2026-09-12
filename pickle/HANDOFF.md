@@ -1,3 +1,34 @@
+# PicklePulse v18 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v18 changes - history safety, side swap, long image layout
+
+- **History → Games** rows are now read-only summaries. A saved game row no longer opens/reloads a game when tapped; the delete/trash action remains available.
+- Removed the obsolete `load-save` click action from the UI controller so there is no hidden reopen path behind History rows.
+- **New Game** doubles selection now has a per-team **Swap sides** control. It swaps that team’s `P1 · Right` and `P2 · Left` select values in place and does not alter the other team, queue order, or roster.
+- The swap control is automatically hidden in Singles mode.
+- Reworked shared-results image vertical layout so the header statistics and **TOP 3** heading have explicit separation and cannot collide.
+- The PNG still renders the full selected game list. There is no app-level row cutoff or summary cap; image height is calculated from every selected completed game.
+- Result-image width remains 1080 px for mobile readability, while height grows with the selected range.
+- No queue fairness, scoring, standings, roster, date/time filtering, result de-duplication, or game-result calculation logic changed in v18.
+
+## v18 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `src/live-sync.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- History markup contains a non-interactive `.saved-summary` and only the delete button is actionable per saved row: PASS.
+- No `data-action="load-save"` or `load-save` controller branch remains: PASS.
+- Both Team A and Team B render a doubles-only `swap-team-players` control: PASS.
+- Swap handler exchanges only the two select values belonging to the chosen team: PASS.
+- Image result loop iterates the complete selected `games` array with no slice/cap: PASS.
+- Image height formula grows linearly with all selected game rows and Top 3 begins below the header metrics with a dedicated gap: PASS.
+- Service-worker cache bumped to `picklepulse-v18-0-0`: PASS.
+
+---
+
 # PicklePulse v17 Turnover / Handoff
 
 Finalized: 2026-09-12

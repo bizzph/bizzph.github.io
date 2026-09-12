@@ -133,7 +133,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .section-head > div { display: flex; gap: 4px; }
 .history-list { display: grid; gap: 10px; }
 .saved-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px; padding: 7px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
-.saved-open { min-width: 0; border: 0; background: transparent; padding: 10px; display: grid; gap: 8px; text-align: left; cursor: pointer; }
+.saved-summary { min-width: 0; padding: 10px; display: grid; gap: 8px; text-align: left; }
 .saved-date, .saved-meta { color: var(--muted); font-size: .75rem; }
 .saved-teams { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; gap: 9px; }
 .saved-teams b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
@@ -564,6 +564,9 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   width: 100%; min-width: 0; height: 48px; padding: 0 34px 0 12px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--bg); font-weight: 750;
 }
+.team-side-swap { justify-self: center; min-height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--accent); background: var(--surface-2); font-size: .72rem; font-weight: 850; cursor: pointer; }
+.team-side-swap .icon { width: 15px; height: 15px; }
+.team-side-swap:active { transform: scale(.98); }
 .next-match-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
   border-radius: 17px; background: var(--accent-soft);
