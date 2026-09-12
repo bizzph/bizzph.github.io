@@ -1,4 +1,130 @@
-# PicklePulse v12 Turnover / Handoff
+# PicklePulse v15 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v15 changes — local image recap + privacy/security cleanup
+
+- **History → Games → Share results** now includes **Share image** and **Save image** in addition to the existing text actions.
+- The image is rendered entirely in the browser from the already-filtered local History data. No screenshot service, image API, analytics endpoint, or upload is used.
+- Image output is a fixed **1080 × 1350 PNG (4:5)** so memory use stays predictable on mobile instead of scaling with device pixel ratio.
+- The image includes the selected date/time range, total completed games, unique player count, Top 3, and a compact set of the most recent results. If the selected range contains more games than fit legibly, the image states exactly how many additional completed games are in the range; the full text recap still contains every game.
+- **Share image** uses the browser/phone native file share sheet only when file sharing is supported. If file sharing is unavailable, it safely falls back to saving the PNG locally.
+- **Save image** creates a temporary object URL, downloads the PNG, then revokes the URL.
+- Image generation uses only system fonts, Canvas, and local app data. It does not embed external images or fonts.
+
+## Security / network audit
+
+- Audited app source for network calls, trackers, analytics, `sendBeacon`, `XMLHttpRequest`, `eval`, and dynamic code execution. None are present in the normal queue/roster/scoring/history/share flows.
+- The service worker only intercepts and caches **same-origin GET requests**.
+- Queue, roster, scoring, backups, History, roster QR, text recap, and image recap work from local/same-origin code and browser storage.
+- **Live Display remains the only intentional outside-network feature.** It lazy-loads PeerJS 1.5.5 from jsDelivr/unpkg and PeerJS uses its cloud signaling service / WebRTC networking. This behavior is user-triggered and is not needed by normal app operation.
+- Removed controller-mode automatic Live Display reconnection after a page reload. A controller now opens the external live connection **only after the user explicitly starts/shares Live Display in the current session**.
+- `src/live-sync.js` is now included in the app-shell service-worker cache, reducing same-origin fetches and making the local module consistently available offline; the external PeerJS networking requirement for cross-device Live Display is unchanged.
+- No advertising, analytics, telemetry, hidden upload, or background roster/game-result transmission was added.
+
+## v15 validation
+
+- `src/picklepulse-core.js` syntax: PASS.
+- `src/qrcode-offline.js` syntax: PASS.
+- `src/live-sync.js` syntax: PASS.
+- `sw.js` syntax: PASS.
+- Image share/save actions are wired to the existing validated date/time selection: PASS.
+- Image uses completed, de-duplicated games through the same `resultsShareSelection()` / `resultsShareStats()` pipeline as text sharing: PASS.
+- Mobile-safe fixed canvas size and native file-share fallback path: PASS.
+- No controller auto-start of Live Display on reload: PASS.
+- Service-worker cache bumped to `picklepulse-v15-0-0`: PASS.
+
+---
+
+# PicklePulse v14 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v14 change — cleaner, story-first shared game recap
+
+- **History → Games → Share results** keeps the same date/time filtering and accuracy rules from v13, but the copied/shared text is now optimized for group chats.
+- The recap opens with one compact session line instead of separate labels for games, players, and time zone.
+- A short leader callout makes the result feel like a recap rather than a raw export.
+- **Top players** uses medal markers and hides secondary ranking metrics unless they are needed to explain a tie in wins.
+  - Default: wins only.
+  - Same wins: show win percentage.
+  - Same wins + win percentage: also show point differential.
+  - Same wins + win percentage + point differential: also show games played.
+- Detailed results are now human-readable sentences: `A / B beat C / D, 11–8 · Doubles`.
+- Per-game numbering was removed. Result lines use bullets and show only the completion time, winner/loser, final score, and format.
+- If the selected results span multiple calendar days, games are grouped under date headers. Single-day shares do not repeat the same date above the result list.
+- Tied games remain visible and still do not affect Top 3.
+- All underlying calculations, de-duplication, completion-time filtering, and History ranking logic are unchanged.
+- No image-result feature was added in v14.
+- Service-worker cache bumped to `picklepulse-v14-0-0`.
+
+## v14 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `src/live-sync.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- Runtime share-output harness: PASS.
+- Old share-text labels (`Ranking:`, numeric game list) removed: PASS.
+- Smart Top 3 tie-break display present: PASS.
+- Single-day result grouping avoids repeated date headers: PASS.
+- Multi-day grouping remains supported: PASS.
+- Queue, roster, offline QR, scoring, and result calculations are unchanged in v14.
+
+## Resource/network note
+
+- Core app assets, offline roster QR generation, queue, roster, scoring, History, and result sharing are local/same-origin assets.
+- **Live Display is the exception:** `src/live-sync.js` lazy-loads PeerJS 1.5.5 from jsDelivr with an unpkg fallback when Live Display is started. PeerJS also requires network signaling/WebRTC connectivity.
+- The normal app does not load those PeerJS CDN scripts unless Live Display is used.
+
+---
+
+# PicklePulse v13 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v13 change — date/time-filtered shareable game results
+
+- **History → Games** now has a **Share results** action.
+- Share results opens a popup with **From** and **To** `datetime-local` controls.
+- The selected ending minute is inclusive, so a game completed at `8:30:47 PM` is included when **To** is `8:30 PM`.
+- Only **completed** games are included. Active/manual snapshots are excluded.
+- Multiple saved snapshots of the same game are de-duplicated by game ID before counting, ranking, or listing results.
+- Date/time filtering uses the game's recorded `completedAt` value. Older completed records without `completedAt` fall back to `savedAt`, then `updatedAt`, then `createdAt`.
+- Share text includes:
+  - selected date/time range;
+  - device time-zone name;
+  - completed game count;
+  - unique participating player count;
+  - **Top 3 players**;
+  - chronological game-by-game results with completion time, singles/doubles format, player names, and final score.
+- **Top 3** intentionally uses the same standings order as the History standings table: **wins → win percentage → point differential → games played → player name**.
+- Tied completed scores remain visible in the game-results list, but are not counted as wins/losses in Top 3. A note is added to the shared text when ties exist.
+- Unique-player counting resolves saved player IDs/names back to the current roster when possible so legacy/no-ID game records do not unnecessarily double-count the same roster player.
+- The popup includes a read-only text preview plus **Copy text** and **Share** actions.
+- **Share** uses the Web Share API when available (group chat, Messages, etc.) and falls back to copying the exact same text.
+- No internet service is required to build or copy the summary; it is derived entirely from local History data.
+- Queue, roster, scoring, and offline roster-QR logic are unchanged in v13.
+- Service-worker cache bumped to `picklepulse-v13-0-0`.
+
+## v13 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- Completed-game filtering: PASS.
+- Active saved snapshots excluded from share range: PASS.
+- Duplicate snapshots of the same game counted once: PASS.
+- Filtering follows `completedAt` even when a duplicate was saved on a later date: PASS.
+- End-minute inclusivity: PASS.
+- Top 3 order matches existing History standings calculation: PASS.
+- Unique participant count: PASS.
+- Tied result listed while excluded from win/loss ranking: PASS.
+- Share output contains range, time zone, counts, Top 3, and chronological final scores: PASS.
+
+---
+
+## Previous v12 Turnover / Handoff
 
 ## v12 change — smart pasted roster import
 

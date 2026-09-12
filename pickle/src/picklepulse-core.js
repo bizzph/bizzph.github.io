@@ -1345,6 +1345,79 @@
     }
   }
 
+  function resultTimestamp(game) {
+    if (!game || game.status !== 'complete') return 0;
+    const candidates = [game.completedAt, game.savedAt, game.updatedAt, game.createdAt];
+    for (const value of candidates) {
+      const timestamp = Date.parse(value || '');
+      if (Number.isFinite(timestamp)) return timestamp;
+    }
+    return 0;
+  }
+
+  function datetimeLocalValue(timestamp) {
+    const date = new Date(Number(timestamp) || Date.now());
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function parseDatetimeLocal(value, inclusiveEnd = false) {
+    const timestamp = new Date(String(value || '')).getTime();
+    if (!Number.isFinite(timestamp)) return NaN;
+    return timestamp + (inclusiveEnd ? 59999 : 0);
+  }
+
+  function formatShareDate(value) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+      }).format(new Date(value));
+    } catch (_error) {
+      return String(value || '');
+    }
+  }
+
+  function sameLocalDay(a, b) {
+    const left = new Date(a);
+    const right = new Date(b);
+    return left.getFullYear() === right.getFullYear()
+      && left.getMonth() === right.getMonth()
+      && left.getDate() === right.getDate();
+  }
+
+  function formatShareDay(value) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric'
+      }).format(new Date(value));
+    } catch (_error) {
+      return String(value || '');
+    }
+  }
+
+  function formatShareTime(value) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric', minute: '2-digit'
+      }).format(new Date(value));
+    } catch (_error) {
+      return String(value || '');
+    }
+  }
+
+  function formatShareRange(start, end) {
+    if (sameLocalDay(start, end)) {
+      return `${formatShareDay(start)} · ${formatShareTime(start)}–${formatShareTime(end)}`;
+    }
+    return `${formatShareDate(start)} → ${formatShareDate(end)}`;
+  }
+
+  function shareTeamLabel(team, index) {
+    const players = Array.isArray(team && team.players) ? team.players.map((name) => String(name || '').trim()).filter(Boolean) : [];
+    if (players.length) return players.join(' / ');
+    return teamTitle(team, index);
+  }
+
   function teamTitle(team, index) {
     const players = Array.isArray(team && team.players) ? team.players : [];
     const generic = !team.name || team.name === `Team ${index === 0 ? 'A' : 'B'}`;
@@ -1489,6 +1562,9 @@
       this.showGameReset = false;
       this.showRosterShare = false;
       this.showRosterImport = false;
+      this.showResultsShare = false;
+      this.shareResultsStart = '';
+      this.shareResultsEnd = '';
       this.rosterQrMode = 'code';
       this.editingGame = false;
       this.showLeaveWarning = false;
@@ -1583,9 +1659,8 @@
         this.updateClockDisplay();
       }, 1000);
       if (this.mode === 'display') this.startViewer();
-      if (this.mode === 'controller' && this.state.currentGame && this.state.currentGame.status === 'active' && this.state.liveRoom) {
-        this.startLive(this.state.liveRoom, true);
-      }
+      // Privacy: controller mode never opens an external Live Display connection on page load.
+      // The user must explicitly start/share Live Display in the current session.
       this.scheduleServiceWorker();
     }
 
@@ -1717,6 +1792,337 @@
       const names = Players.parsePastedPlayerList(value);
       if (!names.length) throw new Error('Paste one or more player names');
       return this.importRosterNames(names, 'pasted list');
+    }
+
+    completedResultGames() {
+      return Players.dedupeGames(this.state.games)
+        .filter((game) => game && game.status === 'complete' && resultTimestamp(game) > 0)
+        .sort((a, b) => resultTimestamp(a) - resultTimestamp(b));
+    }
+
+    resetResultsShareRange() {
+      const games = this.completedResultGames();
+      if (!games.length) {
+        const now = Date.now();
+        this.shareResultsStart = datetimeLocalValue(now);
+        this.shareResultsEnd = datetimeLocalValue(now);
+        return;
+      }
+      this.shareResultsStart = datetimeLocalValue(resultTimestamp(games[0]));
+      this.shareResultsEnd = datetimeLocalValue(resultTimestamp(games[games.length - 1]));
+    }
+
+    resultsShareSelection() {
+      const start = parseDatetimeLocal(this.shareResultsStart, false);
+      const end = parseDatetimeLocal(this.shareResultsEnd, true);
+      const validRange = Number.isFinite(start) && Number.isFinite(end) && start <= end;
+      const games = validRange
+        ? this.completedResultGames().filter((game) => {
+          const timestamp = resultTimestamp(game);
+          return timestamp >= start && timestamp <= end;
+        })
+        : [];
+      return { start, end, validRange, games };
+    }
+
+    resultsShareStats(games) {
+      const standings = Players.calculateStandings(games, this.state.players).filter((row) => row.games > 0);
+      const roster = Players.normalizePlayers(this.state.players);
+      const rosterById = new Map(roster.map((player) => [player.id, player]));
+      const rosterByName = new Map(roster.map((player) => [Players.nameKey(player.name), player]));
+      const participantKeys = new Set();
+      games.forEach((game) => {
+        (game.teams || []).forEach((team) => {
+          const names = Array.isArray(team && team.players) ? team.players : [];
+          const ids = Array.isArray(team && team.playerIds) ? team.playerIds : [];
+          names.forEach((name, index) => {
+            const clean = Players.cleanName(name);
+            if (!clean) return;
+            const rawId = ids[index] ? String(ids[index]) : '';
+            const rosterPlayer = (rawId && rosterById.get(rawId)) || rosterByName.get(Players.nameKey(clean));
+            participantKeys.add(rosterPlayer ? `id:${rosterPlayer.id}` : rawId ? `id:${rawId}` : `name:${Players.nameKey(clean)}`);
+          });
+        });
+      });
+      const tiedGames = games.filter((game) => Number(game.teams?.[0]?.score || 0) === Number(game.teams?.[1]?.score || 0)).length;
+      return { standings, topThree: standings.slice(0, 3), participantCount: participantKeys.size, tiedGames };
+    }
+
+    resultsShareText() {
+      const selection = this.resultsShareSelection();
+      if (!selection.validRange) return 'Choose a valid start and end date/time.';
+      const { games } = selection;
+      if (!games.length) {
+        return `🏓 PicklePulse Game Recap
+${formatShareRange(selection.start, selection.end)}
+
+No completed games in this range.`;
+      }
+      const stats = this.resultsShareStats(games);
+      const timeZone = (() => {
+        try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_error) { return ''; }
+      })();
+      const plural = (value, singular, pluralWord = `${singular}s`) => `${value} ${value === 1 ? singular : pluralWord}`;
+      const rankingDetail = (row) => {
+        const peersByWins = stats.standings.filter((other) => other !== row && other.wins === row.wins);
+        let detail = plural(row.wins, 'win');
+        if (!peersByWins.length) return detail;
+        const pct = Math.round(row.winPct * 100);
+        detail += ` · ${pct}%`;
+        const peersByPct = peersByWins.filter((other) => Math.abs(other.winPct - row.winPct) < 1e-9);
+        if (!peersByPct.length) return detail;
+        const diff = `${row.pointDiff > 0 ? '+' : ''}${row.pointDiff}`;
+        detail += ` · ${diff} diff`;
+        const peersByDiff = peersByPct.filter((other) => other.pointDiff === row.pointDiff);
+        if (!peersByDiff.length) return detail;
+        return `${detail} · ${plural(row.games, 'game')}`;
+      };
+      const medals = ['🥇', '🥈', '🥉'];
+      const lines = [
+        '🏓 PicklePulse Game Recap',
+        formatShareRange(selection.start, selection.end),
+        `${plural(games.length, 'game')} with ${plural(stats.participantCount, 'player')}${timeZone ? ` · ${timeZone}` : ''}`,
+        ''
+      ];
+
+      if (stats.topThree.length) {
+        const leader = stats.topThree[0];
+        const sharedLead = stats.standings.some((row) => row !== leader && row.wins === leader.wins);
+        const leaderLine = sharedLead
+          ? `⭐ ${leader.name} takes the top spot after tie-breakers.`
+          : `⭐ ${leader.name} led the session with ${plural(leader.wins, 'win')}.`;
+        lines.push(leaderLine, '', '🏆 Top players');
+        stats.topThree.forEach((row, index) => {
+          lines.push(`${medals[index] || `${index + 1}.`} ${row.name} — ${rankingDetail(row)}`);
+        });
+      } else {
+        lines.push('🤝 No decisive games in this range, so there is no Top 3 yet.');
+      }
+
+      lines.push('', '📋 Results');
+      const firstResultDay = formatShareDay(resultTimestamp(games[0]));
+      const multipleResultDays = games.some((game) => formatShareDay(resultTimestamp(game)) !== firstResultDay);
+      let lastDay = '';
+      games.forEach((game) => {
+        const timestamp = resultTimestamp(game);
+        const day = formatShareDay(timestamp);
+        if (multipleResultDays && day !== lastDay) {
+          if (lastDay) lines.push('');
+          lines.push(`🗓 ${day}`);
+          lastDay = day;
+        }
+        const a = game.teams && game.teams[0] ? game.teams[0] : { players: [], score: 0 };
+        const b = game.teams && game.teams[1] ? game.teams[1] : { players: [], score: 0 };
+        const scoreA = Number(a.score) || 0;
+        const scoreB = Number(b.score) || 0;
+        const format = game.format === 'singles' ? 'Singles' : 'Doubles';
+        const teamA = shareTeamLabel(a, 0);
+        const teamB = shareTeamLabel(b, 1);
+        const score = `${scoreA}–${scoreB}`;
+        if (scoreA === scoreB) {
+          lines.push(`• ${formatShareTime(timestamp)} — ${teamA} tied ${teamB}, ${score} · ${format}`);
+        } else {
+          const winner = scoreA > scoreB ? teamA : teamB;
+          const loser = scoreA > scoreB ? teamB : teamA;
+          const winnerScore = scoreA > scoreB ? scoreA : scoreB;
+          const loserScore = scoreA > scoreB ? scoreB : scoreA;
+          lines.push(`• ${formatShareTime(timestamp)} — ${winner} beat ${loser}, ${winnerScore}–${loserScore} · ${format}`);
+        }
+      });
+      if (stats.tiedGames) {
+        lines.push('', `Tied games are shown above but do not affect the Top 3.`);
+      }
+      return lines.join('\n');
+    }
+
+    resultsShareImageFilename() {
+      const selection = this.resultsShareSelection();
+      const start = Number.isFinite(selection.start) ? new Date(selection.start) : new Date();
+      const pad = (value) => String(value).padStart(2, '0');
+      return `picklepulse-results-${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}.png`;
+    }
+
+    async resultsShareImageBlob() {
+      const selection = this.resultsShareSelection();
+      if (!selection.validRange || !selection.games.length) throw new Error('No completed games in this range');
+      const games = selection.games;
+      const stats = this.resultsShareStats(games);
+      const canvas = document.createElement('canvas');
+      // Fixed output size keeps memory predictable on mobile and produces a common 4:5 share image.
+      canvas.width = 1080;
+      canvas.height = 1350;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) throw new Error('Image generation is unavailable');
+
+      const W = canvas.width;
+      const H = canvas.height;
+      const padX = 78;
+      const contentW = W - padX * 2;
+      const colors = {
+        bg: '#f6f7f4', card: '#ffffff', ink: '#17221c', muted: '#637068', line: '#dfe5df',
+        accent: '#1e7350', accentSoft: '#e7f2ec', gold: '#9a6b00', silver: '#66717b', bronze: '#925c34'
+      };
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(0, 0, W, H);
+
+      const roundedRect = (x, y, w, h, r, fill) => {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + w, y, x + w, y + h, radius);
+        ctx.arcTo(x + w, y + h, x, y + h, radius);
+        ctx.arcTo(x, y + h, x, y, radius);
+        ctx.arcTo(x, y, x + w, y, radius);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+      };
+      const font = (weight, size) => `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
+      const fitText = (text, maxWidth) => {
+        const raw = String(text || '');
+        if (ctx.measureText(raw).width <= maxWidth) return raw;
+        let low = 0, high = raw.length;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          if (ctx.measureText(`${raw.slice(0, mid)}…`).width <= maxWidth) low = mid;
+          else high = mid - 1;
+        }
+        return `${raw.slice(0, Math.max(0, low))}…`;
+      };
+      const drawText = (text, x, y, size, weight = 700, color = colors.ink, maxWidth = contentW) => {
+        ctx.font = font(weight, size);
+        ctx.fillStyle = color;
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(fitText(text, maxWidth), x, y);
+      };
+      const plural = (value, singular, pluralWord = `${singular}s`) => `${value} ${value === 1 ? singular : pluralWord}`;
+
+      // Header card.
+      roundedRect(48, 46, W - 96, 240, 34, colors.card);
+      roundedRect(78, 76, 68, 68, 18, colors.accent);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(112, 110, 17, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(101, 100); ctx.lineTo(123, 120);
+      ctx.moveTo(123, 100); ctx.lineTo(101, 120);
+      ctx.stroke();
+      drawText('PicklePulse Game Recap', 170, 116, 42, 850);
+      drawText(formatShareRange(selection.start, selection.end), 78, 184, 25, 650, colors.muted, W - 156);
+      drawText(`${plural(games.length, 'game')}  •  ${plural(stats.participantCount, 'player')}`, 78, 232, 27, 800, colors.accent, W - 156);
+
+      let y = 330;
+      drawText('TOP PLAYERS', padX, y, 20, 900, colors.muted);
+      y += 28;
+      const medalColors = [colors.gold, colors.silver, colors.bronze];
+      const top = stats.topThree;
+      if (top.length) {
+        top.forEach((row, index) => {
+          const rowY = y + index * 104;
+          roundedRect(padX, rowY, contentW, 86, 22, colors.card);
+          roundedRect(padX + 16, rowY + 13, 60, 60, 18, index === 0 ? colors.accentSoft : colors.bg);
+          drawText(String(index + 1), padX + 37, rowY + 55, 28, 900, medalColors[index] || colors.accent, 28);
+          drawText(row.name, padX + 96, rowY + 41, 28, 850, colors.ink, 570);
+          const detail = row.wins === 1 ? '1 win' : `${row.wins} wins`;
+          drawText(detail, padX + 96, rowY + 68, 21, 750, colors.muted, 570);
+          const pct = row.games ? `${Math.round(row.winPct * 100)}%` : '—';
+          drawText(pct, W - padX - 88, rowY + 54, 27, 900, colors.accent, 88);
+        });
+        y += top.length * 104 + 28;
+      } else {
+        roundedRect(padX, y, contentW, 82, 20, colors.card);
+        drawText('No decisive games in this range', padX + 24, y + 51, 25, 700, colors.muted);
+        y += 110;
+      }
+
+      drawText('RESULTS', padX, y, 20, 900, colors.muted);
+      y += 28;
+      const availableHeight = H - y - 98;
+      const lineHeight = 72;
+      const maxRows = Math.max(3, Math.min(8, Math.floor(availableHeight / lineHeight)));
+      const visibleGames = games.slice(-maxRows);
+      visibleGames.forEach((game) => {
+        const timestamp = resultTimestamp(game);
+        const a = game.teams && game.teams[0] ? game.teams[0] : { players: [], score: 0 };
+        const b = game.teams && game.teams[1] ? game.teams[1] : { players: [], score: 0 };
+        const scoreA = Number(a.score) || 0;
+        const scoreB = Number(b.score) || 0;
+        const teamA = shareTeamLabel(a, 0);
+        const teamB = shareTeamLabel(b, 1);
+        const format = game.format === 'singles' ? 'Singles' : 'Doubles';
+        let summary;
+        if (scoreA === scoreB) summary = `${teamA} tied ${teamB}, ${scoreA}–${scoreB}`;
+        else {
+          const winner = scoreA > scoreB ? teamA : teamB;
+          const loser = scoreA > scoreB ? teamB : teamA;
+          const winnerScore = Math.max(scoreA, scoreB);
+          const loserScore = Math.min(scoreA, scoreB);
+          summary = `${winner} beat ${loser}, ${winnerScore}–${loserScore}`;
+        }
+        roundedRect(padX, y, contentW, 58, 16, colors.card);
+        drawText(formatShareTime(timestamp), padX + 18, y + 37, 19, 800, colors.accent, 118);
+        drawText(summary, padX + 148, y + 31, 21, 750, colors.ink, contentW - 300);
+        drawText(format, W - padX - 118, y + 31, 17, 800, colors.muted, 100);
+        y += lineHeight;
+      });
+      const hiddenCount = games.length - visibleGames.length;
+      if (hiddenCount > 0) {
+        drawText(`+ ${plural(hiddenCount, 'more completed game')} in this selected range`, padX, y + 3, 19, 750, colors.muted, contentW);
+      }
+
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(padX, H - 66);
+      ctx.lineTo(W - padX, H - 66);
+      ctx.stroke();
+      drawText('Generated locally on this device • PicklePulse', padX, H - 28, 18, 700, colors.muted, contentW);
+
+      const blob = await new Promise((resolve, reject) => {
+        if (!canvas.toBlob) {
+          try {
+            const dataUrl = canvas.toDataURL('image/png');
+            const parts = dataUrl.split(',');
+            const binary = atob(parts[1] || '');
+            const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+            resolve(new Blob([bytes], { type: 'image/png' }));
+          } catch (error) { reject(error); }
+          return;
+        }
+        canvas.toBlob((value) => value ? resolve(value) : reject(new Error('Could not create image')), 'image/png');
+      });
+      return blob;
+    }
+
+    async saveResultsImage() {
+      const blob = await this.resultsShareImageBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = this.resultsShareImageFilename();
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      this.showToast('Results image saved');
+    }
+
+    async shareResultsImage() {
+      const blob = await this.resultsShareImageBlob();
+      const file = new File([blob], this.resultsShareImageFilename(), { type: 'image/png', lastModified: Date.now() });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        try {
+          await navigator.share({ title: 'PicklePulse results', text: 'PicklePulse game recap', files: [file] });
+          return;
+        } catch (error) {
+          if (error && error.name === 'AbortError') return;
+        }
+      }
+      await this.saveResultsImage();
     }
 
     rosterLinkAvailable() {
@@ -2618,6 +3024,12 @@
         this.render();
         return;
       }
+      if (event.target.id === 'share-results-start' || event.target.id === 'share-results-end') {
+        if (event.target.id === 'share-results-start') this.shareResultsStart = String(event.target.value || '');
+        else this.shareResultsEnd = String(event.target.value || '');
+        this.render();
+        return;
+      }
       if (event.target.id === 'import-file' && event.target.files && event.target.files[0]) {
         this.importJson(event.target.files[0]);
       }
@@ -2662,6 +3074,73 @@
         this.editingGame = false;
         this.view = this.state.currentGame ? 'game' : 'setup';
         this.render();
+        return;
+      }
+      if (action === 'open-results-share') {
+        if (!this.completedResultGames().length) return;
+        this.resetResultsShareRange();
+        this.showResultsShare = true;
+        this.showRosterShare = false;
+        this.showRosterImport = false;
+        this.render();
+        return;
+      }
+      if (action === 'close-results-share') {
+        this.showResultsShare = false;
+        this.render();
+        return;
+      }
+      if (action === 'copy-results-share') {
+        const selection = this.resultsShareSelection();
+        if (!selection.validRange) {
+          this.showToast('Choose a valid date/time range');
+          return;
+        }
+        if (!selection.games.length) {
+          this.showToast('No completed games in this range');
+          return;
+        }
+        await this.copyText(this.resultsShareText(), 'Results copied');
+        return;
+      }
+      if (action === 'share-results-image' || action === 'save-results-image') {
+        const selection = this.resultsShareSelection();
+        if (!selection.validRange) {
+          this.showToast('Choose a valid date/time range');
+          return;
+        }
+        if (!selection.games.length) {
+          this.showToast('No completed games in this range');
+          return;
+        }
+        try {
+          if (action === 'share-results-image') await this.shareResultsImage();
+          else await this.saveResultsImage();
+        } catch (_error) {
+          this.showToast('Could not create results image');
+        }
+        return;
+      }
+      if (action === 'native-share-results') {
+        const selection = this.resultsShareSelection();
+        if (!selection.validRange) {
+          this.showToast('Choose a valid date/time range');
+          return;
+        }
+        if (!selection.games.length) {
+          this.showToast('No completed games in this range');
+          return;
+        }
+        const text = this.resultsShareText();
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: 'PicklePulse results', text });
+            return;
+          } catch (error) {
+            if (error && error.name === 'AbortError') return;
+          }
+        }
+        await this.copyText(text, 'Results copied');
         return;
       }
       if (action === 'share-roster') {
@@ -3205,6 +3684,7 @@
           ${this.showGameReset ? this.renderGameResetDialog() : ''}
           ${this.showRosterShare ? this.renderRosterShare() : ''}
           ${this.showRosterImport ? this.renderRosterImport() : ''}
+          ${this.showResultsShare ? this.renderResultsShare() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
             ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'history'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
@@ -3662,6 +4142,38 @@
       `;
     }
 
+    renderResultsShare() {
+      const selection = this.resultsShareSelection();
+      const stats = this.resultsShareStats(selection.games);
+      const canShare = selection.validRange && selection.games.length > 0;
+      const preview = this.resultsShareText();
+      return `
+        <div class="guard-scrim" data-action="close-results-share"></div>
+        <section class="results-share-dialog" role="dialog" aria-modal="true" aria-label="Share game results">
+          <header><div><b>Share results</b><span>${selection.games.length} completed game${selection.games.length === 1 ? '' : 's'} in range</span></div><button class="icon-btn compact" type="button" data-action="close-results-share" aria-label="Close">${icon('x')}</button></header>
+          <div class="results-range-grid">
+            <label><span>From</span><input id="share-results-start" type="datetime-local" step="60" value="${escapeHtml(this.shareResultsStart)}"></label>
+            <label><span>To</span><input id="share-results-end" type="datetime-local" step="60" value="${escapeHtml(this.shareResultsEnd)}"></label>
+          </div>
+          ${!selection.validRange ? '<p class="results-share-warning">End date/time must be after the start.</p>' : ''}
+          <div class="results-share-meta">
+            <span><b>${selection.games.length}</b> games</span>
+            <span><b>${stats.participantCount}</b> players</span>
+            <span><b>${stats.topThree.length}</b> ranked</span>
+          </div>
+          <label class="results-preview-label" for="results-share-preview">Share text</label>
+          <textarea id="results-share-preview" class="results-share-preview" rows="13" readonly>${escapeHtml(preview)}</textarea>
+          <small class="results-share-note">Built locally from completed, de-duplicated games in the selected range. Image creation stays on this device; Share only hands the finished file to an app you choose.</small>
+          <div class="results-share-actions">
+            <button type="button" data-action="copy-results-share" ${canShare ? '' : 'disabled'}>${icon('copy')} Copy text</button>
+            <button type="button" data-action="native-share-results" ${canShare ? '' : 'disabled'}>${icon('share')} Share text</button>
+            <button type="button" data-action="share-results-image" ${canShare ? '' : 'disabled'}>${icon('share')} Share image</button>
+            <button type="button" data-action="save-results-image" ${canShare ? '' : 'disabled'}>${icon('download')} Save image</button>
+          </div>
+        </section>
+      `;
+    }
+
     renderLiveBar() {
       if (this.live.phase === 'off') return '';
       const connected = this.live.phase === 'live';
@@ -3765,7 +4277,7 @@
             </div>
           </div>
           ${this.renderStandings(standings)}
-          <div class="saved-section-head"><h2>Games</h2><button class="icon-btn danger compact" type="button" data-action="clear-history" ${this.state.games.length ? '' : 'disabled'} aria-label="Delete all saved games" title="Clear">${icon('trash')}</button></div>
+          <div class="saved-section-head"><h2>Games</h2><div><button class="icon-btn compact" type="button" data-action="open-results-share" ${this.completedResultGames().length ? '' : 'disabled'} aria-label="Share game results" title="Share results">${icon('share')}</button><button class="icon-btn danger compact" type="button" data-action="clear-history" ${this.state.games.length ? '' : 'disabled'} aria-label="Delete all saved games" title="Clear">${icon('trash')}</button></div></div>
           ${this.state.games.length ? `<div class="history-list">${this.state.games.map((game, index) => this.renderSaved(game, index)).join('')}</div>` : `<div class="empty-view compact"><div class="empty-symbol">${icon('history')}</div><p>Nothing saved</p></div>`}
         </section>
       `;
