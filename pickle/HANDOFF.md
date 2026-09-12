@@ -1,3 +1,62 @@
+# PicklePulse v17 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v17 changes - complete image results
+
+- Removed the separate **Session leader** / **Top spot after tie-break** hero from the shared PNG recap.
+- **Top 3** is now the first results-focused section after the compact session header.
+- The image now lists **every completed game in the selected date/time range**. There is no four-game cutoff, `+ N more games` summary, or hidden result count.
+- Result rows remain chronological and show game number, completion time, winner/loser (or tie), final score, and format when the selected range mixes singles and doubles.
+- The export keeps a 1080 px mobile-friendly width and uses a **dynamic canvas height** based on the number of selected games. This preserves readable text instead of shrinking a long session into a fixed 4:5 image.
+- The image still uses the same completed/de-duplicated History selection and standings calculations as the text recap. No queue, roster, score, ranking, or filtering logic changed.
+- The image footer remains PicklePulse-only; the removed `Generated locally on this device` wording stays removed.
+
+## v17 validation
+
+- `src/picklepulse-core.js` JavaScript syntax: PASS.
+- `src/qrcode-offline.js` JavaScript syntax: PASS.
+- `src/live-sync.js` JavaScript syntax: PASS.
+- `sw.js` JavaScript syntax: PASS.
+- No `SESSION LEADER`, `TOP SPOT AFTER TIE-BREAK`, `RECENT RESULTS`, or `+ N more games` image-render logic remains: PASS.
+- Image result loop iterates the full selected `games` array with no slice/row cap: PASS.
+- Service-worker cache bumped to `picklepulse-v17-0-0`: PASS.
+
+---
+
+# PicklePulse v16 Turnover / Handoff
+
+Finalized: 2026-09-12
+
+## v16 changes - cleaner, reader-first image recap
+
+- Removed the `Generated locally on this device` footer from shared result images. The image now uses a quiet PicklePulse-only brand footer.
+- Kept the mobile-friendly **1080 x 1350 (4:5)** PNG format.
+- Rebuilt the image hierarchy to make the recap readable in a few seconds on a phone:
+  - compact PicklePulse + date/time header;
+  - one dominant **Session leader** hero instead of multiple equal-weight statistics;
+  - simplified **Top 3** showing names and wins only;
+  - tie-break text appears only when equal win totals make the ranking otherwise unclear;
+  - recent games are limited to four rows so the image does not become a dense report;
+  - newest result is shown first;
+  - winner and loser are separated into two visual lines, with the final score isolated on the right;
+  - if all selected games use the same format, `RECENT DOUBLES` / `RECENT SINGLES` is shown once instead of repeating the format on every result.
+- When more than four completed games are in the selected range, the image shows an exact `+ N more games` line. The text-share version remains the complete detailed record.
+- No standings calculation, date/time filtering, de-duplication, score calculation, queue logic, roster logic, or sharing privacy behavior changed in v16.
+
+## v16 validation
+
+- `src/picklepulse-core.js` syntax: PASS.
+- `src/qrcode-offline.js` syntax: PASS.
+- `src/live-sync.js` syntax: PASS.
+- `sw.js` syntax: PASS.
+- Canvas image method runtime harness: PASS.
+- Old `Generated locally on this device` image text removed: PASS.
+- Image still uses the same completed/de-duplicated range selection and standings data as the text recap: PASS.
+- Service-worker cache bumped to `picklepulse-v16-0-0`: PASS.
+
+---
+
 # PicklePulse v15 Turnover / Handoff
 
 Finalized: 2026-09-12

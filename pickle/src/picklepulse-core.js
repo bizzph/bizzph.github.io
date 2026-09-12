@@ -1947,20 +1947,32 @@ No completed games in this range.`;
       if (!selection.validRange || !selection.games.length) throw new Error('No completed games in this range');
       const games = selection.games;
       const stats = this.resultsShareStats(games);
+
+      // Keep a phone-friendly width, but let the image grow vertically so every selected
+      // game remains readable instead of shrinking or being summarized away.
+      const W = 1080;
+      const padX = 68;
+      const contentW = W - padX * 2;
+      const resultRowH = 82;
+      const resultGap = 10;
+      const headerH = 230;
+      const boardH = 238;
+      const boardTop = headerH + 18;
+      const resultsTitleTop = boardTop + boardH + 58;
+      const resultsTop = resultsTitleTop + 34;
+      const footerSpace = 72;
+      const H = Math.max(1350, resultsTop + games.length * (resultRowH + resultGap) + footerSpace);
+
       const canvas = document.createElement('canvas');
-      // Fixed output size keeps memory predictable on mobile and produces a common 4:5 share image.
-      canvas.width = 1080;
-      canvas.height = 1350;
+      canvas.width = W;
+      canvas.height = H;
       const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) throw new Error('Image generation is unavailable');
 
-      const W = canvas.width;
-      const H = canvas.height;
-      const padX = 78;
-      const contentW = W - padX * 2;
       const colors = {
-        bg: '#f6f7f4', card: '#ffffff', ink: '#17221c', muted: '#637068', line: '#dfe5df',
-        accent: '#1e7350', accentSoft: '#e7f2ec', gold: '#9a6b00', silver: '#66717b', bronze: '#925c34'
+        bg: '#f3f6f2', card: '#ffffff', ink: '#16231c', muted: '#68736c', line: '#dce4de',
+        accent: '#19714d', accentSoft: '#e7f3ec', deep: '#153c2d', white: '#ffffff',
+        gold: '#9b6b00', silver: '#65727d', bronze: '#975d35'
       };
       ctx.fillStyle = colors.bg;
       ctx.fillRect(0, 0, W, H);
@@ -1984,10 +1996,10 @@ No completed games in this range.`;
         let low = 0, high = raw.length;
         while (low < high) {
           const mid = Math.ceil((low + high) / 2);
-          if (ctx.measureText(`${raw.slice(0, mid)}…`).width <= maxWidth) low = mid;
+          if (ctx.measureText(`${raw.slice(0, mid)}\u2026`).width <= maxWidth) low = mid;
           else high = mid - 1;
         }
-        return `${raw.slice(0, Math.max(0, low))}…`;
+        return `${raw.slice(0, Math.max(0, low))}\u2026`;
       };
       const drawText = (text, x, y, size, weight = 700, color = colors.ink, maxWidth = contentW) => {
         ctx.font = font(weight, size);
@@ -1996,55 +2008,42 @@ No completed games in this range.`;
         ctx.fillText(fitText(text, maxWidth), x, y);
       };
       const plural = (value, singular, pluralWord = `${singular}s`) => `${value} ${value === 1 ? singular : pluralWord}`;
-
-      // Header card.
-      roundedRect(48, 46, W - 96, 240, 34, colors.card);
-      roundedRect(78, 76, 68, 68, 18, colors.accent);
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(112, 110, 17, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = colors.accent;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(101, 100); ctx.lineTo(123, 120);
-      ctx.moveTo(123, 100); ctx.lineTo(101, 120);
-      ctx.stroke();
-      drawText('PicklePulse Game Recap', 170, 116, 42, 850);
-      drawText(formatShareRange(selection.start, selection.end), 78, 184, 25, 650, colors.muted, W - 156);
-      drawText(`${plural(games.length, 'game')}  •  ${plural(stats.participantCount, 'player')}`, 78, 232, 27, 800, colors.accent, W - 156);
-
-      let y = 330;
-      drawText('TOP PLAYERS', padX, y, 20, 900, colors.muted);
-      y += 28;
-      const medalColors = [colors.gold, colors.silver, colors.bronze];
       const top = stats.topThree;
+      const formats = new Set(games.map((game) => game.format === 'singles' ? 'Singles' : 'Doubles'));
+      const mixedFormats = formats.size > 1;
+      const hasSameWins = (row) => stats.standings.some((other) => other !== row && other.wins === row.wins);
+
+      // Header: session context first, without a separate leader hero.
+      drawText('PICKLEPULSE', padX, 72, 18, 900, colors.accent, 240);
+      drawText('Game recap', padX, 132, 48, 900, colors.ink, contentW);
+      drawText(formatShareRange(selection.start, selection.end), padX, 176, 23, 650, colors.muted, contentW);
+      roundedRect(padX, 194, 352, 42, 21, colors.accentSoft);
+      drawText(`${plural(games.length, 'game')}  \u2022  ${plural(stats.participantCount, 'player')}`, padX + 18, 222, 18, 800, colors.accent, 316);
+
+      // Top 3 stays the main highlight, but is compact enough to leave room for the complete game list.
+      drawText('TOP 3', padX, boardTop - 12, 20, 900, colors.muted, 220);
+      roundedRect(48, boardTop + 10, W - 96, boardH, 30, colors.card);
       if (top.length) {
+        const medalColors = [colors.gold, colors.silver, colors.bronze];
         top.forEach((row, index) => {
-          const rowY = y + index * 104;
-          roundedRect(padX, rowY, contentW, 86, 22, colors.card);
-          roundedRect(padX + 16, rowY + 13, 60, 60, 18, index === 0 ? colors.accentSoft : colors.bg);
-          drawText(String(index + 1), padX + 37, rowY + 55, 28, 900, medalColors[index] || colors.accent, 28);
-          drawText(row.name, padX + 96, rowY + 41, 28, 850, colors.ink, 570);
-          const detail = row.wins === 1 ? '1 win' : `${row.wins} wins`;
-          drawText(detail, padX + 96, rowY + 68, 21, 750, colors.muted, 570);
-          const pct = row.games ? `${Math.round(row.winPct * 100)}%` : '—';
-          drawText(pct, W - padX - 88, rowY + 54, 27, 900, colors.accent, 88);
+          const rowY = boardTop + 28 + index * 70;
+          if (index === 0) roundedRect(62, rowY - 6, W - 124, 62, 18, colors.accentSoft);
+          roundedRect(78, rowY + 4, 42, 42, 14, index === 0 ? colors.accent : colors.bg);
+          drawText(String(index + 1), 92, rowY + 35, 22, 900, index === 0 ? colors.white : medalColors[index], 22);
+          drawText(row.name, 142, rowY + 34, 28, 850, colors.ink, 560);
+          drawText(plural(row.wins, 'win'), W - 230, rowY + 34, 22, 800, colors.accent, 150);
+          if (hasSameWins(row)) drawText('tie-break', W - 132, rowY + 33, 15, 800, colors.muted, 70);
         });
-        y += top.length * 104 + 28;
       } else {
-        roundedRect(padX, y, contentW, 82, 20, colors.card);
-        drawText('No decisive games in this range', padX + 24, y + 51, 25, 700, colors.muted);
-        y += 110;
+        drawText('No Top 3 yet', 78, boardTop + 102, 34, 850, colors.ink, 420);
+        drawText('Tied games stay in the recap but do not count as wins.', 78, boardTop + 146, 21, 650, colors.muted, 760);
       }
 
-      drawText('RESULTS', padX, y, 20, 900, colors.muted);
-      y += 28;
-      const availableHeight = H - y - 98;
-      const lineHeight = 72;
-      const maxRows = Math.max(3, Math.min(8, Math.floor(availableHeight / lineHeight)));
-      const visibleGames = games.slice(-maxRows);
-      visibleGames.forEach((game) => {
+      // Complete results list. Nothing is summarized or hidden.
+      const sectionTitle = !mixedFormats && formats.size === 1 ? `ALL ${Array.from(formats)[0].toUpperCase()} RESULTS` : 'ALL RESULTS';
+      drawText(sectionTitle, padX, resultsTitleTop, 20, 900, colors.muted, 520);
+      let y = resultsTop;
+      games.forEach((game, index) => {
         const timestamp = resultTimestamp(game);
         const a = game.teams && game.teams[0] ? game.teams[0] : { players: [], score: 0 };
         const b = game.teams && game.teams[1] ? game.teams[1] : { players: [], score: 0 };
@@ -2053,33 +2052,31 @@ No completed games in this range.`;
         const teamA = shareTeamLabel(a, 0);
         const teamB = shareTeamLabel(b, 1);
         const format = game.format === 'singles' ? 'Singles' : 'Doubles';
-        let summary;
-        if (scoreA === scoreB) summary = `${teamA} tied ${teamB}, ${scoreA}–${scoreB}`;
-        else {
+
+        roundedRect(48, y, W - 96, resultRowH, 22, colors.card);
+        drawText(String(index + 1).padStart(2, '0'), 70, y + 32, 15, 900, colors.muted, 28);
+        drawText(formatShareTime(timestamp), 108, y + 33, 17, 850, colors.accent, 94);
+
+        if (scoreA === scoreB) {
+          drawText(`${teamA} vs ${teamB}`, 218, y + 32, 22, 850, colors.ink, 545);
+          drawText('Tie game', 218, y + 60, 17, 700, colors.muted, 300);
+        } else {
           const winner = scoreA > scoreB ? teamA : teamB;
           const loser = scoreA > scoreB ? teamB : teamA;
-          const winnerScore = Math.max(scoreA, scoreB);
-          const loserScore = Math.min(scoreA, scoreB);
-          summary = `${winner} beat ${loser}, ${winnerScore}–${loserScore}`;
+          drawText(winner, 218, y + 32, 22, 850, colors.ink, 535);
+          drawText(`over ${loser}`, 218, y + 60, 17, 650, colors.muted, 535);
         }
-        roundedRect(padX, y, contentW, 58, 16, colors.card);
-        drawText(formatShareTime(timestamp), padX + 18, y + 37, 19, 800, colors.accent, 118);
-        drawText(summary, padX + 148, y + 31, 21, 750, colors.ink, contentW - 300);
-        drawText(format, W - padX - 118, y + 31, 17, 800, colors.muted, 100);
-        y += lineHeight;
-      });
-      const hiddenCount = games.length - visibleGames.length;
-      if (hiddenCount > 0) {
-        drawText(`+ ${plural(hiddenCount, 'more completed game')} in this selected range`, padX, y + 3, 19, 750, colors.muted, contentW);
-      }
 
-      ctx.strokeStyle = colors.line;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(padX, H - 66);
-      ctx.lineTo(W - padX, H - 66);
-      ctx.stroke();
-      drawText('Generated locally on this device • PicklePulse', padX, H - 28, 18, 700, colors.muted, contentW);
+        const high = Math.max(scoreA, scoreB);
+        const low = Math.min(scoreA, scoreB);
+        const scoreLabel = scoreA === scoreB ? `${scoreA}-${scoreB}` : `${high}-${low}`;
+        drawText(scoreLabel, W - 205, y + 48, 30, 900, colors.ink, 120);
+        if (mixedFormats) drawText(format.toUpperCase(), W - 96, y + 46, 12, 900, colors.muted, 66);
+        y += resultRowH + resultGap;
+      });
+
+      // Brand-only footer.
+      drawText('PicklePulse', W - 182, H - 28, 18, 850, colors.accent, 120);
 
       const blob = await new Promise((resolve, reject) => {
         if (!canvas.toBlob) {
