@@ -1564,3 +1564,14 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
   .queue-config-card { grid-template-columns: minmax(180px, 280px) auto; justify-content: start; }
   .queue-config-card .queue-session-reset { justify-self: start; }
 }
+
+/* v23: keep Live Display disclosure paired with its connect control. */
+.connect-card > small {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: -6px;
+  line-height: 1.35;
+}
+@media (max-width: 480px) {
+  .connect-card > small { grid-column: 2; margin-top: -4px; }
+}

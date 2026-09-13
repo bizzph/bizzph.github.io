@@ -22,7 +22,7 @@
   }
 
   function normalizeName(value, fallback) {
-    const text = String(value || '').trim();
+    const text = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
     return text || fallback;
   }
 
@@ -79,21 +79,70 @@
   }
 
   function normalizeGame(game) {
-    const next = clone(game);
+    const next = clone(game && typeof game === 'object' ? game : {});
     next.schemaVersion = SCHEMA_VERSION;
-    next.timer = next.timer || {};
-    next.timer.durationMs = timerDurationMs(next);
+    next.format = next.format === 'singles' ? 'singles' : 'doubles';
+    next.target = [11, 15, 21].includes(Number(next.target)) ? Number(next.target) : 11;
+    next.winBy = 2;
+    next.status = next.status === 'complete' ? 'complete' : 'active';
+    next.startingTeam = Number(next.startingTeam) === 1 ? 1 : 0;
+    next.servingTeam = Number(next.servingTeam) === 1 ? 1 : 0;
+    next.serverNumber = next.format === 'doubles' && Number(next.serverNumber) === 2 ? 2 : 1;
+    next.timer = next.timer && typeof next.timer === 'object' ? next.timer : {};
+    next.timer.durationMs = Math.max(60000, Math.min(MAX_TIMER_MS, timerDurationMs(next)));
     next.timer.elapsedMs = Math.max(0, Math.min(next.timer.durationMs, Number(next.timer.elapsedMs) || 0));
     next.timer.running = Boolean(next.timer.running) && next.timer.elapsedMs < next.timer.durationMs;
     next.timer.startedAt = next.timer.running && next.timer.startedAt != null && Number.isFinite(Number(next.timer.startedAt))
       ? Number(next.timer.startedAt)
       : null;
-    next.teams = Array.isArray(next.teams) ? next.teams : [];
-    next.teams.forEach((team) => {
-      team.players = Array.isArray(team.players) ? team.players.map((name) => normalizeName(name, 'Player')) : [];
-      team.playerIds = Array.isArray(team.playerIds) ? team.playerIds.map((id) => String(id || '')) : [];
-      while (team.playerIds.length < team.players.length) team.playerIds.push('');
-      team.playerIds = team.playerIds.slice(0, team.players.length);
+    const rawTeams = Array.isArray(next.teams) ? next.teams.slice(0, 2) : [];
+    while (rawTeams.length < 2) rawTeams.push({});
+    const playerLimit = next.format === 'singles' ? 1 : 2;
+    next.teams = rawTeams.map((rawTeam, index) => {
+      const team = rawTeam && typeof rawTeam === 'object' ? rawTeam : {};
+      const players = (Array.isArray(team.players) ? team.players : [])
+        .slice(0, playerLimit)
+        .map((name) => normalizeName(name, 'Player'));
+      while (players.length < playerLimit) players.push(`Player ${players.length + 1}`);
+      const playerIds = (Array.isArray(team.playerIds) ? team.playerIds : [])
+        .slice(0, playerLimit)
+        .map((id) => String(id || '').slice(0, 120));
+      while (playerIds.length < playerLimit) playerIds.push('');
+      return {
+        ...team,
+        name: normalizeName(team.name, `Team ${index === 0 ? 'A' : 'B'}`),
+        players,
+        playerIds,
+        score: Math.max(0, Math.min(999, Math.trunc(Number(team.score) || 0)))
+      };
+    });
+    next.rallies = (Array.isArray(next.rallies) ? next.rallies : []).slice(-2000).filter((rally) => {
+      return rally && [0, 1].includes(Number(rally.winnerTeam));
+    }).map((rally) => {
+      const before = rally.before && typeof rally.before === 'object' ? rally.before : {};
+      const beforeTimer = before.timer && typeof before.timer === 'object' ? before.timer : {};
+      const beforeDuration = Math.max(60000, Math.min(MAX_TIMER_MS, Number(beforeTimer.durationMs) || next.timer.durationMs));
+      const beforeElapsed = Math.max(0, Math.min(beforeDuration, Number(beforeTimer.elapsedMs) || 0));
+      const beforeStartedAt = Number(beforeTimer.startedAt);
+      return {
+        id: String(rally.id || makeId('rally')).slice(0, 120),
+        at: String(rally.at || '').slice(0, 80),
+        winnerTeam: Number(rally.winnerTeam) === 1 ? 1 : 0,
+        before: {
+          scores: [0, 1].map((index) => Math.max(0, Math.min(999, Math.trunc(Number(before.scores && before.scores[index]) || 0)))),
+          servingTeam: Number(before.servingTeam) === 1 ? 1 : 0,
+          serverNumber: next.format === 'doubles' && Number(before.serverNumber) === 2 ? 2 : 1,
+          servingPlayer: Number(before.servingPlayer) === 1 ? 1 : 0,
+          status: before.status === 'complete' ? 'complete' : 'active',
+          completedAt: typeof before.completedAt === 'string' ? before.completedAt.slice(0, 80) : null,
+          timer: {
+            durationMs: beforeDuration,
+            elapsedMs: beforeElapsed,
+            running: Boolean(beforeTimer.running) && beforeElapsed < beforeDuration && Number.isFinite(beforeStartedAt),
+            startedAt: Number.isFinite(beforeStartedAt) ? beforeStartedAt : null
+          }
+        }
+      };
     });
     if (next.format === 'doubles') next.servingPlayer = servingPlayerIndex(next);
     else next.servingPlayer = 0;
@@ -1167,6 +1216,10 @@
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
+  const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
+  const MAX_IMPORT_PLAYERS = 500;
+  const MAX_IMPORT_GAMES = 5000;
+  const MAX_ROSTER_IMPORT_CHARS = 100000;
   const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
   const DEFAULT_SETTINGS = Object.freeze({
     voiceEnabled: false,
@@ -1228,7 +1281,8 @@
   }
 
   function liveDisplayUrl(room, href) {
-    const source = href || (globalThis.location && location.href) || 'https://example.test/';
+    const source = href || (globalThis.location && location.href);
+    if (!source) throw new Error('App URL unavailable.');
     const url = new URL(source);
     url.search = '';
     url.hash = '';
@@ -1294,7 +1348,8 @@
   }
 
   function rosterShareUrl(players, href) {
-    const source = href || (globalThis.location && location.href) || 'https://example.test/';
+    const source = href || (globalThis.location && location.href);
+    if (!source) throw new Error('App URL unavailable.');
     const url = new URL(source);
     url.search = '';
     url.hash = '';
@@ -1468,6 +1523,49 @@
     return declarations.join(';');
   }
 
+  function sanitizeRemoteGame(value) {
+    if (!value || typeof value !== 'object') return null;
+    let game;
+    try { game = Engine.normalizeGame(value); } catch (_error) { return null; }
+    const format = game.format === 'singles' ? 'singles' : 'doubles';
+    const playerLimit = format === 'singles' ? 1 : 2;
+    const teams = [0, 1].map((index) => {
+      const source = game.teams && game.teams[index] && typeof game.teams[index] === 'object' ? game.teams[index] : {};
+      const players = (Array.isArray(source.players) ? source.players : [])
+        .slice(0, playerLimit)
+        .map((name) => Players.cleanName(name))
+        .filter(Boolean);
+      while (players.length < playerLimit) players.push(`Player ${players.length + 1}`);
+      return {
+        name: Players.cleanName(source.name) || `Team ${index === 0 ? 'A' : 'B'}`,
+        players,
+        playerIds: [],
+        score: Math.max(0, Math.min(999, Math.trunc(Number(source.score) || 0)))
+      };
+    });
+    const durationMs = Math.max(60000, Math.min(180 * 60 * 1000, Number(game.timer && game.timer.durationMs) || 15 * 60 * 1000));
+    const elapsedMs = Math.max(0, Math.min(durationMs, Number(game.timer && game.timer.elapsedMs) || 0));
+    const startedAtRaw = Number(game.timer && game.timer.startedAt);
+    const startedAt = Number.isFinite(startedAtRaw) ? startedAtRaw : null;
+    const running = Boolean(game.timer && game.timer.running) && elapsedMs < durationMs && startedAt !== null;
+    return {
+      format,
+      target: [11, 15, 21].includes(Number(game.target)) ? Number(game.target) : 11,
+      winBy: 2,
+      status: game.status === 'complete' ? 'complete' : 'active',
+      teams,
+      startingTeam: Number(game.startingTeam) === 1 ? 1 : 0,
+      servingTeam: Number(game.servingTeam) === 1 ? 1 : 0,
+      serverNumber: format === 'doubles' && Number(game.serverNumber) === 2 ? 2 : 1,
+      servingPlayer: format === 'doubles' && Number(game.servingPlayer) === 1 ? 1 : 0,
+      timer: { durationMs, elapsedMs, running, startedAt },
+      rallies: [],
+      nextQueue: (Array.isArray(game.nextQueue) ? game.nextQueue : []).slice(0, 4).map((name) => Players.cleanName(name)).filter(Boolean),
+      appearance: normalizeAppearance(game.appearance),
+      displaySwapped: Boolean(game.displaySwapped)
+    };
+  }
+
   function presetIsActive(preset, appearance) {
     const value = normalizeAppearance(appearance);
     return value.teamA === preset.teamA.toLowerCase()
@@ -1574,6 +1672,7 @@
       this.guardArmed = false;
       this.live = { phase: 'off', room: '', viewers: 0, detail: '' };
       this.liveController = null;
+      this.liveNetworkApproved = false;
       this.remoteGame = null;
       this.remoteStatus = { phase: 'connecting', room: this.watchRoom, detail: '' };
       this.remoteUpdatedAt = null;
@@ -1710,11 +1809,13 @@
       try {
         const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
         if (!parsed || typeof parsed !== 'object') return fallback;
-        const players = Players.normalizePlayers(parsed.players);
+        const storedPlayers = Array.isArray(parsed.players) ? parsed.players.slice(0, MAX_IMPORT_PLAYERS) : [];
+        const storedGames = Array.isArray(parsed.games) ? parsed.games.slice(0, MAX_IMPORT_GAMES) : [];
+        const players = Players.normalizePlayers(storedPlayers);
         return {
           schemaVersion: Players.ROOT_SCHEMA_VERSION,
           currentGame: parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null,
-          games: Array.isArray(parsed.games) ? parsed.games.map((game) => Engine.normalizeGame(game)) : [],
+          games: storedGames.map((game) => Engine.normalizeGame(game)),
           players,
           queue: Players.normalizeQueue(parsed.queue, players),
           settings: normalizeSettings(parsed.settings),
@@ -1756,6 +1857,7 @@
     }
 
     importRosterNames(names, source = 'list') {
+      if (Array.isArray(names) && names.length > MAX_IMPORT_PLAYERS) throw new Error(`Roster import is limited to ${MAX_IMPORT_PLAYERS} players.`);
       const normalized = [];
       const incoming = new Set();
       (Array.isArray(names) ? names : []).forEach((rawName) => {
@@ -1784,7 +1886,9 @@
     }
 
     importRosterCode(value, source = 'code') {
-      const code = rosterCodeFromInput(value);
+      const raw = String(value || '');
+      if (raw.length > MAX_ROSTER_IMPORT_CHARS) throw new Error('Roster code is too large.');
+      const code = rosterCodeFromInput(raw);
       if (!code) throw new Error('Paste a roster code or roster link');
       const payload = JSON.parse(base64UrlDecode(code));
       const names = Array.isArray(payload && payload.names) ? payload.names : [];
@@ -1793,7 +1897,9 @@
     }
 
     importRosterList(value) {
-      const names = Players.parsePastedPlayerList(value);
+      const raw = String(value || '');
+      if (raw.length > MAX_ROSTER_IMPORT_CHARS) throw new Error('Pasted roster is too large.');
+      const names = Players.parsePastedPlayerList(raw);
       if (!names.length) throw new Error('Paste one or more player names');
       return this.importRosterNames(names, 'pasted list');
     }
@@ -2178,11 +2284,30 @@ No completed games in this range.`;
 
     liveSnapshot() {
       if (!this.state.currentGame) return null;
+      const game = Engine.normalizeGame(this.state.currentGame);
       return {
-        ...this.state.currentGame,
+        format: game.format,
+        target: game.target,
+        winBy: 2,
+        status: game.status,
+        teams: game.teams.map((team) => ({
+          name: Players.cleanName(team.name),
+          players: (team.players || []).map((name) => Players.cleanName(name)).filter(Boolean),
+          score: Math.max(0, Math.min(999, Math.trunc(Number(team.score) || 0)))
+        })),
+        startingTeam: Number(game.startingTeam) === 1 ? 1 : 0,
+        servingTeam: Number(game.servingTeam) === 1 ? 1 : 0,
+        serverNumber: game.format === 'doubles' && Number(game.serverNumber) === 2 ? 2 : 1,
+        servingPlayer: game.format === 'doubles' && Number(game.servingPlayer) === 1 ? 1 : 0,
+        timer: {
+          durationMs: game.timer.durationMs,
+          elapsedMs: game.timer.elapsedMs,
+          running: Boolean(game.timer.running),
+          startedAt: game.timer.startedAt
+        },
         appearance: normalizeAppearance(this.state.appearance),
         displaySwapped: Boolean(this.state.settings.scoreboardSwapped),
-        nextQueue: this.nextQueuePlayers()
+        nextQueue: this.nextQueuePlayers().slice(0, 4).map((name) => Players.cleanName(name)).filter(Boolean)
       };
     }
 
@@ -2500,7 +2625,7 @@ No completed games in this range.`;
     }
 
     registerServiceWorker() {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).catch(() => {});
     }
 
     updateClockDisplay() {
@@ -2603,8 +2728,10 @@ No completed games in this range.`;
           room: this.watchRoom,
           onState: (game, sentAt) => {
             const receivedAt = Date.now();
+            const safeGame = sanitizeRemoteGame(LiveApi.adaptRemoteGame(game, sentAt, receivedAt));
+            if (!safeGame) return;
             const previousRemote = this.remoteGame;
-            this.remoteGame = LiveApi.adaptRemoteGame(game, sentAt, receivedAt);
+            this.remoteGame = safeGame;
             this.remoteUpdatedAt = receivedAt;
             this.announceGame(this.remoteGame, false, true, previousRemote);
             this.render();
@@ -2631,6 +2758,11 @@ No completed games in this range.`;
         return false;
       }
       if (this.liveController) return true;
+      if (!silent && !this.liveNetworkApproved) {
+        const approved = confirm('Live Display is the only PicklePulse feature that connects outside this app. It uses PeerJS Cloud for signaling and WebRTC to send the current scoreboard to viewers who know the room code. Start Live Display?');
+        if (!approved) return false;
+        this.liveNetworkApproved = true;
+      }
 
       let LiveApi;
       try {
@@ -3617,13 +3749,27 @@ No completed games in this range.`;
 
     async importJson(file) {
       try {
-        const payload = JSON.parse(await file.text());
+        if (!file) throw new Error('Choose a backup file.');
+        if (Number(file.size) > MAX_BACKUP_BYTES) throw new Error('Backup is too large (5 MB maximum).');
+        const text = await file.text();
+        if (text.length > MAX_BACKUP_BYTES) throw new Error('Backup is too large (5 MB maximum).');
+        const payload = JSON.parse(text);
         if (!payload || typeof payload !== 'object') throw new Error('The JSON file is not an object.');
 
-        const currentByName = new Map(this.state.players.map((player) => [Players.nameKey(player.name), player]));
-        const usedIds = new Set(this.state.players.map((player) => player.id));
+        const rawPlayers = Array.isArray(payload.players) ? payload.players : [];
+        if (rawPlayers.length > MAX_IMPORT_PLAYERS) throw new Error(`Backup has too many players (${MAX_IMPORT_PLAYERS} maximum).`);
+        const rawGames = Array.isArray(payload.games) ? payload.games : Array.isArray(payload) ? payload : [];
+        if (rawGames.length > MAX_IMPORT_GAMES) throw new Error(`Backup has too many games (${MAX_IMPORT_GAMES} maximum).`);
+
+        // Validate everything before mutating live app state so a bad file cannot leave a partial import behind.
+        const importedPlayers = Players.normalizePlayers(rawPlayers);
+        const importedGames = rawGames.length ? Engine.validateImport({ games: rawGames }) : [];
+        const importedCurrent = payload.currentGame ? Engine.validateImport({ games: [payload.currentGame] })[0] : null;
+
+        const nextPlayers = [...this.state.players];
+        const currentByName = new Map(nextPlayers.map((player) => [Players.nameKey(player.name), player]));
+        const usedIds = new Set(nextPlayers.map((player) => player.id));
         const idMap = new Map();
-        const importedPlayers = Players.normalizePlayers(payload.players);
         importedPlayers.forEach((player) => {
           const existing = currentByName.get(Players.nameKey(player.name));
           if (existing) {
@@ -3633,57 +3779,56 @@ No completed games in this range.`;
           const next = { ...player, id: usedIds.has(player.id) ? Players.makeId() : player.id };
           usedIds.add(next.id);
           idMap.set(player.id, next.id);
-          this.state.players.push(next);
+          nextPlayers.push(next);
           currentByName.set(Players.nameKey(next.name), next);
         });
-        this.state.players = Players.normalizePlayers(this.state.players);
+        const normalizedPlayers = Players.normalizePlayers(nextPlayers);
+        const normalizedByName = new Map(normalizedPlayers.map((player) => [Players.nameKey(player.name), player]));
 
-        const rawGames = Array.isArray(payload.games) ? payload.games : Array.isArray(payload) ? payload : [];
-        const importedGames = rawGames.length ? Engine.validateImport({ games: rawGames }) : [];
-        importedGames.forEach((game) => {
-          game.teams.forEach((team) => {
+        const remapGame = (game) => {
+          const next = Engine.normalizeGame(game);
+          next.teams.forEach((team) => {
             team.playerIds = (team.playerIds || []).map((id, index) => {
               if (idMap.has(id)) return idMap.get(id);
-              const name = team.players && team.players[index];
-              const player = currentByName.get(Players.nameKey(name));
-              return player ? player.id : id;
+              const player = normalizedByName.get(Players.nameKey(team.players && team.players[index]));
+              return player ? player.id : String(id || '').slice(0, 120);
             });
           });
-        });
-        const existingSnapshots = new Set(this.state.games.map((game) => String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`)));
-        importedGames.reverse().forEach((game) => {
+          return next;
+        };
+
+        const remappedGames = importedGames.map(remapGame);
+        const nextGames = [...this.state.games];
+        const existingSnapshots = new Set(nextGames.map((game) => String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`)));
+        remappedGames.reverse().forEach((game) => {
           const key = String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`);
-          if (!existingSnapshots.has(key)) this.state.games.unshift(game);
+          if (!existingSnapshots.has(key)) {
+            nextGames.unshift(game);
+            existingSnapshots.add(key);
+          }
         });
 
-        if (payload.queue) {
-          const importedQueue = {
-            ...payload.queue,
-            waiting: (payload.queue.waiting || []).map((id) => idMap.get(String(id)) || String(id)),
-            pending: [],
-            onCourt: []
-          };
-          const normalized = Players.normalizeQueue(importedQueue, this.state.players);
-          normalized.waiting.forEach((id) => {
-            this.state.queue = Players.addToQueue(this.state.queue, id, this.state.players);
+        let nextQueue = Players.normalizeQueue(this.state.queue, normalizedPlayers);
+        if (payload.queue && typeof payload.queue === 'object') {
+          const waiting = Array.isArray(payload.queue.waiting) ? payload.queue.waiting.slice(0, MAX_IMPORT_PLAYERS) : [];
+          waiting.forEach((rawId) => {
+            const id = idMap.get(String(rawId)) || String(rawId || '').slice(0, 120);
+            nextQueue = Players.addToQueue(nextQueue, id, normalizedPlayers);
           });
         }
-        if (!this.state.currentGame && payload.currentGame) {
-          const importedCurrent = Engine.normalizeGame(payload.currentGame);
-          importedCurrent.teams.forEach((team) => {
-            team.playerIds = (team.playerIds || []).map((id, index) => {
-              if (idMap.has(id)) return idMap.get(id);
-              const player = currentByName.get(Players.nameKey(team.players && team.players[index]));
-              return player ? player.id : id;
-            });
-          });
-          this.state.currentGame = importedCurrent;
-        }
+
+        let nextCurrentGame = this.state.currentGame;
+        if (!nextCurrentGame && importedCurrent) nextCurrentGame = remapGame(importedCurrent);
+
+        this.state.players = normalizedPlayers;
+        this.state.games = nextGames;
+        this.state.queue = nextQueue;
+        this.state.currentGame = nextCurrentGame;
         if (payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
         if (payload.settings) this.state.settings = normalizeSettings(payload.settings);
         this.persist();
         this.view = 'history';
-        this.showToast(`${importedGames.length} games · ${importedPlayers.length} players imported`);
+        this.showToast(`${remappedGames.length} games · ${importedPlayers.length} players imported`);
       } catch (error) {
         this.showToast(error.message || 'Import failed');
       }
@@ -3912,6 +4057,7 @@ No completed games in this range.`;
           <form id="join-room-form" class="connect-card" aria-label="Watch a live game">
             <span class="connect-icon" title="Watch live">${icon('radio')}</span>
             <label><span class="sr-only">Room code</span><input name="room" minlength="4" maxlength="8" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off" required><button class="icon-only" type="submit" aria-label="Connect to live game" title="Connect">${icon('play')}</button></label>
+            <small>Online only · PeerJS/WebRTC</small>
           </form>
         </section>
       `;
@@ -4597,7 +4743,7 @@ No completed games in this range.`;
               <ol>${nextQueue.map((name, index) => `<li><span>${index + 1}</span><b>${escapeHtml(name)}</b></li>`).join('')}</ol>
             </aside>
           ` : ''}
-          <footer class="remote-footer">${game.format} · first to ${game.target} · win by 2${this.remoteUpdatedAt ? ` · synced ${escapeHtml(formatDate(this.remoteUpdatedAt))}` : ''}</footer>
+          <footer class="remote-footer">${escapeHtml(game.format)} · first to ${Number(game.target) || 11} · win by 2${this.remoteUpdatedAt ? ` · synced ${escapeHtml(formatDate(this.remoteUpdatedAt))}` : ''}</footer>
         </main>
       `;
     }
@@ -4609,7 +4755,7 @@ No completed games in this range.`;
         <section class="remote-team team-${index === 0 ? 'a' : 'b'} ${serving ? 'serving' : ''}">
           <span class="remote-letter">${index === 0 ? 'A' : 'B'}${serving ? '<i></i>' : ''}</span>
           <h2>${escapeHtml(teamTitle(team, index))}</h2>
-          <strong>${team.score}</strong>
+          <strong>${Math.max(0, Math.min(999, Math.trunc(Number(team.score) || 0)))}</strong>
         </section>
       `;
     }

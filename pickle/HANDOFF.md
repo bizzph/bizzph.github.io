@@ -1,3 +1,47 @@
+# PicklePulse v23 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v23 changes - security, privacy, and resilience audit
+
+- Added a restrictive document Content Security Policy and `no-referrer` policy. Normal scripts/assets are same-origin; the only allowed external script URL is the exact pinned PeerJS 1.5.5 file used on demand by Live Display.
+- Removed the secondary/unpkg PeerJS fallback. Live Display now loads exactly PeerJS 1.5.5 from one jsDelivr URL with Subresource Integrity verification and `crossorigin=anonymous`.
+- Made Live Display's network endpoints explicit: PeerJS Cloud at `0.peerjs.com:443` plus `stun.l.google.com:19302` for WebRTC STUN.
+- Added explicit controller-side confirmation before the first Live Display network connection in each page session. Controller mode still never auto-connects on page load.
+- New Live Display rooms now use 8-character cryptographically generated codes. Existing 4-8 character room codes remain compatible.
+- Controller Live Display accepts only the expected `picklepulse-display` data-channel label and still ignores all incoming payload data.
+- Added strict sanitation/normalization of remote Live Display game state before rendering. Remote format, scores, names, queue names, appearance, timer values, and other fields are bounded/coerced; direct remote strings are no longer rendered unsafely. Viewer payloads above 100,000 serialized characters are ignored.
+- Hardened game normalization: bounded names, scores, teams, player IDs, timer values, and rally history. Persisted-state restore also caps players/games before normalization.
+- Added import abuse limits: 5 MB JSON backup maximum, 500 imported players, 5,000 imported games, and 100,000-character roster code/list maximum.
+- Backup import is now transactional: validation/remapping completes before app state is mutated, preventing partial imports after a bad file.
+- Live Display now broadcasts a minimal scoreboard snapshot only; internal player IDs and rally/undo history are no longer sent to viewers.
+- Service worker now caches only the known application shell instead of arbitrary same-origin GET requests. Navigation falls back to cached `index.html` only when the network is unavailable.
+- Service worker registration uses explicit `./` scope and `updateViaCache: 'none'`; cache version bumped to `picklepulse-v23-0-0`.
+- Added `SECURITY.md` documenting data flow, the one intentional networked feature, limitations, and recommended deployment headers.
+- Added `CHECKSUMS.sha256` for turnover integrity checking; it is intentionally documented as an integrity aid, not a cryptographic publisher signature.
+- Queue scheduling/fairness behavior and New Game selection behavior were not intentionally changed.
+
+## v23 audit findings
+
+- No analytics SDK, advertising SDK, telemetry endpoint, `sendBeacon`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, or `document.write` exists in PicklePulse first-party code.
+- Normal queue/roster/scoring/history/QR/result-image/audio features remain local-first.
+- Live Display remains intentionally internet-dependent. It is now disclosed before controller connection and its third-party script is version-pinned and integrity-checked.
+- `localStorage` remains unencrypted browser storage; roster/history data should not be treated as secret data.
+- Roster codes/QR payloads and backup JSON are share formats, not encryption; anyone who receives them can read the included roster/history data.
+
+## v23 validation
+
+- JavaScript syntax checks: PASS.
+- External-reference inventory: only intentional PeerJS/Google STUN Live Display endpoints remain in production code, plus non-network XML/license namespace URLs: PASS.
+- Risky-code scan (`eval`, `new Function`, `document.write`, telemetry/network APIs in first-party code): PASS.
+- Service-worker arbitrary runtime caching removed: PASS.
+- Remote-display markup sanitization tests: PASS.
+- Controller startup-path audit confirms Live Display/PeerJS is not loaded or connected until the explicit Live action is used: PASS.
+- Queue/player scheduling module is byte-identical to v22: PASS.
+- Production ZIP excludes test/audit helper files: PASS.
+
+---
+
 # PicklePulse v22 Turnover / Handoff
 
 Finalized: 2026-09-13

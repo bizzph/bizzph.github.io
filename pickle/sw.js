@@ -1,4 +1,4 @@
-const CACHE_NAME = 'picklepulse-v22-0-0';
+const CACHE_NAME = 'picklepulse-v23-0-0';
 const ASSETS = [
   './index.html',
   './styles.css',
@@ -21,14 +21,23 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+const SHELL_PATHS = new Set(ASSETS.map((asset) => new URL(asset, self.location.href).pathname));
+const INDEX_URL = new URL('./index.html', self.location.href).href;
+
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  if (new URL(event.request.url).origin !== self.location.origin) return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(INDEX_URL))
+    );
+    return;
+  }
+
+  if (!SHELL_PATHS.has(url.pathname)) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-      return response;
-    }).catch(() => caches.match('./index.html')))
+    caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
 });

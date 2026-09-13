@@ -6,10 +6,22 @@
   'use strict';
 
   const PEERJS_URLS = [
-    'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js',
-    'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js'
+    'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js'
   ];
+  const PEERJS_INTEGRITY = 'sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==';
+  const PEER_OPTIONS = Object.freeze({
+    debug: 0,
+    host: '0.peerjs.com',
+    port: 443,
+    path: '/',
+    secure: true,
+    config: {
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      sdpSemantics: 'unified-plan'
+    }
+  });
   const ROOM_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const MAX_LIVE_PAYLOAD_CHARS = 100000;
   let peerLoadPromise = null;
 
   function normalizeRoom(value) {
@@ -19,15 +31,15 @@
       .slice(0, 8);
   }
 
-  function generateRoomCode(length = 6, randomSource) {
-    const size = Math.max(4, Math.min(8, Number(length) || 6));
+  function generateRoomCode(length = 8, randomSource) {
+    const size = Math.max(4, Math.min(8, Number(length) || 8));
     const getRandom = randomSource || (() => {
-      if (root.crypto && root.crypto.getRandomValues) {
-        const value = new Uint32Array(1);
-        root.crypto.getRandomValues(value);
-        return value[0] / 4294967296;
+      if (!root.crypto || !root.crypto.getRandomValues) {
+        throw new Error('Secure random generator unavailable.');
       }
-      return Math.random();
+      const value = new Uint32Array(1);
+      root.crypto.getRandomValues(value);
+      return value[0] / 4294967296;
     });
     let code = '';
     for (let i = 0; i < size; i += 1) {
@@ -43,7 +55,8 @@
   }
 
   function displayUrl(room, href) {
-    const source = href || (root.location && root.location.href) || 'https://example.test/';
+    const source = href || (root.location && root.location.href);
+    if (!source) throw new Error('App URL unavailable.');
     const url = new URL(source);
     url.search = '';
     url.hash = '';
@@ -71,7 +84,9 @@
       const script = root.document.createElement('script');
       script.src = url;
       script.async = true;
+      script.integrity = PEERJS_INTEGRITY;
       script.crossOrigin = 'anonymous';
+      script.referrerPolicy = 'no-referrer';
       script.onload = () => resolve(root.Peer);
       script.onerror = () => reject(new Error(`Unable to load ${url}`));
       root.document.head.appendChild(script);
@@ -120,7 +135,7 @@
       const PeerCtor = this.PeerCtor || await loadPeerJS();
       return new Promise((resolve, reject) => {
         let settled = false;
-        this.peer = new PeerCtor(controllerPeerId(this.room), { debug: 0 });
+        this.peer = new PeerCtor(controllerPeerId(this.room), PEER_OPTIONS);
 
         this.peer.on('open', () => {
           settled = true;
@@ -166,6 +181,10 @@
     }
 
     accept(connection) {
+      if (!connection || connection.label !== 'picklepulse-display') {
+        try { if (connection) connection.close(); } catch (_error) {}
+        return;
+      }
       const remove = () => {
         this.connections.delete(connection);
         if (!this.stopped) this.status('live');
@@ -233,7 +252,7 @@
       this.stopped = false;
       this.status('connecting');
       const PeerCtor = this.PeerCtor || await loadPeerJS();
-      this.peer = new PeerCtor(undefined, { debug: 0 });
+      this.peer = new PeerCtor(undefined, PEER_OPTIONS);
       this.peer.on('open', () => this.connect());
       this.peer.on('disconnected', () => {
         if (this.stopped) return;
@@ -266,6 +285,11 @@
       });
       connection.on('data', (payload) => {
         if (!payload || payload.type !== 'state' || !payload.game) return;
+        try {
+          if (JSON.stringify(payload).length > MAX_LIVE_PAYLOAD_CHARS) return;
+        } catch (_error) {
+          return;
+        }
         this.onState(payload.game, payload.sentAt || Date.now());
         this.status('live');
       });
