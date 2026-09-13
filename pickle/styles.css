@@ -685,7 +685,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 
 
 .queue-roster-history { display: grid; gap: 12px; }
-.subpage-tabs { position: sticky; top: 58px; z-index: 20; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); }
+.subpage-tabs { position: sticky; top: 58px; z-index: 20; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); }
 .subpage-tabs button { min-height: 42px; border: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: transparent; font-weight: 850; cursor: pointer; }
 .subpage-tabs button.active { color: var(--accent); background: var(--accent-soft); }
 .subpage-tabs .icon { width: 17px; height: 17px; }
@@ -1574,4 +1574,15 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
 }
 @media (max-width: 480px) {
   .connect-card > small { grid-column: 2; margin-top: -4px; }
+}
+
+
+/* v25: separate Standings and Games tabs */
+@media (max-width: 430px) {
+  .subpage-tabs { gap: 4px; padding: 5px; }
+  .subpage-tabs button { min-width: 0; gap: 4px; padding-inline: 4px; font-size: .7rem; }
+  .subpage-tabs .icon { width: 14px; height: 14px; flex: 0 0 auto; }
+}
+@media (max-width: 350px) {
+  .subpage-tabs button { font-size: .66rem; }
 }

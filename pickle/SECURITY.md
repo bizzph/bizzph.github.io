@@ -4,7 +4,7 @@ Finalized: 2026-09-13
 
 ## Default data flow
 
-PicklePulse is local-first. Queue, roster, scoring, History, backups, roster QR/code generation, result text/image generation, fullscreen, synthesized court music, and voice settings run in the browser and do not upload app data to an analytics or telemetry service.
+PicklePulse is local-first. Queue, roster, scoring, Standings/Games, backups, roster QR/code generation, result text/image generation, fullscreen, synthesized court music, and voice settings run in the browser and do not upload app data to an analytics or telemetry service.
 
 Persistent app state is stored in the browser's `localStorage`. It is not encrypted and should be treated like other data stored by the browser profile/device. Do not put secrets, passwords, medical information, or other sensitive data in player names or backups.
 
@@ -59,3 +59,7 @@ Recommended baseline:
 ## Audit scope
 
 The v23 audit reviewed first-party HTML, CSS, JavaScript, the service worker, manifest, QR bundle integration, external URLs, dynamic script loading, local persistence, import/share paths, and Live Display data flow. This is a practical code audit, not a formal penetration test or a guarantee that no browser/library vulnerability can ever exist.
+
+## v24 scoring-history note
+
+v24 changes the local scoring/history lifecycle only. It removes the manual score snapshot action and enforces one completed History record per stable game ID, including reversible queue state when a just-completed queued game is reopened. No new network endpoint, external script, telemetry path, permission, or remote-data flow was added in v24. The v23 security audit and Live Display limitations above remain applicable.

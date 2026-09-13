@@ -1,3 +1,66 @@
+# PicklePulse v25 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v25 changes - separate Standings and Games navigation
+
+- Removed the user-facing **History** tab.
+- The utility sub-navigation is now **Queue | Roster | Standings | Games**.
+- **Standings** is its own page and contains only the calculated player rankings plus backup import/export controls.
+- **Games** is its own page and contains the canonical completed-game list, Share Results, per-game delete, and Clear Games.
+- Backup imports now land on **Games** so imported completed results are visible immediately.
+- Updated the main utility navigation label and active-state routing for the two new views.
+- Four-tab mobile styling was tightened for narrow portrait screens while preserving the existing short-landscape layout.
+- Service-worker cache bumped to `picklepulse-v25-0-0`.
+- Standings calculations, canonical game identity, queue/fairness logic, scoring, roster, sharing, Live Display, and security behavior were not changed.
+
+## v25 validation
+
+- JavaScript syntax check: PASS.
+- No `data-view="history"` route or user-facing History tab remains: PASS.
+- Queue / Roster / Standings / Games routes are all recognized by the shared utility view: PASS.
+- Backup import destination changed from History to Games: PASS.
+- Games retains Share Results, Clear Games, and per-game delete controls: PASS.
+- Standings remains driven by the same canonical completed-game data: PASS.
+- Service-worker cache version bumped: PASS.
+
+---
+
+# PicklePulse v24 Turnover / Handoff
+
+Finalized: 2026-09-13
+
+## v24 changes - one authoritative completed-game record
+
+- Removed the manual **Save** button from the scoring toolbar. Completed results now enter History only through game completion / **End Game**.
+- Changed completion storage from append-only snapshots to an idempotent upsert keyed by the stable `game.id`: one logical match can have at most one completed History record.
+- Fixed **End -> Undo -> End**: reopening the completed match removes its final History record; ending it again replaces/recreates that same logical record instead of adding a duplicate.
+- Added a reversible queue-completion checkpoint. For a queue-linked scored match, reopening restores the exact pre-completion queue state, including waiting order and fairness statistics, so completion credit is not double-counted. Re-ending applies that completion exactly once.
+- Existing local data is migrated on load: duplicate snapshots with the same `game.id` collapse to the newest completed result, unfinished legacy snapshots are removed from History, and a currently active/reopened game invalidates any stale completed record with the same ID.
+- Persistence now enforces the same invariant on every write: History contains completed canonical game records only, with at most one record per `game.id`.
+- Starting a different game while another game is still active now clearly confirms that the unfinished game will be discarded and **not** added to History. A queue-linked unfinished game is cancelled/returned without completion credit rather than being treated as finished.
+- Backup import now merges completed results by logical `game.id` instead of snapshot ID, preventing imports from reintroducing duplicated finals.
+- Updated user-facing wording from “saved as final” to “recorded as final” so **End Game** is the single clear completion action.
+- Removed the unused Save icon from the document sprite.
+- Root state schema bumped to 7; service-worker cache bumped to `picklepulse-v24-0-0`.
+- Queue scheduling/fairness selection code, New Game player picker, roster, Live Display, scoring rules, result sharing, and image sharing were not otherwise changed.
+
+## v24 validation
+
+- JavaScript syntax checks for app core and service worker: PASS.
+- End -> Undo -> End non-queue lifecycle: one canonical History record after re-ending: PASS.
+- Reopened match is removed from final History while active: PASS.
+- Legacy duplicate completed snapshots collapse to the newest result on load: PASS.
+- Legacy unfinished snapshots are excluded from History: PASS.
+- Standings de-duplication still counts one logical `game.id` once: PASS.
+- Queue-linked End applies one completion credit and returns players: PASS.
+- Queue-linked Undo restores the exact serialized pre-completion queue state: PASS.
+- Queue-linked re-End still leaves one History record and exactly one completion credit: PASS.
+- Scoring toolbar contains no `Save game` / `data-action="save"`: PASS.
+- Queue scheduling/fairness implementation region is byte-identical to v23: PASS.
+
+---
+
 # PicklePulse v23 Turnover / Handoff
 
 Finalized: 2026-09-13

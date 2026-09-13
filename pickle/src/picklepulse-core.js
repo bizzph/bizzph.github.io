@@ -506,7 +506,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 6;
+  const ROOT_SCHEMA_VERSION = 7;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1801,6 +1801,7 @@
         games: [],
         players: fallbackPlayers,
         queue: Players.normalizeQueue({}, fallbackPlayers),
+        queueCompletionCheckpoint: null,
         settings: normalizeSettings(DEFAULT_SETTINGS),
         liveRoom: '',
         lastSavedAt: null,
@@ -1812,12 +1813,29 @@
         const storedPlayers = Array.isArray(parsed.players) ? parsed.players.slice(0, MAX_IMPORT_PLAYERS) : [];
         const storedGames = Array.isArray(parsed.games) ? parsed.games.slice(0, MAX_IMPORT_GAMES) : [];
         const players = Players.normalizePlayers(storedPlayers);
+        const currentGame = parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null;
+        let games = Players.dedupeGames(storedGames.map((game) => Engine.normalizeGame(game)))
+          .filter((game) => game.status === 'complete');
+        if (currentGame && currentGame.status === 'active') {
+          games = games.filter((game) => String(game.id || '') !== String(currentGame.id || ''));
+        }
+        games.sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
+        let queueCompletionCheckpoint = null;
+        const rawCheckpoint = parsed.queueCompletionCheckpoint;
+        if (currentGame && currentGame.status === 'complete' && rawCheckpoint && typeof rawCheckpoint === 'object'
+          && String(rawCheckpoint.gameId || '') === String(currentGame.id || '') && rawCheckpoint.queue) {
+          queueCompletionCheckpoint = {
+            gameId: String(currentGame.id || ''),
+            queue: Players.normalizeQueue(rawCheckpoint.queue, players)
+          };
+        }
         return {
           schemaVersion: Players.ROOT_SCHEMA_VERSION,
-          currentGame: parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null,
-          games: storedGames.map((game) => Engine.normalizeGame(game)),
+          currentGame,
+          games,
           players,
           queue: Players.normalizeQueue(parsed.queue, players),
+          queueCompletionCheckpoint,
           settings: normalizeSettings(parsed.settings),
           liveRoom: normalizeRoomCode(parsed.liveRoom),
           lastSavedAt: parsed.lastSavedAt || null,
@@ -1833,6 +1851,13 @@
         this.state.schemaVersion = Players.ROOT_SCHEMA_VERSION;
         this.state.players = Players.normalizePlayers(this.state.players);
         this.state.queue = Players.normalizeQueue(this.state.queue, this.state.players);
+        this.state.games = Players.dedupeGames(Array.isArray(this.state.games) ? this.state.games : [])
+          .filter((game) => game && game.status === 'complete');
+        if (this.state.currentGame && this.state.currentGame.status === 'active') {
+          const activeId = String(this.state.currentGame.id || '');
+          this.state.games = this.state.games.filter((game) => String(game.id || '') !== activeId);
+        }
+        this.state.games.sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
         this.state.settings = normalizeSettings(this.state.settings);
         this.state.lastSavedAt = new Date().toISOString();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
@@ -2648,14 +2673,52 @@ No completed games in this range.`;
       }, 2600);
     }
 
+    removeHistoryGame(gameId) {
+      const id = String(gameId || '');
+      if (!id) return;
+      this.state.games = (Array.isArray(this.state.games) ? this.state.games : [])
+        .filter((saved) => String(saved && saved.id || '') !== id);
+    }
+
+    upsertCompletedGame(game, now = Date.now()) {
+      const normalized = Engine.normalizeGame(game);
+      if (normalized.status !== 'complete') return;
+      const finalRecord = Engine.snapshotForSave(normalized, now);
+      this.removeHistoryGame(finalRecord.id);
+      this.state.games.unshift(finalRecord);
+    }
+
     setCurrentGame(game, broadcast = true, announce = true) {
       const previous = this.state.currentGame;
-      const completedNow = previous && previous.status === 'active' && game && game.status === 'complete';
+      const normalizedNext = game ? Engine.normalizeGame(game) : null;
+      const sameGame = Boolean(previous && normalizedNext
+        && String(previous.id || '') === String(normalizedNext.id || ''));
+      const completedNow = sameGame && previous.status === 'active' && normalizedNext.status === 'complete';
+      const reopenedNow = sameGame && previous.status === 'complete' && normalizedNext.status === 'active';
+
       if (completedNow) {
-        this.state.games.unshift(Engine.snapshotForSave(game, Date.now()));
-        this.state.queue = Players.finishQueuedGame(this.state.queue, game.id, this.state.players);
+        this.upsertCompletedGame(normalizedNext, Date.now());
+        if (this.state.queue.activeGameId === String(normalizedNext.id || '')) {
+          this.state.queueCompletionCheckpoint = {
+            gameId: String(normalizedNext.id || ''),
+            queue: JSON.parse(JSON.stringify(this.state.queue))
+          };
+        } else {
+          this.state.queueCompletionCheckpoint = null;
+        }
+        this.state.queue = Players.finishQueuedGame(this.state.queue, normalizedNext.id, this.state.players);
+      } else if (reopenedNow) {
+        this.removeHistoryGame(normalizedNext.id);
+        const checkpoint = this.state.queueCompletionCheckpoint;
+        if (checkpoint && String(checkpoint.gameId || '') === String(normalizedNext.id || '') && checkpoint.queue) {
+          this.state.queue = Players.normalizeQueue(checkpoint.queue, this.state.players);
+        }
+        this.state.queueCompletionCheckpoint = null;
+      } else if (previous && normalizedNext && String(previous.id || '') !== String(normalizedNext.id || '')) {
+        this.state.queueCompletionCheckpoint = null;
       }
-      this.state.currentGame = game ? Engine.normalizeGame(game) : null;
+
+      this.state.currentGame = normalizedNext;
       this.persist();
       if (this.state.currentGame && this.state.currentGame.status === 'active') this.armScoringGuard();
       if (broadcast && this.liveController) this.liveController.broadcast();
@@ -2939,12 +3002,14 @@ No completed games in this range.`;
       const editing = Boolean(this.editingGame && this.state.currentGame && this.state.currentGame.status === 'active');
       const previousGame = editing ? this.state.currentGame : null;
       if (this.state.currentGame && this.state.currentGame.status === 'active' && !editing) {
-        this.state.games.unshift(Engine.snapshotForSave(this.state.currentGame, Date.now()));
-        this.state.queue = Players.finishQueuedGame(
+        if (!confirm('Start a new game? The current unfinished game will be discarded and will not be added to Games.')) return;
+        this.removeHistoryGame(this.state.currentGame.id);
+        this.state.queue = Players.cancelQueuedGame(
           this.state.queue,
           this.state.currentGame.id,
           this.state.players
         );
+        this.state.queueCompletionCheckpoint = null;
       }
       const game = Engine.createGame({
         format,
@@ -3409,7 +3474,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'queue-new-session') {
-        if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Saved games and the roster stay intact.')) return;
+        if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Completed games and the roster stay intact.')) return;
         this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
@@ -3590,19 +3655,12 @@ No completed games in this range.`;
         }
         return;
       }
-      if (action === 'save') {
-        if (!this.state.currentGame) return;
-        this.state.games.unshift(Engine.snapshotForSave(this.state.currentGame, Date.now()));
-        this.persist();
-        this.showToast('Saved');
-        return;
-      }
       if (action === 'end') {
         if (!this.state.currentGame) return;
         const queuedGame = this.state.queue.activeGameId === this.state.currentGame.id;
         const message = queuedGame
-          ? 'End this game now? The current score will be saved as final and all four players will return to the back of the queue.'
-          : 'End this game now? The current score will be saved as final.';
+          ? 'End this game now? The current score will be recorded as final and all four players will return to the back of the queue.'
+          : 'End this game now? The current score will be recorded as final.';
         if (!confirm(message)) return;
         this.setCurrentGame(Engine.endGame(this.state.currentGame, Date.now()));
         return;
@@ -3681,7 +3739,7 @@ No completed games in this range.`;
       if (action === 'delete-player') {
         const player = this.playerById(target.dataset.player);
         if (!player) return;
-        if (confirm(`Remove ${player.name} from the local player list? Saved games will keep their name.`)) {
+        if (confirm(`Remove ${player.name} from the local player list? Completed games will keep their name.`)) {
           this.state.players = this.state.players.filter((item) => item.id !== player.id);
           this.state.queue = Players.removePlayerEverywhere(this.state.queue, player.id, this.state.players);
           this.persist();
@@ -3706,7 +3764,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'clear-history') {
-        if (confirm('Delete all saved games?')) {
+        if (confirm('Delete all completed games?')) {
           this.state.games = [];
           this.persist();
           this.render();
@@ -3797,16 +3855,10 @@ No completed games in this range.`;
           return next;
         };
 
-        const remappedGames = importedGames.map(remapGame);
-        const nextGames = [...this.state.games];
-        const existingSnapshots = new Set(nextGames.map((game) => String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`)));
-        remappedGames.reverse().forEach((game) => {
-          const key = String(game.snapshotId || `${game.id}|${game.savedAt || game.updatedAt}`);
-          if (!existingSnapshots.has(key)) {
-            nextGames.unshift(game);
-            existingSnapshots.add(key);
-          }
-        });
+        const remappedGames = importedGames.map(remapGame).filter((game) => game.status === 'complete');
+        const nextGames = Players.dedupeGames([...remappedGames, ...this.state.games])
+          .filter((game) => game.status === 'complete')
+          .sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
 
         let nextQueue = Players.normalizeQueue(this.state.queue, normalizedPlayers);
         if (payload.queue && typeof payload.queue === 'object') {
@@ -3824,10 +3876,11 @@ No completed games in this range.`;
         this.state.games = nextGames;
         this.state.queue = nextQueue;
         this.state.currentGame = nextCurrentGame;
+        this.state.queueCompletionCheckpoint = null;
         if (payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
         if (payload.settings) this.state.settings = normalizeSettings(payload.settings);
         this.persist();
-        this.view = 'history';
+        this.view = 'games';
         this.showToast(`${remappedGames.length} games · ${importedPlayers.length} players imported`);
       } catch (error) {
         this.showToast(error.message || 'Import failed');
@@ -3858,7 +3911,7 @@ No completed games in this range.`;
           ${this.showResultsShare ? this.renderResultsShare() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
-            ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'history'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
+            ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
           </main>
           ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
           <input id="import-file" type="file" accept="application/json,.json" hidden />
@@ -3889,7 +3942,7 @@ No completed games in this range.`;
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
             <button class="icon-btn fullscreen-controller ${this.isFullscreen() ? 'active' : ''}" type="button" data-action="toggle-fullscreen" aria-label="${this.isFullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'}" title="${this.isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}">${icon(this.isFullscreen() ? 'fullscreenExit' : 'fullscreen')}</button>
             <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
-            <button class="icon-btn ${['queue', 'roster', 'history'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'history'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster and history" title="Queue, roster and history">${icon('queue')}</button>
+            <button class="icon-btn ${['queue', 'roster', 'standings', 'games'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster, standings and games" title="Queue, roster, standings and games">${icon('queue')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
           </div>
         </header>
@@ -4338,15 +4391,16 @@ No completed games in this range.`;
     }
 
     renderQueueRosterHistory() {
-      const current = ['queue', 'roster', 'history'].includes(this.view) ? this.view : 'queue';
+      const current = ['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.view : 'queue';
       return `
         <section class="queue-roster-history">
-          <nav class="subpage-tabs" aria-label="Queue, roster and history">
+          <nav class="subpage-tabs" aria-label="Queue, roster, standings and games">
             <button type="button" class="${current === 'queue' ? 'active' : ''}" data-action="view" data-view="queue">${icon('queue')}<span>Queue</span></button>
             <button type="button" class="${current === 'roster' ? 'active' : ''}" data-action="view" data-view="roster">${icon('users')}<span>Roster</span></button>
-            <button type="button" class="${current === 'history' ? 'active' : ''}" data-action="view" data-view="history">${icon('history')}<span>History</span></button>
+            <button type="button" class="${current === 'standings' ? 'active' : ''}" data-action="view" data-view="standings">${icon('trophy')}<span>Standings</span></button>
+            <button type="button" class="${current === 'games' ? 'active' : ''}" data-action="view" data-view="games">${icon('history')}<span>Games</span></button>
           </nav>
-          ${current === 'queue' ? this.renderQueue() : current === 'roster' ? this.renderRoster() : this.renderHistory()}
+          ${current === 'queue' ? this.renderQueue() : current === 'roster' ? this.renderRoster() : current === 'standings' ? this.renderStandingsPage() : this.renderGamesPage()}
         </section>
       `;
     }
@@ -4576,7 +4630,7 @@ No completed games in this range.`;
         <section class="game-reset-dialog" role="dialog" aria-modal="true" aria-label="Reset game">
           <span class="guard-icon">${icon('reset')}</span>
           <h2>Reset this game?</h2>
-          <p>Restart with the same players, or edit the players/settings first. The current score, rally history, and timer will be cleared without saving this game as final.</p>
+          <p>Restart with the same players, or edit the players/settings first. The current score, rally history, and timer will be cleared without recording this game as final.</p>
           <div class="game-reset-actions">
             <button class="guard-primary" type="button" data-action="reset-game-same">Restart same players</button>
             <button class="guard-secondary" type="button" data-action="reset-game-edit">Change players / settings</button>
@@ -4618,7 +4672,6 @@ No completed games in this range.`;
           <nav class="game-toolbar" aria-label="Match actions">
             <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
             <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
-            <button class="tool-btn" type="button" data-action="save" aria-label="Save game" title="Save">${icon('save')}</button>
             <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
             <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
             ${game.status === 'complete'
@@ -4643,10 +4696,10 @@ No completed games in this range.`;
       `;
     }
 
-    renderHistory() {
+    renderStandingsPage() {
       const standings = Players.calculateStandings(this.state.games, this.state.players);
       return `
-        <section class="history-view">
+        <section class="history-view standings-view">
           <div class="section-head">
             <h1>Standings</h1>
             <div>
@@ -4655,8 +4708,21 @@ No completed games in this range.`;
             </div>
           </div>
           ${this.renderStandings(standings)}
-          <div class="saved-section-head"><h2>Games</h2><div><button class="icon-btn compact" type="button" data-action="open-results-share" ${this.completedResultGames().length ? '' : 'disabled'} aria-label="Share game results" title="Share results">${icon('share')}</button><button class="icon-btn danger compact" type="button" data-action="clear-history" ${this.state.games.length ? '' : 'disabled'} aria-label="Delete all saved games" title="Clear">${icon('trash')}</button></div></div>
-          ${this.state.games.length ? `<div class="history-list">${this.state.games.map((game, index) => this.renderSaved(game, index)).join('')}</div>` : `<div class="empty-view compact"><div class="empty-symbol">${icon('history')}</div><p>Nothing saved</p></div>`}
+        </section>
+      `;
+    }
+
+    renderGamesPage() {
+      return `
+        <section class="history-view games-view">
+          <div class="section-head">
+            <h1>Games</h1>
+            <div>
+              <button class="icon-btn compact" type="button" data-action="open-results-share" ${this.completedResultGames().length ? '' : 'disabled'} aria-label="Share game results" title="Share results">${icon('share')}</button>
+              <button class="icon-btn danger compact" type="button" data-action="clear-history" ${this.state.games.length ? '' : 'disabled'} aria-label="Delete all completed games" title="Clear games">${icon('trash')}</button>
+            </div>
+          </div>
+          ${this.state.games.length ? `<div class="history-list">${this.state.games.map((game, index) => this.renderSaved(game, index)).join('')}</div>` : `<div class="empty-view compact"><div class="empty-symbol">${icon('history')}</div><p>No completed games yet</p></div>`}
         </section>
       `;
     }
@@ -4681,7 +4747,7 @@ No completed games in this range.`;
             <span class="saved-teams"><b>${escapeHtml(teamTitle(a, 0))}</b><strong>${Number(a.score) || 0}</strong><i>–</i><strong>${Number(b.score) || 0}</strong><b>${escapeHtml(teamTitle(b, 1))}</b></span>
             <span class="saved-meta">${escapeHtml(game.format || 'doubles')} · ${formatDuration(game.timer ? game.timer.elapsedMs : 0)}</span>
           </div>
-          <button class="icon-btn danger compact" type="button" data-action="delete-save" data-index="${index}" aria-label="Delete saved game">${icon('trash')}</button>
+          <button class="icon-btn danger compact" type="button" data-action="delete-save" data-index="${index}" aria-label="Delete completed game">${icon('trash')}</button>
         </article>
       `;
     }
