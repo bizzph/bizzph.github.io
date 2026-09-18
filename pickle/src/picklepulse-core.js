@@ -1220,15 +1220,23 @@
   const MAX_IMPORT_PLAYERS = 500;
   const MAX_IMPORT_GAMES = 5000;
   const MAX_ROSTER_IMPORT_CHARS = 100000;
+  const AUDIO_DB_NAME = 'picklepulse-audio-v1';
+  const AUDIO_DB_VERSION = 1;
+  const AUDIO_STORE_NAME = 'tracks';
+  const MAX_LOCAL_MP3_BYTES = 50 * 1024 * 1024;
+  const MAX_LOCAL_MP3_TRACKS = 40;
   const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
   const DEFAULT_SETTINGS = Object.freeze({
     voiceEnabled: false,
     voiceURI: '',
+    voiceProfile: 'english1',
     voiceVolume: 1,
     voiceRate: 1.05,
     theme: 'system',
     lofiEnabled: false,
     lofiTrack: 'sunny',
+    mp3Volume: 0.45,
+    mp3Queue: [],
     scoreboardSwapped: false
   });
   // `lofiEnabled` / `lofiTrack` remain in persisted settings for backward-compatible backups.
@@ -1368,6 +1376,13 @@
     return raw.replace(/^#/, '').trim();
   }
 
+  function formatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  }
+
   function formatDuration(ms) {
     const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
     const hours = Math.floor(total / 3600);
@@ -1503,14 +1518,24 @@
     const lofiTrack = MUSIC_PLAYLIST.some((track) => track.id === source.lofiTrack) ? source.lofiTrack : 'sunny';
     const voiceVolume = Math.min(1, Math.max(0.2, Number(source.voiceVolume) || 1));
     const voiceRate = Math.min(1.4, Math.max(0.8, Number(source.voiceRate) || DEFAULT_SETTINGS.voiceRate));
+    const voiceProfile = ['english1', 'english2', 'tagalog'].includes(String(source.voiceProfile || ''))
+      ? String(source.voiceProfile)
+      : 'english1';
+    const mp3Volume = Math.min(1, Math.max(0, Number(source.mp3Volume) >= 0 ? Number(source.mp3Volume) : DEFAULT_SETTINGS.mp3Volume));
+    const mp3Queue = Array.isArray(source.mp3Queue)
+      ? [...new Set(source.mp3Queue.map((id) => String(id || '').slice(0, 120)).filter(Boolean))].slice(0, 100)
+      : [];
     return {
       voiceEnabled: Boolean(source.voiceEnabled),
       voiceURI: String(source.voiceURI || ''),
+      voiceProfile,
       voiceVolume,
       voiceRate,
       theme,
       lofiEnabled: Boolean(source.lofiEnabled),
       lofiTrack,
+      mp3Volume,
+      mp3Queue,
       scoreboardSwapped: Boolean(source.scoreboardSwapped)
     };
   }
@@ -1590,10 +1615,11 @@
     return serverScore + 1 >= target && (serverScore + 1) - receiverScore >= winBy;
   }
 
-  function rallyCall(previous, game) {
+  function rallyCall(previous, game, language = 'en') {
     if (!previous || !game || previous.status !== 'active' || game.status !== 'active') return '';
-    if (Number(previous.servingTeam) !== Number(game.servingTeam)) return 'Side out.';
-    if (game.format === 'doubles' && Number(previous.serverNumber) === 1 && Number(game.serverNumber) === 2) return 'Second server.';
+    const tagalog = language === 'fil';
+    if (Number(previous.servingTeam) !== Number(game.servingTeam)) return tagalog ? 'Palit serbisyo.' : 'Side out.';
+    if (game.format === 'doubles' && Number(previous.serverNumber) === 1 && Number(game.serverNumber) === 2) return tagalog ? 'Ikalawang server.' : 'Second server.';
     return '';
   }
 
@@ -1625,19 +1651,31 @@
     return score;
   }
 
-  function gameAnnouncementSegments(game, previous) {
+  function gameAnnouncementSegments(game, previous, language = 'en') {
     if (!game || !Array.isArray(game.teams)) return [];
+    const tagalog = language === 'fil';
     if (game.status === 'complete') {
       const a = Number(game.teams[0].score) || 0;
       const b = Number(game.teams[1].score) || 0;
-      if (a === b) return [`Game ended.`, `Tied at ${a}.`];
+      if (a === b) return tagalog ? ['Tapos ang laro.', `Tabla sa ${a}.`] : ['Game ended.', `Tied at ${a}.`];
       const winner = a > b ? 0 : 1;
-      return ['Game.', `${teamTitle(game.teams[winner], winner)} wins.`, `${Math.max(a, b)} to ${Math.min(a, b)}.`];
+      return tagalog
+        ? ['Tapos ang laro.', `${teamTitle(game.teams[winner], winner)} ang panalo.`, `${Math.max(a, b)} laban sa ${Math.min(a, b)}.`]
+        : ['Game.', `${teamTitle(game.teams[winner], winner)} wins.`, `${Math.max(a, b)} to ${Math.min(a, b)}.`];
     }
     const serve = Engine.serviceDetails(game);
     const score = `${Engine.spokenScore(game).replaceAll(' - ', ', ')}.`;
+    if (tagalog) {
+      const side = serve.side === 'Right' ? 'kanang bahagi' : 'kaliwang bahagi';
+      return [
+        rallyCall(previous, game, 'fil'),
+        isMatchPoint(game) ? 'Puntong panalo.' : '',
+        `Iskor, ${score}`,
+        `${serve.playerName}, sa ${side}.`
+      ].filter(Boolean);
+    }
     return [
-      rallyCall(previous, game),
+      rallyCall(previous, game, 'en'),
       isMatchPoint(game) ? 'Match point.' : '',
       score,
       `${serve.playerName} on the ${serve.side.toLowerCase()} side.`
@@ -1665,6 +1703,7 @@
       this.shareResultsEnd = '';
       this.rosterQrMode = 'code';
       this.playerPickerField = '';
+      this.editingPlayerId = '';
       this.editingGame = false;
       this.showLeaveWarning = false;
       this.pendingView = '';
@@ -1681,8 +1720,12 @@
       this.displayVoiceURI = '';
       this.displayScoreboardSwapped = false;
       this.availableVoices = [];
+      this.voiceProfiles = { english1: null, english2: null, tagalog: null };
       this.playerNameDraft = '';
       this.audioContext = null;
+      this.localTracks = [];
+      this.localAudioDbPromise = null;
+      this.localMusic = { audio: null, trackId: '', objectUrl: '', resumeAfterSpeech: false };
       this.lofiTimer = null;
       this.lofiStep = 0;
       this.musicTrackIndex = 0;
@@ -1745,6 +1788,7 @@
       this.applyTheme();
       if (this.mode === 'controller') this.consumeRosterShare();
       this.render();
+      if (this.mode === 'controller') this.loadLocalTracks();
       if (this.shouldProtectScoring()) this.armScoringGuard();
       this.clock = window.setInterval(() => {
         const game = this.mode === 'display' ? this.remoteGame : this.state.currentGame;
@@ -1786,6 +1830,7 @@
       }
       if (globalThis.speechSynthesis) speechSynthesis.cancel();
       this.stopLofi(false);
+      this.stopLocalMusic(true);
       if (navigator.connection && navigator.connection.removeEventListener) {
         navigator.connection.removeEventListener('change', this.boundNetwork);
       }
@@ -2369,6 +2414,11 @@ No completed games in this range.`;
         const output = this.querySelector('#voice-rate-value');
         if (output) output.textContent = `${(Number(event.target.value) || DEFAULT_SETTINGS.voiceRate).toFixed(2)}×`;
       }
+      if (event.target && event.target.id === 'mp3-volume') {
+        const output = this.querySelector('#mp3-volume-value');
+        if (output) output.textContent = `${Math.round(Number(event.target.value) || 0)}%`;
+        if (this.localMusic.audio) this.localMusic.audio.volume = Math.min(1, Math.max(0, Number(event.target.value) / 100 || 0));
+      }
     }
 
     resolvedTheme() {
@@ -2392,6 +2442,7 @@ No completed games in this range.`;
     }
 
     refreshVoices(render = true) {
+      this.voiceProfiles = { english1: null, english2: null, tagalog: null };
       if (!globalThis.speechSynthesis || typeof speechSynthesis.getVoices !== 'function') {
         this.availableVoices = [];
         return;
@@ -2399,25 +2450,44 @@ No completed games in this range.`;
       try {
         const seen = new Set();
         this.availableVoices = speechSynthesis.getVoices()
-          .filter((voice) => /^en(?:[-_]|$)/i.test(String(voice.lang || '')) || (!voice.lang && /english/i.test(String(voice.name || ''))))
+          .filter((voice) => voice && voice.localService === true)
+          .filter((voice) => {
+            const lang = String(voice.lang || '').toLowerCase().replace('_', '-');
+            return lang.startsWith('en') || lang.startsWith('fil') || lang.startsWith('tl');
+          })
           .filter((voice) => {
             const key = String(voice.voiceURI || `${voice.name}|${voice.lang}`);
             if (seen.has(key)) return false;
             seen.add(key);
             return voiceClarityScore(voice) > -10000;
-          })
-          .sort((a, b) => voiceClarityScore(b) - voiceClarityScore(a) || String(a.name).localeCompare(String(b.name)))
-          .slice(0, 4);
+          });
+        const english = this.availableVoices
+          .filter((voice) => /^en(?:[-_]|$)/i.test(String(voice.lang || '')))
+          .sort((a, b) => voiceClarityScore(b) - voiceClarityScore(a) || String(a.name).localeCompare(String(b.name)));
+        const tagalog = this.availableVoices
+          .filter((voice) => /^(?:fil|tl)(?:[-_]|$)/i.test(String(voice.lang || '')))
+          .sort((a, b) => Number(Boolean(b.default)) - Number(Boolean(a.default)) || String(a.name).localeCompare(String(b.name)));
+        this.voiceProfiles = {
+          english1: english[0] || null,
+          english2: english[1] || null,
+          tagalog: tagalog[0] || null
+        };
         if (render && this.showAudio) this.render();
       } catch (_error) {
         this.availableVoices = [];
+        this.voiceProfiles = { english1: null, english2: null, tagalog: null };
       }
     }
 
     selectedVoice(remote = false) {
-      const uri = remote ? this.displayVoiceURI : normalizeSettings(this.state.settings).voiceURI;
-      if (!uri) return null;
-      return this.availableVoices.find((voice) => voice.voiceURI === uri) || null;
+      if (remote) return this.voiceProfiles.english1 || null;
+      const profile = normalizeSettings(this.state.settings).voiceProfile;
+      return this.voiceProfiles[profile] || null;
+    }
+
+    selectedVoiceLanguage(remote = false) {
+      if (remote) return 'en';
+      return normalizeSettings(this.state.settings).voiceProfile === 'tagalog' ? 'fil' : 'en';
     }
 
     async ensureAudioContext() {
@@ -2430,6 +2500,236 @@ No completed games in this range.`;
       } catch (_error) {
         return null;
       }
+    }
+
+    openLocalAudioDb() {
+      if (this.localAudioDbPromise) return this.localAudioDbPromise;
+      if (!globalThis.indexedDB) return Promise.reject(new Error('Offline MP3 storage is unavailable in this browser.'));
+      this.localAudioDbPromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open(AUDIO_DB_NAME, AUDIO_DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'id' });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Could not open offline MP3 storage.'));
+        request.onblocked = () => reject(new Error('Offline MP3 storage is blocked by another PicklePulse tab.'));
+      }).catch((error) => {
+        this.localAudioDbPromise = null;
+        throw error;
+      });
+      return this.localAudioDbPromise;
+    }
+
+    async loadLocalTracks() {
+      try {
+        const db = await this.openLocalAudioDb();
+        const tracks = await new Promise((resolve, reject) => {
+          const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
+          const request = tx.objectStore(AUDIO_STORE_NAME).getAll();
+          request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+          request.onerror = () => reject(request.error || new Error('Could not read saved MP3 files.'));
+        });
+        this.localTracks = tracks
+          .filter((track) => track && track.id && track.blob instanceof Blob)
+          .slice(0, MAX_LOCAL_MP3_TRACKS)
+          .map((track) => ({
+            id: String(track.id).slice(0, 120),
+            name: String(track.name || 'Local MP3').slice(0, 120),
+            size: Math.max(0, Number(track.size) || Number(track.blob.size) || 0),
+            addedAt: Number(track.addedAt) || 0
+          }))
+          .sort((a, b) => b.addedAt - a.addedAt);
+        const valid = new Set(this.localTracks.map((track) => track.id));
+        const settings = normalizeSettings(this.state.settings);
+        const nextQueue = settings.mp3Queue.filter((id) => valid.has(id));
+        if (nextQueue.length !== settings.mp3Queue.length) {
+          this.state.settings = { ...settings, mp3Queue: nextQueue };
+          this.persist();
+        }
+        if (this.showAudio && this.isConnected) this.render();
+        return this.localTracks;
+      } catch (error) {
+        if (this.showAudio) this.showToast(error.message || 'Offline MP3 storage unavailable');
+        return [];
+      }
+    }
+
+    async hasMp3Signature(file) {
+      if (!file || typeof file.slice !== 'function') return false;
+      const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+      if (header.length >= 3 && header[0] === 0x49 && header[1] === 0x44 && header[2] === 0x33) return true;
+      for (let index = 0; index + 1 < header.length; index += 1) {
+        if (header[index] === 0xff && (header[index + 1] & 0xe0) === 0xe0) return true;
+      }
+      return false;
+    }
+
+    async saveLocalMp3(file) {
+      if (!file) return false;
+      const name = String(file.name || '').trim().slice(0, 120);
+      const lowerName = name.toLowerCase();
+      const safeType = String(file.type || '').toLowerCase();
+      if (!lowerName.endsWith('.mp3') && !['audio/mpeg', 'audio/mp3'].includes(safeType)) {
+        throw new Error('Choose an MP3 file.');
+      }
+      if (!file.size || file.size > MAX_LOCAL_MP3_BYTES) {
+        throw new Error(`Each MP3 must be ${formatBytes(MAX_LOCAL_MP3_BYTES)} or smaller.`);
+      }
+      if (!(await this.hasMp3Signature(file))) {
+        throw new Error('This file does not look like a valid MP3.');
+      }
+      if (this.localTracks.length >= MAX_LOCAL_MP3_TRACKS) {
+        throw new Error(`Offline library is limited to ${MAX_LOCAL_MP3_TRACKS} tracks.`);
+      }
+      const db = await this.openLocalAudioDb();
+      const id = Players.makeId('track');
+      const record = {
+        id,
+        name: name || 'Local MP3',
+        size: file.size,
+        addedAt: Date.now(),
+        blob: file.slice(0, file.size, 'audio/mpeg')
+      };
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+        tx.objectStore(AUDIO_STORE_NAME).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Could not save this MP3 offline.'));
+        tx.onabort = () => reject(tx.error || new Error('Could not save this MP3 offline.'));
+      });
+      const settings = normalizeSettings(this.state.settings);
+      this.state.settings = { ...settings, mp3Queue: [...settings.mp3Queue, id].slice(0, 100) };
+      this.persist();
+      await this.loadLocalTracks();
+      return true;
+    }
+
+    async deleteLocalMp3(id) {
+      const trackId = String(id || '');
+      if (!trackId) return;
+      if (this.localMusic.trackId === trackId) this.stopLocalMusic(true);
+      const db = await this.openLocalAudioDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+        tx.objectStore(AUDIO_STORE_NAME).delete(trackId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Could not remove this MP3.'));
+      });
+      const settings = normalizeSettings(this.state.settings);
+      this.state.settings = { ...settings, mp3Queue: settings.mp3Queue.filter((item) => item !== trackId) };
+      this.persist();
+      await this.loadLocalTracks();
+    }
+
+    queueLocalMp3(id) {
+      const trackId = String(id || '');
+      if (!this.localTracks.some((track) => track.id === trackId)) return;
+      const settings = normalizeSettings(this.state.settings);
+      if (settings.mp3Queue.includes(trackId)) return;
+      this.state.settings = { ...settings, mp3Queue: [...settings.mp3Queue, trackId].slice(0, 100) };
+      this.persist();
+      this.render();
+    }
+
+    dequeueLocalMp3(id) {
+      const trackId = String(id || '');
+      const settings = normalizeSettings(this.state.settings);
+      this.state.settings = { ...settings, mp3Queue: settings.mp3Queue.filter((item) => item !== trackId) };
+      this.persist();
+      if (this.localMusic.trackId === trackId) {
+        const nextQueue = normalizeSettings(this.state.settings).mp3Queue;
+        if (nextQueue.length) this.playLocalMp3(nextQueue[0]).catch(() => this.showToast('Could not play next MP3'));
+        else this.stopLocalMusic(true);
+      }
+      this.render();
+    }
+
+    async getLocalMp3Blob(id) {
+      const trackId = String(id || '');
+      if (!trackId) return null;
+      const db = await this.openLocalAudioDb();
+      const record = await new Promise((resolve, reject) => {
+        const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
+        const request = tx.objectStore(AUDIO_STORE_NAME).get(trackId);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('Could not read this saved MP3.'));
+      });
+      return record && record.blob instanceof Blob ? record.blob : null;
+    }
+
+    ensureLocalAudioElement() {
+      if (this.localMusic.audio) return this.localMusic.audio;
+      if (!globalThis.Audio) return null;
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      audio.volume = normalizeSettings(this.state.settings).mp3Volume;
+      audio.addEventListener('ended', () => this.playNextLocalMp3());
+      audio.addEventListener('error', () => {
+        if (this.localMusic.trackId) this.showToast('Could not play this MP3');
+      });
+      this.localMusic.audio = audio;
+      return audio;
+    }
+
+    async playLocalMp3(id) {
+      const trackId = String(id || '');
+      const track = this.localTracks.find((item) => item.id === trackId);
+      if (!track) return false;
+      const audio = this.ensureLocalAudioElement();
+      if (!audio) throw new Error('Audio playback is unavailable in this browser.');
+      this.stopLofi();
+      const settings = normalizeSettings(this.state.settings);
+      if (settings.lofiEnabled) {
+        this.state.settings = { ...settings, lofiEnabled: false };
+        this.persist();
+      }
+      if (this.localMusic.trackId !== trackId || !this.localMusic.objectUrl) {
+        if (this.localMusic.objectUrl) URL.revokeObjectURL(this.localMusic.objectUrl);
+        const blob = await this.getLocalMp3Blob(trackId);
+        if (!blob) throw new Error('This saved MP3 is no longer available.');
+        this.localMusic.objectUrl = URL.createObjectURL(blob);
+        this.localMusic.trackId = trackId;
+        audio.src = this.localMusic.objectUrl;
+      }
+      audio.volume = normalizeSettings(this.state.settings).mp3Volume;
+      await audio.play();
+      if (this.showAudio) this.render();
+      return true;
+    }
+
+    pauseLocalMp3() {
+      const audio = this.localMusic.audio;
+      if (audio && !audio.paused) audio.pause();
+      if (this.showAudio) this.render();
+    }
+
+    stopLocalMusic(clearSource = false) {
+      const audio = this.localMusic.audio;
+      if (audio) {
+        try { audio.pause(); } catch (_error) {}
+        if (clearSource) {
+          try { audio.removeAttribute('src'); audio.load(); } catch (_error) {}
+        }
+      }
+      if (clearSource && this.localMusic.objectUrl) {
+        try { URL.revokeObjectURL(this.localMusic.objectUrl); } catch (_error) {}
+        this.localMusic.objectUrl = '';
+        this.localMusic.trackId = '';
+      }
+      this.localMusic.resumeAfterSpeech = false;
+    }
+
+    async playNextLocalMp3() {
+      const queue = normalizeSettings(this.state.settings).mp3Queue;
+      if (!queue.length) {
+        this.stopLocalMusic(true);
+        if (this.showAudio) this.render();
+        return;
+      }
+      const current = queue.indexOf(this.localMusic.trackId);
+      const nextId = queue[(current + 1 + queue.length) % queue.length];
+      try { await this.playLocalMp3(nextId); } catch (_error) { this.showToast('Could not play next MP3'); }
     }
 
     async startLofi() {
@@ -2572,14 +2872,28 @@ No completed games in this range.`;
     }
 
     pauseLofiForSpeech() {
+      const localAudio = this.localMusic.audio;
+      const localWasPlaying = Boolean(localAudio && !localAudio.paused && !localAudio.ended);
+      if (localWasPlaying) {
+        localAudio.pause();
+        this.localMusic.resumeAfterSpeech = true;
+      }
       const wasPlaying = Boolean(this.lofiTimer || (this.musicActiveNodes && this.musicActiveNodes.size));
-      if (!wasPlaying) return false;
-      this.stopLofi(false);
-      this.lofiResumeAfterSpeech = true;
-      return true;
+      if (wasPlaying) {
+        this.stopLofi(false);
+        this.lofiResumeAfterSpeech = true;
+      }
+      return localWasPlaying || wasPlaying;
     }
 
     resumeLofiAfterSpeech() {
+      const audio = this.localMusic.audio;
+      if (this.localMusic.resumeAfterSpeech && audio && this.localMusic.trackId) {
+        this.localMusic.resumeAfterSpeech = false;
+        audio.volume = normalizeSettings(this.state.settings).mp3Volume;
+        audio.play().catch(() => {});
+        return;
+      }
       const shouldResume = this.lofiResumeAfterSpeech && normalizeSettings(this.state.settings).lofiEnabled;
       this.lofiResumeAfterSpeech = false;
       if (shouldResume) this.startLofi();
@@ -2732,11 +3046,17 @@ No completed games in this range.`;
 
     announceGame(game, force = false, remote = false, previous = null) {
       if (!this.voiceEnabled() || !game || !globalThis.speechSynthesis || !globalThis.SpeechSynthesisUtterance) return;
+      const voice = this.selectedVoice(remote);
+      if (!voice) {
+        if (force && !remote) this.showToast('Selected offline voice is not installed on this device');
+        return;
+      }
       const signature = voiceSignature(game);
       const lastKey = remote ? 'lastRemoteVoiceSignature' : 'lastVoiceSignature';
       if (!force && signature === this[lastKey]) return;
       this[lastKey] = signature;
-      const segments = gameAnnouncementSegments(game, previous);
+      const language = this.selectedVoiceLanguage(remote);
+      const segments = gameAnnouncementSegments(game, previous, language);
       if (!segments.length) return;
       try {
         if (!remote) this.pauseLofiForSpeech();
@@ -2746,7 +3066,6 @@ No completed games in this range.`;
           this.voicePauseTimer = null;
         }
         speechSynthesis.cancel();
-        const voice = this.selectedVoice(remote);
         const finish = () => {
           if (!remote && generation === this.voiceGeneration) this.resumeLofiAfterSpeech();
         };
@@ -2758,7 +3077,7 @@ No completed games in this range.`;
           }
           const utterance = new SpeechSynthesisUtterance(segments[index]);
           if (voice) utterance.voice = voice;
-          utterance.lang = voice && voice.lang ? voice.lang : 'en-US';
+          utterance.lang = voice.lang || (language === 'fil' ? 'fil-PH' : 'en-US');
           utterance.rate = normalizeSettings(this.state.settings).voiceRate;
           utterance.pitch = 1;
           utterance.volume = remote ? 1 : normalizeSettings(this.state.settings).voiceVolume;
@@ -2940,6 +3259,39 @@ No completed games in this range.`;
       return player;
     }
 
+    renamePlayer(playerId, name) {
+      const id = String(playerId || '');
+      const clean = Players.cleanName(name);
+      const current = this.state.players.find((player) => player.id === id);
+      if (!current) throw new Error('Player not found.');
+      if (!clean) throw new Error('Enter a player name.');
+      const duplicate = this.state.players.some((player) => player.id !== id && Players.nameKey(player.name) === Players.nameKey(clean));
+      if (duplicate) throw new Error('Another player already uses that name.');
+      const oldName = current.name;
+      if (oldName === clean) return current;
+      this.state.players = Players.normalizePlayers(this.state.players.map((player) => player.id === id ? { ...player, name: clean } : player));
+      const renameInGame = (value) => {
+        if (!value) return value;
+        const game = Engine.normalizeGame(value);
+        game.teams.forEach((team) => {
+          const beforeTeamName = team.name;
+          let renamed = false;
+          team.playerIds.forEach((playerIdValue, index) => {
+            if (String(playerIdValue || '') !== id) return;
+            team.players[index] = clean;
+            renamed = true;
+          });
+          if (renamed && game.format === 'singles' && Players.nameKey(beforeTeamName) === Players.nameKey(oldName)) team.name = clean;
+        });
+        return game;
+      };
+      this.state.currentGame = renameInGame(this.state.currentGame);
+      this.state.games = (Array.isArray(this.state.games) ? this.state.games : []).map(renameInGame);
+      this.persist();
+      if (this.liveController) this.liveController.broadcast();
+      return this.state.players.find((player) => player.id === id) || { id, name: clean };
+    }
+
     onSubmit(event) {
       const form = event.target.closest('form');
       if (!form) return;
@@ -2949,6 +3301,20 @@ No completed games in this range.`;
         const data = new FormData(form);
         const player = this.addPlayer(data.get('playerName'));
         if (player) this.showToast(`${player.name} added`);
+        return;
+      }
+
+      if (form.id === 'edit-player-form') {
+        event.preventDefault();
+        const data = new FormData(form);
+        try {
+          const player = this.renamePlayer(this.editingPlayerId, data.get('playerName'));
+          this.editingPlayerId = '';
+          this.render();
+          this.showToast(`${player.name} updated`);
+        } catch (error) {
+          this.showToast(error.message || 'Could not update player');
+        }
         return;
       }
 
@@ -3196,8 +3562,11 @@ No completed games in this range.`;
         this.render();
         return;
       }
-      if (event.target.id === 'voice-select') {
-        this.state.settings = { ...normalizeSettings(this.state.settings), voiceURI: String(event.target.value || '') };
+      if (event.target.id === 'voice-profile') {
+        const voiceProfile = ['english1', 'english2', 'tagalog'].includes(String(event.target.value || ''))
+          ? String(event.target.value)
+          : 'english1';
+        this.state.settings = { ...normalizeSettings(this.state.settings), voiceProfile, voiceURI: '' };
         this.persist();
         return;
       }
@@ -3214,6 +3583,15 @@ No completed games in this range.`;
         this.state.settings = { ...normalizeSettings(this.state.settings), voiceRate };
         const output = this.querySelector('#voice-rate-value');
         if (output) output.textContent = `${voiceRate.toFixed(2)}×`;
+        this.persist();
+        return;
+      }
+      if (event.target.id === 'mp3-volume') {
+        const mp3Volume = Math.min(1, Math.max(0, Number(event.target.value) / 100 || 0));
+        this.state.settings = { ...normalizeSettings(this.state.settings), mp3Volume };
+        if (this.localMusic.audio) this.localMusic.audio.volume = mp3Volume;
+        const output = this.querySelector('#mp3-volume-value');
+        if (output) output.textContent = `${Math.round(mp3Volume * 100)}%`;
         this.persist();
         return;
       }
@@ -3236,6 +3614,23 @@ No completed games in this range.`;
       }
       if (event.target.id === 'import-file' && event.target.files && event.target.files[0]) {
         this.importJson(event.target.files[0]);
+        return;
+      }
+      if (event.target.id === 'mp3-file' && event.target.files && event.target.files.length) {
+        const files = [...event.target.files].slice(0, MAX_LOCAL_MP3_TRACKS);
+        event.target.value = '';
+        (async () => {
+          let added = 0;
+          for (const file of files) {
+            try {
+              if (await this.saveLocalMp3(file)) added += 1;
+            } catch (error) {
+              this.showToast(error.message || 'Could not save MP3');
+              break;
+            }
+          }
+          if (added) this.showToast(`${added} MP3${added === 1 ? '' : 's'} saved offline`);
+        })();
       }
     }
 
@@ -3548,11 +3943,56 @@ No completed games in this range.`;
         this.render();
         return;
       }
+      if (action === 'choose-mp3') {
+        const input = this.querySelector('#mp3-file');
+        if (input) input.click();
+        return;
+      }
+      if (action === 'mp3-play') {
+        const id = String(target.dataset.track || '');
+        const audio = this.localMusic.audio;
+        if (this.localMusic.trackId === id && audio && !audio.paused) {
+          this.pauseLocalMp3();
+        } else {
+          try { await this.playLocalMp3(id); } catch (error) { this.showToast(error.message || 'Could not play MP3'); }
+        }
+        return;
+      }
+      if (action === 'mp3-next') {
+        await this.playNextLocalMp3();
+        return;
+      }
+      if (action === 'mp3-stop') {
+        this.stopLocalMusic(true);
+        this.render();
+        return;
+      }
+      if (action === 'mp3-queue') {
+        this.queueLocalMp3(target.dataset.track);
+        return;
+      }
+      if (action === 'mp3-dequeue') {
+        this.dequeueLocalMp3(target.dataset.track);
+        return;
+      }
+      if (action === 'mp3-delete') {
+        const track = this.localTracks.find((item) => item.id === String(target.dataset.track || ''));
+        if (!track) return;
+        if (!confirm(`Remove ${track.name} from PicklePulse offline storage?`)) return;
+        try {
+          await this.deleteLocalMp3(track.id);
+          this.showToast('MP3 removed');
+        } catch (error) {
+          this.showToast(error.message || 'Could not remove MP3');
+        }
+        return;
+      }
       if (action === 'toggle-lofi') {
         const settings = normalizeSettings(this.state.settings);
         const enabled = !settings.lofiEnabled;
         this.state.settings = { ...settings, lofiEnabled: enabled };
         this.persist();
+        if (enabled) this.stopLocalMusic(false);
         this.render();
         if (enabled) await this.startLofi();
         else this.stopLofi();
@@ -3627,7 +4067,12 @@ No completed games in this range.`;
       }
       if (action === 'toggle-voice') {
         if (this.mode === 'display') {
-          this.displayVoiceEnabled = !this.displayVoiceEnabled;
+          const nextEnabled = !this.displayVoiceEnabled;
+          if (nextEnabled && !this.selectedVoice(true)) {
+            this.showToast('No offline English voice is installed on this device');
+            return;
+          }
+          this.displayVoiceEnabled = nextEnabled;
           this.render();
           if (this.displayVoiceEnabled) this.announceGame(this.remoteGame, true, true);
           else {
@@ -3639,7 +4084,14 @@ No completed games in this range.`;
             if (globalThis.speechSynthesis) speechSynthesis.cancel();
           }
         } else {
-          this.state.settings.voiceEnabled = !this.state.settings.voiceEnabled;
+          const nextEnabled = !this.state.settings.voiceEnabled;
+          if (nextEnabled && !this.selectedVoice(false)) {
+            this.showToast(normalizeSettings(this.state.settings).voiceProfile === 'tagalog'
+              ? 'Install an offline Filipino/Tagalog system voice first'
+              : 'Selected offline English voice is not installed');
+            return;
+          }
+          this.state.settings.voiceEnabled = nextEnabled;
           this.persist();
           this.render();
           if (this.state.settings.voiceEnabled) this.announceGame(this.state.currentGame, true);
@@ -3733,6 +4185,18 @@ No completed games in this range.`;
         this.state.queue = Players.cancelPending(this.state.queue, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'edit-player') {
+        const player = this.playerById(target.dataset.player);
+        if (!player) return;
+        this.editingPlayerId = player.id;
+        this.render();
+        return;
+      }
+      if (action === 'close-player-edit') {
+        this.editingPlayerId = '';
         this.render();
         return;
       }
@@ -3908,6 +4372,7 @@ No completed games in this range.`;
           ${this.showGameReset ? this.renderGameResetDialog() : ''}
           ${this.showRosterShare ? this.renderRosterShare() : ''}
           ${this.showRosterImport ? this.renderRosterImport() : ''}
+          ${this.editingPlayerId ? this.renderPlayerEditDialog() : ''}
           ${this.showResultsShare ? this.renderResultsShare() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
@@ -3988,7 +4453,7 @@ No completed games in this range.`;
           </div>
           <label class="contrast-toggle"><span>${icon('fullscreen')}<b>High contrast</b></span><input id="score-high-contrast" type="checkbox" ${appearance.highContrast ? 'checked' : ''}></label>
           <button class="settings-row-button" type="button" data-action="toggle-theme">${icon(this.resolvedTheme() === 'dark' ? 'moon' : 'sun')}<span><b>${this.resolvedTheme() === 'dark' ? 'Dark' : 'Light'} theme</b><small>Tap to switch</small></span></button>
-          <button class="settings-row-button" type="button" data-action="toggle-audio-panel">${icon('speaker')}<span><b>Audio</b><small>Voice and court music</small></span></button>
+          <button class="settings-row-button" type="button" data-action="toggle-audio-panel">${icon('speaker')}<span><b>Audio</b><small>Voice, local MP3 and court music</small></span></button>
           <button class="reset-colors" type="button" data-action="reset-colors">Reset colors</button>
         </section>
       `;
@@ -3996,11 +4461,18 @@ No completed games in this range.`;
 
     renderAudioPanel() {
       const settings = normalizeSettings(this.state.settings);
-      const selectedVoiceURI = String(settings.voiceURI || '');
-      const voiceOptions = [
-        `<option value="" ${selectedVoiceURI ? '' : 'selected'}>System default (recommended)</option>`,
-        ...this.availableVoices.map((voice) => `<option value="${escapeHtml(voice.voiceURI)}" ${voice.voiceURI === selectedVoiceURI ? 'selected' : ''}>${escapeHtml(voice.name)}${voice.lang ? ` · ${escapeHtml(voice.lang)}` : ''}</option>`)
-      ].join('');
+      const profile = settings.voiceProfile;
+      const profileOptions = [
+        ['english1', 'English 1', this.voiceProfiles.english1],
+        ['english2', 'English 2', this.voiceProfiles.english2],
+        ['tagalog', 'Tagalog', this.voiceProfiles.tagalog]
+      ].map(([id, label, voice]) => `<option value="${id}" ${profile === id ? 'selected' : ''} ${voice ? '' : 'disabled'}>${label}${voice ? ` · ${escapeHtml(voice.name)}` : ' · not installed'}</option>`).join('');
+      const queuedIds = settings.mp3Queue;
+      const trackMap = new Map(this.localTracks.map((track) => [track.id, track]));
+      const queuedTracks = queuedIds.map((id) => trackMap.get(id)).filter(Boolean);
+      const audio = this.localMusic.audio;
+      const isPlaying = Boolean(audio && !audio.paused && !audio.ended && this.localMusic.trackId);
+      const currentTrack = trackMap.get(this.localMusic.trackId) || null;
       return `
         <div class="audio-scrim" data-action="close-audio"></div>
         <section class="audio-panel" role="dialog" aria-modal="true" aria-label="Audio settings">
@@ -4012,9 +4484,9 @@ No completed games in this range.`;
             <div><b>Voice-over</b><small>Scores, side outs, match point</small></div>
             <button class="audio-toggle ${settings.voiceEnabled ? 'active' : ''}" type="button" data-action="toggle-voice" aria-pressed="${settings.voiceEnabled}">${icon(settings.voiceEnabled ? 'speaker' : 'speakerOff')}<span>${settings.voiceEnabled ? 'On' : 'Off'}</span></button>
           </div>
-          <label class="audio-select"><span>English voice</span><select id="voice-select">${voiceOptions}</select><small>System default + up to 4 best clear English voices on this device</small></label>
+          <label class="audio-select voice-profile-select"><span>Voice</span><select id="voice-profile">${profileOptions}</select><small>Offline-only device voices. Two English slots are kept; Tagalog uses an installed Filipino/Tagalog system voice and never cloud TTS.</small></label>
           <label class="audio-range" for="voice-volume">
-            <span><b>Voice volume</b><small>Set voice-over loudness for the court · 100% browser max</small></span>
+            <span><b>Voice volume</b><small>Set voice-over loudness for the court</small></span>
             <input id="voice-volume" type="range" min="20" max="100" step="5" value="${Math.round(settings.voiceVolume * 100)}" aria-label="Voice-over volume">
             <output id="voice-volume-value" for="voice-volume">${Math.round(settings.voiceVolume * 100)}%</output>
           </label>
@@ -4023,11 +4495,32 @@ No completed games in this range.`;
             <input id="voice-rate" type="range" min="0.80" max="1.40" step="0.05" value="${settings.voiceRate.toFixed(2)}" aria-label="Voice-over speed">
             <output id="voice-rate-value" for="voice-rate">${settings.voiceRate.toFixed(2)}×</output>
           </label>
+
+          <div class="audio-section-title"><div><b>Local MP3 background music</b><small>Saved only in this browser; nothing is uploaded</small></div><button type="button" class="mp3-add" data-action="choose-mp3">${icon('plus')} Add MP3</button></div>
+          <input id="mp3-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple hidden>
+          <label class="audio-range" for="mp3-volume">
+            <span><b>MP3 volume</b><small>Independent from voice-over volume</small></span>
+            <input id="mp3-volume" type="range" min="0" max="100" step="5" value="${Math.round(settings.mp3Volume * 100)}" aria-label="MP3 background music volume">
+            <output id="mp3-volume-value" for="mp3-volume">${Math.round(settings.mp3Volume * 100)}%</output>
+          </label>
+          ${currentTrack ? `<div class="mp3-now"><div><small>${isPlaying ? 'Now playing' : 'Paused'}</small><b title="${escapeHtml(currentTrack.name)}">${escapeHtml(currentTrack.name)}</b></div><div><button type="button" data-action="mp3-play" data-track="${escapeHtml(currentTrack.id)}" aria-label="${isPlaying ? 'Pause' : 'Play'}">${icon(isPlaying ? 'pause' : 'play')}</button><button type="button" data-action="mp3-next" aria-label="Next track">${icon('arrowDown')}</button><button type="button" data-action="mp3-stop" aria-label="Stop music">${icon('x')}</button></div></div>` : ''}
+          <div class="mp3-block">
+            <div class="mp3-block-head"><b>Queue</b><span>${queuedTracks.length}</span></div>
+            ${queuedTracks.length ? `<ol class="mp3-queue">${queuedTracks.map((track, index) => `<li class="${track.id === this.localMusic.trackId ? 'active' : ''}"><span>${index + 1}</span><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-dequeue" data-track="${escapeHtml(track.id)}" aria-label="Remove ${escapeHtml(track.name)} from queue">${icon('x')}</button></li>`).join('')}</ol>` : '<p class="mp3-empty">Queue is empty. Add an MP3 below.</p>'}
+          </div>
+          <div class="mp3-block">
+            <div class="mp3-block-head"><b>Offline library</b><span>${this.localTracks.length}</span></div>
+            ${this.localTracks.length ? `<div class="mp3-library">${this.localTracks.map((track) => {
+              const queued = queuedIds.includes(track.id);
+              return `<div><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-queue" data-track="${escapeHtml(track.id)}" ${queued ? 'disabled' : ''} aria-label="${queued ? 'Already queued' : `Add ${escapeHtml(track.name)} to queue`}">${icon(queued ? 'check' : 'plus')}</button><button class="icon-btn danger compact" type="button" data-action="mp3-delete" data-track="${escapeHtml(track.id)}" aria-label="Delete ${escapeHtml(track.name)} from offline storage">${icon('trash')}</button></div>`;
+            }).join('')}</div>` : '<p class="mp3-empty">No saved MP3s. Add files from this device; they remain in local browser storage.</p>'}
+          </div>
+
           <div class="audio-setting">
-            <div><b>Upbeat court playlist</b><small>Four short sports-style cues rotate automatically and cut out for voice-over</small></div>
+            <div><b>Built-in court playlist</b><small>Existing synthesized sports cues; stops when local MP3 playback starts</small></div>
             <button class="audio-toggle ${settings.lofiEnabled ? 'active' : ''}" type="button" data-action="toggle-lofi" aria-pressed="${settings.lofiEnabled}">${icon('music')}<span>${settings.lofiEnabled ? 'On' : 'Off'}</span></button>
           </div>
-          <div class="playlist-list" aria-label="Upbeat court music playlist">${MUSIC_PLAYLIST.map((track, index) => `<span><i>${index + 1}</i>${escapeHtml(track.label)}</span>`).join('')}</div>
+          <div class="playlist-list" aria-label="Built-in court music playlist">${MUSIC_PLAYLIST.map((track, index) => `<span><i>${index + 1}</i>${escapeHtml(track.label)}</span>`).join('')}</div>
         </section>
       `;
     }
@@ -4430,6 +4923,7 @@ No completed games in this range.`;
                 <span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span>
                 <b>${escapeHtml(player.name)}</b>
                 <button class="queue-chip" type="button" data-action="queue-add" data-player="${escapeHtml(player.id)}" ${queued.has(player.id) ? 'disabled' : ''} aria-label="${queued.has(player.id) ? 'Already in queue or on court' : `Add ${escapeHtml(player.name)} to queue`}" title="${queued.has(player.id) ? 'Queued' : 'Add to queue'}">${icon(queued.has(player.id) ? 'check' : 'userPlus')}</button>
+                <button class="icon-btn compact" type="button" data-action="edit-player" data-player="${escapeHtml(player.id)}" aria-label="Edit ${escapeHtml(player.name)}" title="Edit player">${icon('edit')}</button>
                 <button class="icon-btn danger compact" type="button" data-action="delete-player" data-player="${escapeHtml(player.id)}" aria-label="Remove ${escapeHtml(player.name)}">${icon('trash')}</button>
               </article>
             `).join('')}</div>` : `<div class="empty-view compact"><p>No players yet</p></div>`}
@@ -4520,6 +5014,21 @@ No completed games in this range.`;
               `;
             }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
           </section>
+        </section>
+      `;
+    }
+
+    renderPlayerEditDialog() {
+      const player = this.playerById(this.editingPlayerId);
+      if (!player) return '';
+      return `
+        <div class="guard-scrim" data-action="close-player-edit"></div>
+        <section class="player-edit-dialog" role="dialog" aria-modal="true" aria-label="Edit roster player">
+          <header><div><b>Edit player</b><span>Player ID and game history stay linked</span></div><button class="icon-btn compact" type="button" data-action="close-player-edit" aria-label="Close">${icon('x')}</button></header>
+          <form id="edit-player-form">
+            <label><span>Player name</span><input name="playerName" maxlength="60" value="${escapeHtml(player.name)}" autocomplete="off" required autofocus></label>
+            <div class="player-edit-actions"><button type="button" data-action="close-player-edit">Cancel</button><button class="player-edit-save" type="submit">Save changes</button></div>
+          </form>
         </section>
       `;
     }

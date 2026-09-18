@@ -1,17 +1,28 @@
 # PicklePulse security and privacy notes
 
-Finalized: 2026-09-13
+Finalized: 2026-09-19
 
 ## Default data flow
 
-PicklePulse is local-first. Queue, roster, scoring, Standings/Games, backups, roster QR/code generation, result text/image generation, fullscreen, synthesized court music, and voice settings run in the browser and do not upload app data to an analytics or telemetry service.
+PicklePulse is local-first. Queue, roster, scoring, Standings/Games, backups, roster QR/code generation, result text/image generation, fullscreen, synthesized court music, local MP3 playback, and voice settings run in the browser and do not upload app data to an analytics or telemetry service.
 
-Persistent app state is stored in the browser's `localStorage`. It is not encrypted and should be treated like other data stored by the browser profile/device. Do not put secrets, passwords, medical information, or other sensitive data in player names or backups.
+Persistent app state is stored in the browser's `localStorage`. User-added MP3 blobs are stored separately in same-origin browser IndexedDB (`picklepulse-audio-v1`) because `localStorage` is not suitable for binary audio. Neither store is encrypted and both should be treated like other data in the browser profile/device. Do not put secrets, passwords, medical information, or other sensitive data in player names or backups.
+
+Voice-over uses only speech-synthesis voices that the browser reports as `localService=true`. PicklePulse exposes English 1, English 2, and Tagalog profiles and does not intentionally fall back to a cloud TTS voice. Actual offline voice availability depends on the operating system/browser voice packs installed on that device; unavailable profiles remain unavailable until a local voice is installed.
 
 
 ## Intentional user sharing
 
 Roster QR/codes and exported backups are **not encrypted**. A roster code is an encoding of the shared player names, so anyone who receives the code can recover those names. Result text/images and backup files remain local until the user explicitly copies, saves, downloads, or invokes the device share sheet; the destination app/service then controls what happens to that shared copy.
+
+
+## Local MP3 storage and playback
+
+- MP3 files are selected explicitly by the user and saved to same-origin IndexedDB. PicklePulse does not upload them, fetch cover art, parse remote playlists, or contact a music service.
+- The MP3 picker is limited to MP3 MIME/extensions and a lightweight ID3/MPEG header check, with a 50 MB per-track cap and a 40-track local-library cap to reduce storage/memory abuse.
+- The library UI keeps only track metadata in memory. A track blob is loaded from IndexedDB only when selected for playback, then played through a browser `blob:` object URL. Object URLs are revoked when their playback source is cleared.
+- Queue order and volume are lightweight metadata in the normal local app state; the binary MP3 data is not copied into backup JSON or roster share codes.
+- Browser storage quotas still apply. Clearing site data, using private browsing, or browser eviction can remove saved MP3 files.
 
 ## Intentional network feature: Live Display
 
@@ -34,7 +45,7 @@ Live Display is not an authentication system. Anyone who obtains or correctly gu
 - Fetch/WebSocket-style connections are limited by CSP to same-origin plus the explicit PeerJS signaling endpoint.
 - `object` and `frame` content are disabled by CSP.
 - Referrer policy is `no-referrer`.
-- No `eval`, `new Function`, `document.write`, `sendBeacon`, `XMLHttpRequest`, `WebSocket`, `EventSource`, analytics SDK, ad SDK, or telemetry SDK exists in PicklePulse first-party code.
+- No `eval`, `new Function`, `document.write`, `sendBeacon`, `XMLHttpRequest`, `WebSocket`, `EventSource`, analytics SDK, ad SDK, telemetry SDK, cloud TTS client, or MP3 upload endpoint exists in PicklePulse first-party code.
 - Roster imports, persisted-state loading, Live Display payloads, and JSON backups have size/count limits to reduce accidental or hostile memory/CPU abuse.
 - Backup import validates before mutating live state, preventing partial imports after a validation failure.
 - The service worker caches only the known PicklePulse application shell. It does not opportunistically cache arbitrary same-origin GET responses.

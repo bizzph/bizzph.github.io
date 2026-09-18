@@ -1,3 +1,31 @@
+# PicklePulse v26 Turnover / Handoff
+
+Finalized: 2026-09-19
+
+## v26 changes - editable roster, offline voice profiles, local MP3 background player
+
+- Added **Edit player** to Roster. Renaming preserves the player's stable ID so queue fairness, standings identity, and player links remain intact. Active and completed games that reference that player ID are updated to the new visible name.
+- Voice-over now exposes three fixed profiles: **English 1**, **English 2**, and **Tagalog**. Only voices reported by the browser as `localService=true` are used; cloud speech voices are excluded.
+- Added Tagalog announcement wording for game end/result, side-out, second server, match point, score, and serving side. Player/team names remain the roster names.
+- Voice profiles are intentionally device-local/offline. If the OS/browser does not have a local English or Filipino/Tagalog voice installed, that profile is shown as unavailable instead of silently falling back to a network voice.
+- Added a lightweight **local MP3 background player** in Audio settings. Users can add MP3 files from the device, play/pause/skip/stop, adjust independent MP3 volume, add tracks to the playback queue, remove tracks from the queue, or delete tracks from offline storage.
+- MP3 blobs are stored in browser **IndexedDB** (`picklepulse-audio-v1`) instead of `localStorage`; only small queue/settings metadata is stored in the existing app state. The library UI retains only metadata in memory and loads a blob when that track is played. Files are never uploaded by PicklePulse.
+- Local MP3 safety limits: MP3-only picker plus ID3/MPEG signature check, 50 MB maximum per track, 40 stored tracks maximum, 100 queue entries maximum, and object URLs are revoked when playback sources are cleared.
+- Voice announcements temporarily pause local MP3 playback and resume it afterward, matching the existing behavior of the built-in synthesized court playlist. Starting local MP3 playback disables the built-in court playlist to prevent overlapping background audio.
+- Existing built-in court music, scoring, queue/fairness behavior, standings, Games, import/export, roster sharing, Live Display, CSP restrictions, and local-first behavior are retained.
+- Service-worker cache bumped to `picklepulse-v26-0-0`.
+
+## v26 validation
+
+- JavaScript syntax checks for app core, QR module, Live Display module, and service worker: PASS.
+- Roster rename regression: stable player ID retained; active-game and completed-game visible names updated; duplicate-name rename blocked: PASS.
+- Offline voice filtering test: two local English voices and one local Filipino voice resolve to the three profiles; a non-local/cloud English voice is excluded: PASS.
+- MP3 validation regression: ID3/MPEG header detection accepts an MP3 signature and rejects unrelated file content: PASS.
+- No new external script, telemetry, upload, WebSocket, XHR, `sendBeacon`, or arbitrary service-worker caching path was added: PASS.
+- Content Security Policy already permits only same-origin/blob media for local MP3 playback; no new network media source was added: PASS.
+
+---
+
 # PicklePulse v25 Turnover / Handoff
 
 Finalized: 2026-09-13
