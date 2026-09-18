@@ -23,6 +23,7 @@ const MAX_RECEIPT_TEXT_LENGTH = 100000;
 const MIN_ACCEPTED_KDF_ITERATIONS = 1;
 const MAX_ACCEPTED_KDF_ITERATIONS = 2000000;
 const PURPOSE_LABELS = { TRADE: 'Trading', HOLD: 'Long-term' };
+const OVERVIEW_PNL_PERIODS = new Set(['ALL', 'WEEK_0', 'WEEK_1', 'WEEK_2', 'WEEK_3']);
 const DEFAULT_BUY_FEE_RATE_PERCENT_TEXT = '0.1';
 const DEFAULT_SELL_FEE_RATE_PERCENT_TEXT = '0.1';
 const MARKET_WS_RAW_BASE = 'wss://wsapi.pro.coins.ph/openapi/quote/ws/v3/';
@@ -35,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.13.4';
+const APP_BUILD = '2026.09.18.4';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -51,6 +52,7 @@ let expandedRecordKeys = new Set();
 let expandedHoldingKeys = new Set();
 let holdingsPurpose = 'TRADE';
 let overviewPurpose = 'TRADE';
+let overviewPnlPeriod = 'ALL';
 let feeRatePercentBySide = { BUY: DEFAULT_BUY_FEE_RATE_PERCENT_TEXT, SELL: DEFAULT_SELL_FEE_RATE_PERCENT_TEXT };
 let autoLockMinutes = DEFAULT_AUTO_LOCK_MINUTES;
 let pinConfigured = false;
@@ -437,6 +439,7 @@ function clearSensitiveUi() {
   expandedHoldingKeys.clear();
   holdingsPurpose = 'TRADE';
   overviewPurpose = 'TRADE';
+  overviewPnlPeriod = 'ALL';
   if ($('selectAllVisible')) $('selectAllVisible').checked = false;
   if ($('selectionCount')) { $('selectionCount').hidden = true; $('selectionCount').textContent = ''; }
 }
@@ -1252,6 +1255,111 @@ function dateRangeText(list) {
   return `${fmt.format(new Date(min))} – ${fmt.format(new Date(max))}`;
 }
 
+function startOfLocalWeek(value = new Date()) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date;
+}
+
+function addLocalDays(value, days) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function overviewPnlWeekOffset(period = overviewPnlPeriod) {
+  const match = /^WEEK_([0-3])$/.exec(period);
+  return match ? Number(match[1]) : null;
+}
+
+function overviewPnlRange(period = overviewPnlPeriod, now = new Date()) {
+  const selected = OVERVIEW_PNL_PERIODS.has(period) ? period : 'ALL';
+  if (selected === 'ALL') return null;
+  const offset = overviewPnlWeekOffset(selected);
+  if (offset == null) return null;
+  const start = addLocalDays(startOfLocalWeek(now), -(offset * 7));
+  return { start: start.getTime(), end: addLocalDays(start, 7).getTime() };
+}
+
+function inOverviewPnlRange(dateValue, range = overviewPnlRange()) {
+  if (!range) return true;
+  const time = parseDateMs(dateValue);
+  return Boolean(time && time >= range.start && time < range.end);
+}
+
+function overviewPnlPeriodLabel(period = overviewPnlPeriod) {
+  const offset = overviewPnlWeekOffset(period);
+  if (offset === 0) return 'This week';
+  if (offset === 1) return 'Last week';
+  if (offset != null) return `${offset} weeks ago`;
+  return 'All time';
+}
+
+function overviewPnlDateRangeText(period = overviewPnlPeriod) {
+  const range = overviewPnlRange(period);
+  if (!range) return 'All time';
+  const start = new Date(range.start);
+  const end = new Date(range.end - 1);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  const md = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' });
+  if (sameMonth) return `${md.format(start)}–${end.getDate()}, ${end.getFullYear()}`;
+  if (sameYear) return `${md.format(start)}–${md.format(end)}, ${end.getFullYear()}`;
+  const full = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${full.format(start)}–${full.format(end)}`;
+}
+
+function overviewPnlDateRangeShort(period = overviewPnlPeriod) {
+  const range = overviewPnlRange(period);
+  if (!range) return 'All';
+  const start = new Date(range.start);
+  const end = new Date(range.end - 1);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  const month = new Intl.DateTimeFormat('en-PH', { month: 'short' });
+  if (sameMonth) return `${month.format(start)} ${start.getDate()}–${end.getDate()}`;
+  if (sameYear) return `${month.format(start)} ${start.getDate()}–${month.format(end)} ${end.getDate()}`;
+  return `${month.format(start)} ${start.getDate()}, ${start.getFullYear()}–${month.format(end)} ${end.getDate()}, ${end.getFullYear()}`;
+}
+
+function updateOverviewPnlPeriodControls() {
+  const wrap = $('overviewPnlPeriodWrap');
+  if (wrap) {
+    wrap.hidden = false;
+    wrap.classList.toggle('showing-long-term', overviewPurpose !== 'TRADE');
+  }
+  const summary = $('overviewPnlPeriodSummary');
+  if (summary) {
+    summary.textContent = overviewPurpose === 'TRADE'
+      ? (overviewPnlPeriod === 'ALL' ? 'All realized trading history' : `${overviewPnlPeriodLabel()} · ${overviewPnlDateRangeText()}`)
+      : 'Applies to Trading analytics — choose a period to switch to Trading';
+  }
+  document.querySelectorAll('[data-pnl-period]').forEach(button => {
+    const period = button.dataset.pnlPeriod;
+    const active = period === overviewPnlPeriod;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    if (period === 'ALL') {
+      button.textContent = 'All time';
+      button.title = 'Show all realized P&L history';
+      button.setAttribute('aria-label', 'All realized P&L history');
+      return;
+    }
+    const name = overviewPnlPeriodLabel(period);
+    const range = overviewPnlDateRangeText(period);
+    const shortRange = overviewPnlDateRangeShort(period);
+    button.textContent = period === 'WEEK_0' ? `This week · ${shortRange}` : period === 'WEEK_1' ? `Last week · ${shortRange}` : shortRange;
+    button.title = `${name}: ${range}`;
+    button.setAttribute('aria-label', `${name}, ${range}`);
+  });
+}
+
+function sumPhpFees(list) {
+  return list.reduce((sum, tx) => tx.feeAsset === 'PHP' ? sum + parseFixed(tx.feeAmount || '0') : sum, 0n);
+}
+
 function overviewTransactions() {
   return transactions.filter(tx => transactionPurpose(tx) === overviewPurpose);
 }
@@ -1274,13 +1382,33 @@ function renderAll() {
 
 function renderOverview() {
   updateOverviewPurposeTabs();
+  updateOverviewPnlPeriodControls();
   const list = overviewTransactions();
   const analysis = analyzeTransactions(list);
-  const performance = performanceSummary(analysis.realizedEvents);
   const valuation = valuationSummary(analysis);
-  renderMetrics(list, analysis, performance, valuation);
-  renderAnalyticsStats(list, analysis, performance, valuation);
-  renderPerformanceChart(list, analysis, performance);
+  let performance = performanceSummary(analysis.realizedEvents);
+  let performanceAnalysis = analysis;
+  let pnlContext = null;
+
+  if (overviewPurpose === 'TRADE') {
+    const range = overviewPnlRange();
+    const periodEvents = analysis.realizedEvents.filter(event => inOverviewPnlRange(event.date, range));
+    const periodTransactions = list.filter(tx => inOverviewPnlRange(tx.date, range));
+    const realizedPnlPhp = periodEvents.reduce((sum, event) => sum + event.pnl, 0n);
+    performance = performanceSummary(periodEvents);
+    performanceAnalysis = { ...analysis, realizedEvents: periodEvents, realizedPnlPhp };
+    pnlContext = {
+      period: overviewPnlPeriod,
+      label: overviewPnlPeriodLabel(),
+      dateRange: overviewPnlDateRangeText(),
+      transactions: periodTransactions,
+      feesPhp: sumPhpFees(periodTransactions)
+    };
+  }
+
+  renderMetrics(list, performanceAnalysis, performance, valuation, pnlContext);
+  renderAnalyticsStats(list, performanceAnalysis, performance, valuation, pnlContext);
+  renderPerformanceChart(list, performanceAnalysis, performance, pnlContext);
   renderAllocation(analysis);
   renderWarnings(analysis);
 }
@@ -1291,10 +1419,11 @@ function setMetric(labelId, valueId, noteId, label, value, note) {
   if ($(noteId)) $(noteId).textContent = note;
 }
 
-function renderMetrics(list, analysis, performance, valuation) {
+function renderMetrics(list, analysis, performance, valuation, pnlContext = null) {
   if (overviewPurpose === 'TRADE') {
     const exitCount = analysis.realizedEvents.length;
-    setMetric('metricTransactionsLabel', 'metricTransactions', 'metricDateRange', 'Realized P&L', exitCount ? formatMoney(analysis.realizedPnlPhp) : '—', exitCount ? `${exitCount} matched PHP sell${exitCount === 1 ? '' : 's'}` : 'No matched PHP sells');
+    const periodNote = pnlContext?.dateRange || 'All time';
+    setMetric('metricTransactionsLabel', 'metricTransactions', 'metricDateRange', 'Realized P&L', exitCount ? formatMoney(analysis.realizedPnlPhp) : '—', exitCount ? `${exitCount} matched PHP sell${exitCount === 1 ? '' : 's'} · ${periodNote}` : `No matched PHP sells · ${periodNote}`);
     setMetric('metricBuyVolumeLabel', 'metricBuyVolume', 'metricBuyVolumeNote', 'Win rate', performance.winRate == null ? '—' : formatPercent(performance.winRate), performance.wins || performance.losses ? `${performance.wins} win${performance.wins === 1 ? '' : 's'} · ${performance.losses} loss${performance.losses === 1 ? '' : 'es'}` : 'Needs matched exits');
     const factorText = performance.profitFactor === Infinity ? '∞' : performance.profitFactor == null ? '—' : performance.profitFactor.toFixed(2);
     setMetric('metricFeesLabel', 'metricFees', 'metricFeesNote', 'Profit factor', factorText, performance.profitFactor == null ? 'Needs wins/losses' : 'Gross profit ÷ gross loss');
@@ -1319,23 +1448,28 @@ function analyticsStat(label, value, note = '') {
   return `<div class="analytics-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note ? `<small>${escapeHtml(note)}</small>` : ''}</div>`;
 }
 
-function renderAnalyticsStats(list, analysis, performance, valuation) {
+function renderAnalyticsStats(list, analysis, performance, valuation, pnlContext = null) {
   const el = $('analyticsStats');
   if (!el) return;
   if (overviewPurpose === 'TRADE') {
     $('analyticsEyebrow').textContent = 'TRADING QUALITY';
     $('analyticsTitle').textContent = 'Performance diagnostics';
-    $('analyticsDescription').textContent = 'Matched sell events use weighted-average cost. This is a performance lens, not a claim that each sell is a complete round-trip trade.';
+    const periodLabel = pnlContext?.label || 'All time';
+    const periodTransactions = pnlContext?.transactions || list;
+    const periodFeesPhp = pnlContext?.feesPhp ?? analysis.feesPhp;
+    $('analyticsDescription').textContent = pnlContext?.period === 'ALL'
+      ? 'Matched sell events use weighted-average cost. This is a performance lens, not a claim that each sell is a complete round-trip trade.'
+      : `Matched sell events use weighted-average cost. Realized statistics are filtered to ${periodLabel.toLowerCase()}; open-position values remain current.`;
     const openCost = analysis.holdings.filter(h => h.quote === 'PHP' && h.netQty > 0n).reduce((sum, h) => sum + h.knownCost, 0n);
     const liveCoverage = valuation.openPositions ? `${valuation.valuedPositions}/${valuation.openPositions} live-valued` : 'No open PHP positions';
     el.innerHTML = [
-      analyticsStat('Matched exits', String(analysis.realizedEvents.length), `${list.length} trading transaction${list.length === 1 ? '' : 's'} · ${dateRangeText(list)}`),
+      analyticsStat('Matched exits', String(analysis.realizedEvents.length), `${periodTransactions.length} trading transaction${periodTransactions.length === 1 ? '' : 's'} · ${pnlContext?.dateRange || dateRangeText(list)}`),
       analyticsStat('Expectancy / exit', performance.expectancy == null ? '—' : formatMoney(performance.expectancy), 'Expected realized P&L per directional matched sell'),
       analyticsStat('Average win', performance.avgWin == null ? '—' : formatMoney(performance.avgWin), `${performance.wins} winning exit${performance.wins === 1 ? '' : 's'}`),
       analyticsStat('Average loss', performance.avgLoss == null ? '—' : formatMoney(performance.avgLoss), `${performance.losses} losing exit${performance.losses === 1 ? '' : 's'}`),
       analyticsStat('Open value', valuation.marketValue == null ? '—' : formatMoney(valuation.marketValue), livePricingEnabled ? liveCoverage : 'Turn on live pricing'),
       analyticsStat('Open unrealized', valuation.unrealized == null ? '—' : formatMoney(valuation.unrealized), valuation.unrealizedPct == null ? liveCoverage : formatPercent(valuation.unrealizedPct)),
-      analyticsStat('PHP fees', formatMoney(analysis.feesPhp), 'Known PHP-denominated fees'),
+      analyticsStat('PHP fees', formatMoney(periodFeesPhp), pnlContext ? `Known PHP-denominated fees · ${pnlContext.label}` : 'Known PHP-denominated fees'),
       analyticsStat('Open cost basis', formatMoney(openCost), `${valuation.openPositions} open PHP position${valuation.openPositions === 1 ? '' : 's'}`)
     ].join('');
   } else {
@@ -1381,15 +1515,15 @@ function renderLineChart(el, points, { emptyText, footerLeft, footerRight } = {}
   el.innerHTML = `<svg class="performance-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Performance line chart"><line class="chart-zero" x1="${padX}" y1="${zeroY}" x2="${width - padX}" y2="${zeroY}"/><polyline class="chart-line" points="${polyline}" vector-effect="non-scaling-stroke"/>${points.map((point, index) => `<circle class="chart-point" cx="${x(index).toFixed(1)}" cy="${y(fixedToNumber(point.value)).toFixed(1)}" r="3"/>`).join('')}</svg><div class="chart-footer"><span>${escapeHtml(footerLeft || '')}</span><strong>${escapeHtml(footerRight || '')}</strong></div>`;
 }
 
-function renderPerformanceChart(list, analysis, performance) {
+function renderPerformanceChart(list, analysis, performance, pnlContext = null) {
   const el = $('performanceChart');
   if (!el) return;
   if (overviewPurpose === 'TRADE') {
     $('performanceEyebrow').textContent = 'REALIZED PERFORMANCE';
     $('performanceTitle').textContent = 'Cumulative P&L';
     renderLineChart(el, performance.curve, {
-      emptyText: 'No matched PHP sell events yet. Add prior buys and matched sells to unlock trading analytics.',
-      footerLeft: performance.curve.length ? shortDate(performance.curve[0].date) : '',
+      emptyText: pnlContext && pnlContext.period !== 'ALL' ? `No matched PHP sell events in ${pnlContext.label.toLowerCase()}.` : 'No matched PHP sell events yet. Add prior buys and matched sells to unlock trading analytics.',
+      footerLeft: pnlContext && pnlContext.period !== 'ALL' ? pnlContext.dateRange : (performance.curve.length ? shortDate(performance.curve[0].date) : ''),
       footerRight: performance.curve.length ? `Latest ${formatMoney(performance.curve[performance.curve.length - 1].value)}` : ''
     });
     return;
@@ -2253,9 +2387,25 @@ async function ensureCurrentAppShell() {
 }
 
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(error => console.warn('Service worker registration failed:', error));
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+
+  // If this page is already controlled, a controller change means a newly
+  // activated Trade Vault shell is ready. Reload once so HTML/CSS/JS stay in sync.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  if (hadController) {
+    let reloadingForWorker = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadingForWorker) return;
+      reloadingForWorker = true;
+      const url = new URL(location.href);
+      url.searchParams.set('tvbuild', APP_BUILD);
+      location.replace(url.href);
+    });
   }
+
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+    .then(registration => registration.update().catch(error => console.warn('Service worker update check failed:', error)))
+    .catch(error => console.warn('Service worker registration failed:', error));
 }
 
 async function init() {
@@ -2506,6 +2656,13 @@ async function init() {
     overviewPurpose = transactionPurpose(button.dataset.overviewPurpose);
     renderOverview();
   }));
+  document.querySelectorAll('[data-pnl-period]').forEach(button => button.addEventListener('click', () => {
+    const period = button.dataset.pnlPeriod;
+    if (!OVERVIEW_PNL_PERIODS.has(period)) return;
+    overviewPnlPeriod = period;
+    if (overviewPurpose !== 'TRADE') overviewPurpose = 'TRADE';
+    renderOverview();
+  }));
   $('toggleLedgerDetailsBtn')?.addEventListener('click', () => {
     const visibleKeys = filteredTransactions().map(tx => tx._recordKey);
     const allExpanded = visibleKeys.length > 0 && visibleKeys.every(key => expandedRecordKeys.has(key));
@@ -2685,6 +2842,7 @@ async function init() {
     expandedRecordKeys.clear();
     holdingsPurpose = 'TRADE';
     overviewPurpose = 'TRADE';
+    overviewPnlPeriod = 'ALL';
     vaultKey = null;
     transactions = [];
     $('appShell').hidden = true;

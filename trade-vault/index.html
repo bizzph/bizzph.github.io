@@ -6,16 +6,16 @@
   <meta name="theme-color" content="#080b12">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <meta name="trade-vault-build" content="2026.09.13.4">
+  <meta name="trade-vault-build" content="2026.09.18.4">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trade Vault">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
   <title>Trade Vault</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260913.4">
+  <link rel="manifest" href="manifest.webmanifest?v=20260918.4">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260913.4" integrity="sha384-alkM6y+/y3CsKCY5jjQ0lCsw2Ho+ZxIc+GGmeEXnRfsuQU4dEi3u61jgv7uMM4op">
+  <link rel="stylesheet" href="styles.css?v=20260918.4" integrity="sha384-TB1GlNOv2w2oLBtEprq/Knkhil0DEQ+Zohg0qQFAa49KskA6+uoLwT1Y1PsD/hDH">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -105,10 +105,27 @@
           </div>
         </div>
 
+        <section id="overviewPnlPeriodWrap" class="overview-pnl-period-card" aria-label="Trading P&amp;L period">
+          <div class="overview-pnl-period-copy">
+            <span class="pnl-period-label">P&amp;L PERIOD</span>
+            <strong>Trading P&amp;L period</strong>
+            <small id="overviewPnlPeriodSummary">All realized trading history</small>
+          </div>
+          <div class="pnl-period-tabs" role="group" aria-label="Filter realized P&amp;L by calendar week">
+            <button class="period-tab active" type="button" data-pnl-period="ALL" aria-pressed="true">All time</button>
+            <button class="period-tab" type="button" data-pnl-period="WEEK_0" aria-pressed="false">This week</button>
+            <button class="period-tab" type="button" data-pnl-period="WEEK_1" aria-pressed="false">Last week</button>
+            <button class="period-tab" type="button" data-pnl-period="WEEK_2" aria-pressed="false">2 weeks ago</button>
+            <button class="period-tab" type="button" data-pnl-period="WEEK_3" aria-pressed="false">3 weeks ago</button>
+          </div>
+        </section>
+
         <div class="overview-toolbar">
-          <div class="holding-purpose-tabs overview-purpose-tabs" role="tablist" aria-label="Overview purpose">
-            <button class="purpose-tab active" type="button" data-overview-purpose="TRADE" role="tab" aria-selected="true">Trading</button>
-            <button class="purpose-tab" type="button" data-overview-purpose="HOLD" role="tab" aria-selected="false">Long-term</button>
+          <div class="overview-filter-stack">
+            <div class="holding-purpose-tabs overview-purpose-tabs" role="tablist" aria-label="Overview purpose">
+              <button class="purpose-tab active" type="button" data-overview-purpose="TRADE" role="tab" aria-selected="true">Trading</button>
+              <button class="purpose-tab" type="button" data-overview-purpose="HOLD" role="tab" aria-selected="false">Long-term</button>
+            </div>
           </div>
           <div class="overview-market-controls">
             <span id="overviewMarketStatus" class="market-status">Live pricing off</span>
@@ -226,6 +243,7 @@
       </div>
       <p class="settings-copy">Fee defaults affect new transactions only. Auto-lock and the optional local PIN apply to this browser/device.</p>
       <p class="settings-copy security-copy"><strong>Network:</strong> live pricing is off by default. When enabled, Trade Vault can connect only to the public Coins.ph market WebSocket and sends pair symbols only. No analytics, telemetry, account API, or transaction upload is built in.</p>
+      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.18.4</span></p>
       <div class="form-grid">
         <label>Buy fee (%)<input name="buyFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
         <label>Sell fee (%)<input name="sellFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
@@ -289,6 +307,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20260913.4" integrity="sha384-Vmd0CucasrdI/1tBNvea+gFc4zFa58cZmP6ygdV5BsHkBPqKMFINtujRGLadq26w" defer></script>
+  <script src="app.js?v=20260918.4" integrity="sha384-Al2FJNluFJjqPTaKezkmxvPnv7NhSs9Kie5/fO5L99LlNCiWfsS5rNJ6M8rUuTke" defer></script>
 </body>
 </html>

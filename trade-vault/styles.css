@@ -228,8 +228,21 @@ tbody tr:hover { background: var(--row-hover); }
 .purpose-tab { min-height: 36px; padding: 7px 14px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 850; }
 .purpose-tab.active { background: var(--control-bg); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-soft); }
 
+
+.overview-pnl-period-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -3px 0 12px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-bg); box-shadow: var(--shadow); }
+.overview-pnl-period-copy { display: grid; gap: 2px; min-width: 150px; }
+.overview-pnl-period-copy strong { font-size: 13px; letter-spacing: -.01em; }
+.overview-pnl-period-copy small { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.overview-pnl-period-card.showing-long-term { border-style: dashed; }
+
 .overview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -3px 0 12px; }
+.overview-filter-stack { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .overview-purpose-tabs { margin: 0; }
+.pnl-period-filter { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.pnl-period-label { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.pnl-period-tabs { display: inline-flex; gap: 3px; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
+.period-tab { min-height: 30px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 850; white-space: nowrap; }
+.period-tab.active { background: var(--control-bg); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-soft); }
 .overview-market-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 0; }
 .overview-market-controls .market-status { margin: 0 3px 0 0; overflow: hidden; max-width: 260px; text-overflow: ellipsis; white-space: nowrap; }
 .overview-market-controls .icon-button { width: 36px; height: 36px; border-radius: 11px; }
@@ -309,8 +322,16 @@ dialog form { padding: 21px; }
   .metric { min-height: 103px; padding: 14px; border-radius: 15px; }
   .metric strong { margin-top: 8px; font-size: 20px; }
   .allocation-panel { border-radius: 15px; }
+  .overview-pnl-period-card { align-items: stretch; flex-direction: column; gap: 9px; margin-bottom: 10px; padding: 11px; }
+  .overview-pnl-period-copy { min-width: 0; }
+  .overview-pnl-period-card .pnl-period-tabs { width: 100%; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .overview-pnl-period-card .pnl-period-tabs::-webkit-scrollbar { display: none; }
   .overview-toolbar { align-items: stretch; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .overview-filter-stack { align-items: flex-start; flex-direction: column; gap: 7px; }
   .overview-purpose-tabs { align-self: flex-start; }
+  .pnl-period-filter { width: 100%; }
+  .pnl-period-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .pnl-period-tabs::-webkit-scrollbar { display: none; }
   .overview-market-controls { justify-content: flex-start; min-height: 38px; }
   .overview-market-controls .market-status { flex: 1; max-width: none; }
   .analytics-stats { grid-template-columns: 1fr 1fr; }
@@ -407,3 +428,5 @@ dialog form { padding: 21px; }
 }
 
 .security-copy { max-width: 72ch; }
+
+.build-copy { margin-top: -4px; font-size: 9px; opacity: .78; }

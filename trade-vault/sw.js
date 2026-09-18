@@ -1,33 +1,68 @@
-const CACHE = 'trade-vault-shell-v23';
+const BUILD = '20260918.4';
+const CACHE = 'trade-vault-shell-v27';
+const INDEX_PATH = `./index.html?tvbuild=${BUILD}`;
 const SHELL = [
-  './index.html',
-  './styles.css?v=20260913.4',
-  './app.js?v=20260913.4',
-  './manifest.webmanifest?v=20260913.4',
+  INDEX_PATH,
+  `./styles.css?v=${BUILD}`,
+  `./app.js?v=${BUILD}`,
+  `./manifest.webmanifest?v=${BUILD}`,
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+const NETWORK_TIMEOUT_MS = 3500;
+const INSTALL_TIMEOUT_MS = 12000;
+
+async function fetchWithTimeout(request, options = {}, timeoutMs = NETWORK_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(request, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchFresh(path, timeoutMs = INSTALL_TIMEOUT_MS) {
+  const request = new Request(path, { cache: 'reload', credentials: 'same-origin' });
+  const response = await fetchWithTimeout(request, {}, timeoutMs);
+  if (!response.ok || response.type !== 'basic') throw new Error(`Could not fetch app shell resource: ${path}`);
+  return { request, response };
+}
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    for (const path of SHELL) {
-      const request = new Request(path, { cache: 'reload' });
-      const response = await fetch(request);
-      if (!response.ok || response.type !== 'basic') throw new Error(`Could not cache app shell: ${path}`);
-      await cache.put(request, response);
-    }
+    const resources = await Promise.all(SHELL.map(path => fetchFresh(path)));
+    await Promise.all(resources.map(({ request, response }) => cache.put(request, response)));
     await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key.startsWith('trade-vault-shell-') && key !== CACHE).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const oldShells = keys.filter(key => key.startsWith('trade-vault-shell-') && key !== CACHE);
+    await Promise.all(oldShells.map(key => caches.delete(key)));
+    if (self.registration.navigationPreload) {
+      try { await self.registration.navigationPreload.enable(); } catch {}
+    }
+    await self.clients.claim();
+
+    // On an upgrade from an older Trade Vault worker, refresh any already-open
+    // window once. This is intentionally skipped on a first-time install.
+    if (oldShells.length) {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      await Promise.all(clients.map(async client => {
+        try {
+          const url = new URL(client.url);
+          if (url.origin !== self.location.origin || url.searchParams.get('tvbuild') === BUILD) return;
+          url.searchParams.set('tvbuild', BUILD);
+          await client.navigate(url.href);
+        } catch {}
+      }));
+    }
+  })());
 });
 
 async function cacheResponse(cacheKey, response) {
@@ -37,25 +72,46 @@ async function cacheResponse(cacheKey, response) {
   return response;
 }
 
+async function refreshIndex(indexUrl) {
+  const response = await fetchWithTimeout(indexUrl, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    redirect: 'follow'
+  }, NETWORK_TIMEOUT_MS);
+  if (!response.ok || response.type !== 'basic') throw new Error('Could not refresh Trade Vault index');
+  await cacheResponse(indexUrl, response);
+  return response;
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
   const scope = self.registration.scope;
-  const indexUrl = new URL('./index.html', scope).href;
+  const indexUrl = new URL(INDEX_PATH, scope).href;
 
-  // Network-first for documents prevents a stale index.html from loading a newer app.js.
+  // Navigations prefer a fresh document, but never wait indefinitely for an ISP
+  // route that is connected yet unable to reach the origin. A short timeout falls
+  // back to the verified local shell so the PWA still opens on problematic Wi-Fi.
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const response = await fetch(request, { cache: 'no-store' });
-        await cacheResponse(indexUrl, response);
-        return response;
+        const preloaded = await event.preloadResponse;
+        if (preloaded?.ok && preloaded.type === 'basic') {
+          event.waitUntil(cacheResponse(indexUrl, preloaded.clone()));
+          return preloaded;
+        }
+      } catch {}
+      try {
+        return await refreshIndex(indexUrl);
       } catch {
         const cached = await caches.match(indexUrl);
         if (cached) return cached;
-        throw new Error('Offline and the app shell is not cached yet.');
+        return new Response('Trade Vault could not load the app shell. Open it once on a working connection so the offline copy can be created.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
       }
     })());
     return;
@@ -67,8 +123,11 @@ self.addEventListener('fetch', event => {
   event.respondWith((async () => {
     const cached = await caches.match(request);
     if (cached) return cached;
-    const response = await fetch(request);
-    await cacheResponse(request, response);
-    return response;
+    try {
+      const response = await fetchWithTimeout(request, { cache: 'reload', credentials: 'same-origin' }, INSTALL_TIMEOUT_MS);
+      return await cacheResponse(request, response);
+    } catch {
+      return new Response('', { status: 504, statusText: 'App shell resource unavailable' });
+    }
   })());
 });
