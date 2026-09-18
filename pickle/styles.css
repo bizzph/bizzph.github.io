@@ -1825,3 +1825,7 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
 @media (orientation: landscape) and (max-height: 600px) {
   .game-view .score-grid { min-height: calc(100vh - 268px); min-height: calc(100dvh - 268px); }
 }
+
+/* v31: per-player VoiceOver pronunciation hint */
+.player-edit-dialog label > span small { font-size: .62rem; font-weight: 750; opacity: .75; }
+.player-pronunciation-help { color: var(--muted); font-size: .65rem; font-weight: 650; line-height: 1.4; }

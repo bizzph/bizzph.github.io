@@ -506,7 +506,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 7;
+  const ROOT_SCHEMA_VERSION = 8;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -517,6 +517,10 @@
 
   function cleanName(value) {
     return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  }
+
+  function cleanPronunciation(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 100);
   }
 
   function nameKey(value) {
@@ -573,7 +577,7 @@
   function normalizePlayer(value, now = Date.now()) {
     if (typeof value === 'string') {
       const name = cleanName(value);
-      return name ? { id: makeId(), name, createdAt: new Date(now).toISOString() } : null;
+      return name ? { id: makeId(), name, pronunciation: '', createdAt: new Date(now).toISOString() } : null;
     }
     if (!value || typeof value !== 'object') return null;
     const name = cleanName(value.name);
@@ -582,6 +586,7 @@
     return {
       id,
       name,
+      pronunciation: cleanPronunciation(value.pronunciation),
       createdAt: value.createdAt || new Date(now).toISOString()
     };
   }
@@ -1177,6 +1182,7 @@
     ROOT_SCHEMA_VERSION,
     makeId,
     cleanName,
+    cleanPronunciation,
     nameKey,
     parsePastedPlayerList,
     normalizePlayer,
@@ -1212,7 +1218,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=30';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=31';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -3283,7 +3289,9 @@ No completed games in this range.`;
       if (!force && signature === this[lastKey]) return;
       this[lastKey] = signature;
       const language = this.selectedVoiceLanguage(remote);
-      const segments = gameAnnouncementSegments(game, previous, language);
+      const speechGame = remote ? game : this.gameForVoice(game);
+      const speechPrevious = remote ? previous : this.gameForVoice(previous);
+      const segments = gameAnnouncementSegments(speechGame, speechPrevious, language);
       if (!segments.length) return;
       try {
         if (!remote) this.pauseLofiForSpeech();
@@ -3471,6 +3479,28 @@ No completed games in this range.`;
       }
     }
 
+    playerVoiceName(player) {
+      if (!player) return '';
+      return Players.cleanPronunciation(player.pronunciation) || Players.cleanName(player.name);
+    }
+
+    gameForVoice(game) {
+      if (!game) return game;
+      const spoken = Engine.normalizeGame(game);
+      spoken.teams.forEach((team) => {
+        const originalPlayers = [...team.players];
+        team.players = team.players.map((name, index) => {
+          const player = this.playerById(team.playerIds && team.playerIds[index]);
+          return this.playerVoiceName(player) || name;
+        });
+        if (spoken.format === 'singles') {
+          const originalName = originalPlayers[0] || '';
+          if (Players.nameKey(team.name) === Players.nameKey(originalName) && team.players[0]) team.name = team.players[0];
+        }
+      });
+      return spoken;
+    }
+
     previewPlayerVoice(playerId) {
       const player = this.playerById(playerId);
       if (!player) return;
@@ -3493,7 +3523,7 @@ No completed games in this range.`;
         }
         speechSynthesis.cancel();
         const settings = normalizeSettings(this.state.settings);
-        const utterance = new SpeechSynthesisUtterance(player.name);
+        const utterance = new SpeechSynthesisUtterance(this.playerVoiceName(player));
         if (voice) {
           utterance.voice = voice;
           utterance.lang = voice.lang || 'en-US';
@@ -3534,37 +3564,42 @@ No completed games in this range.`;
       return player;
     }
 
-    renamePlayer(playerId, name) {
+    renamePlayer(playerId, name, pronunciation = '') {
       const id = String(playerId || '');
       const clean = Players.cleanName(name);
+      const cleanPronunciation = Players.cleanPronunciation(pronunciation);
       const current = this.state.players.find((player) => player.id === id);
       if (!current) throw new Error('Player not found.');
       if (!clean) throw new Error('Enter a player name.');
       const duplicate = this.state.players.some((player) => player.id !== id && Players.nameKey(player.name) === Players.nameKey(clean));
       if (duplicate) throw new Error('Another player already uses that name.');
       const oldName = current.name;
-      if (oldName === clean) return current;
-      this.state.players = Players.normalizePlayers(this.state.players.map((player) => player.id === id ? { ...player, name: clean } : player));
-      const renameInGame = (value) => {
-        if (!value) return value;
-        const game = Engine.normalizeGame(value);
-        game.teams.forEach((team) => {
-          const beforeTeamName = team.name;
-          let renamed = false;
-          team.playerIds.forEach((playerIdValue, index) => {
-            if (String(playerIdValue || '') !== id) return;
-            team.players[index] = clean;
-            renamed = true;
+      const nameChanged = oldName !== clean;
+      const pronunciationChanged = Players.cleanPronunciation(current.pronunciation) !== cleanPronunciation;
+      if (!nameChanged && !pronunciationChanged) return current;
+      this.state.players = Players.normalizePlayers(this.state.players.map((player) => player.id === id ? { ...player, name: clean, pronunciation: cleanPronunciation } : player));
+      if (nameChanged) {
+        const renameInGame = (value) => {
+          if (!value) return value;
+          const game = Engine.normalizeGame(value);
+          game.teams.forEach((team) => {
+            const beforeTeamName = team.name;
+            let renamed = false;
+            team.playerIds.forEach((playerIdValue, index) => {
+              if (String(playerIdValue || '') !== id) return;
+              team.players[index] = clean;
+              renamed = true;
+            });
+            if (renamed && game.format === 'singles' && Players.nameKey(beforeTeamName) === Players.nameKey(oldName)) team.name = clean;
           });
-          if (renamed && game.format === 'singles' && Players.nameKey(beforeTeamName) === Players.nameKey(oldName)) team.name = clean;
-        });
-        return game;
-      };
-      this.state.currentGame = renameInGame(this.state.currentGame);
-      this.state.games = (Array.isArray(this.state.games) ? this.state.games : []).map(renameInGame);
+          return game;
+        };
+        this.state.currentGame = renameInGame(this.state.currentGame);
+        this.state.games = (Array.isArray(this.state.games) ? this.state.games : []).map(renameInGame);
+      }
       this.persist();
-      if (this.liveController) this.liveController.broadcast();
-      return this.state.players.find((player) => player.id === id) || { id, name: clean };
+      if (nameChanged && this.liveController) this.liveController.broadcast();
+      return this.state.players.find((player) => player.id === id) || { id, name: clean, pronunciation: cleanPronunciation };
     }
 
     onSubmit(event) {
@@ -3583,7 +3618,7 @@ No completed games in this range.`;
         event.preventDefault();
         const data = new FormData(form);
         try {
-          const player = this.renamePlayer(this.editingPlayerId, data.get('playerName'));
+          const player = this.renamePlayer(this.editingPlayerId, data.get('playerName'), data.get('playerPronunciation'));
           this.editingPlayerId = '';
           this.render();
           this.showToast(`${player.name} updated`);
@@ -5335,6 +5370,7 @@ No completed games in this range.`;
           <header><div><b>Edit player</b><span>Player ID and game history stay linked</span></div><button class="icon-btn compact" type="button" data-action="close-player-edit" aria-label="Close">${icon('x')}</button></header>
           <form id="edit-player-form">
             <label><span>Player name</span><input name="playerName" maxlength="60" value="${escapeHtml(player.name)}" autocomplete="off" required autofocus></label>
+            <label><span>How to pronounce <small>optional</small></span><input name="playerPronunciation" maxlength="100" value="${escapeHtml(player.pronunciation || '')}" autocomplete="off" spellcheck="false" placeholder="Type it how VoiceOver should say it"><small class="player-pronunciation-help">Used only for VoiceOver and the roster preview button. Leave blank to speak the player name.</small></label>
             <div class="player-edit-actions"><button type="button" data-action="close-player-edit">Cancel</button><button class="player-edit-save" type="submit">Save changes</button></div>
           </form>
         </section>

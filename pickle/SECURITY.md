@@ -96,3 +96,7 @@ The scoreboard transport controls the same in-memory `Audio` element and Indexed
 ## v30 voice-profile note
 
 v30 removes the Tagalog selector and adds System Default while retaining English 1 / English 2. Legacy `tagalog` state migrates locally to `system`. System Default uses the browser/device Web Speech default rather than adding a network service or TTS provider to the application.
+
+## v31 player-pronunciation note
+
+v31 adds an optional per-player pronunciation string stored with the local roster. It is handled like the player name: persisted in browser localStorage and included in JSON backups, but it is not uploaded to a PicklePulse service. The value is escaped when rendered and passed only as plain text to the selected Web Speech voice. Controller announcements use it only for speech; visible player names remain unchanged. Roster share QR/code remains name-only in this build.

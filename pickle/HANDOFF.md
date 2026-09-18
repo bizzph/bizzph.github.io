@@ -1,3 +1,29 @@
+# PicklePulse v31 Turnover / Handoff
+
+## v31 changes - per-player VoiceOver pronunciation
+
+- Roster player edit now includes an optional **How to pronounce** field (up to 100 characters).
+- The normal player name remains the visible roster/game/history name. The pronunciation field is used only by VoiceOver speech and the roster pronunciation-preview button.
+- When the pronunciation field is blank, speech falls back to the normal player name.
+- Active/completed game names and player IDs are not rewritten when only pronunciation changes.
+- Existing players migrate automatically with an empty pronunciation field; the player schema version is bumped to 8.
+- Pronunciation is persisted in local app state and included in normal JSON backups/imports.
+- Controller scoring announcements resolve roster-linked player IDs to their pronunciation value for speech only. Live Display visuals continue showing the real player name.
+- Existing English 1, English 2, and System Default voice profiles are retained.
+- Shell asset URLs and service-worker cache are bumped to v31 for reliable updates.
+
+## v31 validation
+
+- Core/live/QR JavaScript syntax checks: PASS.
+- Legacy player normalization adds an empty pronunciation field: PASS.
+- Custom pronunciation normalization/persistence: PASS.
+- Player editor save path stores the pronunciation field: PASS.
+- Roster preview speaks pronunciation with normal-name fallback: PASS.
+- Controller scoring VoiceOver maps game player IDs to roster pronunciation without changing display names: PASS.
+- Core scoring-engine region compared with v30: byte-for-byte unchanged / PASS.
+- v31 cache-busting URLs and service-worker cache name: PASS.
+
+---
 # PicklePulse v30 Turnover / Handoff
 
 ## v30 changes - Voice-over profiles simplified

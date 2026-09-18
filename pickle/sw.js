@@ -1,10 +1,10 @@
-const CACHE_NAME = 'picklepulse-v30-0-0';
+const CACHE_NAME = 'picklepulse-v31-0-0';
 const ASSETS = [
   './index.html',
-  './styles.css?v=30',
-  './src/picklepulse-core.js?v=30',
-  './src/qrcode-offline.js?v=30',
-  './src/live-sync.js?v=30',
+  './styles.css?v=31',
+  './src/picklepulse-core.js?v=31',
+  './src/qrcode-offline.js?v=31',
+  './src/live-sync.js?v=31',
   './manifest.webmanifest',
   './assets/icon.svg'
 ];
