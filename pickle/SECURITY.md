@@ -78,3 +78,7 @@ v24 changes the local scoring/history lifecycle only. It removes the manual scor
 
 v27 adds roster-name speech preview and multi-file MP3 batching without adding a new network path. Name previews use the same installed `localService=true` speech voices and local speech-synthesis API as normal announcements. Multi-file MP3 imports keep the existing extension/MIME, size, and MP3-signature validation; accepted files are written only to same-origin IndexedDB. Clearing the playback queue removes only local track IDs from app state and does not delete the stored MP3 blobs unless the user explicitly uses the saved-track delete control.
 
+
+## v28 compact scoreboard MP3 controls
+
+The scoreboard transport controls the same in-memory `Audio` element and IndexedDB-backed local MP3 queue introduced in v26/v27. It does not add another media source, upload path, remote endpoint, permission, analytics hook, or background service. Seek and volume controls operate only on the current local `blob:` playback object; previous/next resolve IDs from the existing persisted queue.

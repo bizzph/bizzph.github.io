@@ -1690,3 +1690,49 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
   .roster-row .icon-btn[data-action="delete-player"] { grid-column: 6; grid-row: 1; }
   .mp3-add { min-height: 34px; padding-inline: 8px; white-space: nowrap; }
 }
+
+
+/* v28: minimal scoreboard MP3 transport */
+.game-controls-stack { display: grid; gap: 6px; }
+.score-mini-player {
+  min-width: 0; min-height: 38px; display: grid;
+  grid-template-columns: 34px 38px 34px minmax(70px, 1fr) 34px minmax(64px, 112px);
+  align-items: center; gap: 5px; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+}
+.score-mini-player button {
+  width: 34px; height: 30px; padding: 0; border: 0; border-radius: 9px;
+  display: grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer;
+}
+.score-mini-player button:hover:not(:disabled), .score-mini-player button:focus-visible { color: var(--text); background: var(--surface-2); }
+.score-mini-player button:disabled { opacity: .34; cursor: default; }
+.score-mini-player .mini-player-primary { width: 38px; color: var(--accent); background: var(--accent-soft); }
+.score-mini-player .icon { width: 16px; height: 16px; }
+.score-mini-player input[type="range"] { min-width: 0; width: 100%; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.score-mini-player input[type="range"]:disabled { opacity: .32; cursor: default; }
+.mini-player-seek { --mini-range: 100%; }
+.mini-player-volume { max-width: 112px; }
+
+@media (max-width: 640px) {
+  .game-controls-stack { position: sticky; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 10; }
+  .game-controls-stack .game-toolbar { position: static; bottom: auto; box-shadow: var(--shadow); }
+  .score-mini-player { box-shadow: var(--shadow); }
+  .game-view .score-grid { min-height: calc(100dvh - 356px); }
+}
+
+@media (max-width: 430px) {
+  .score-mini-player {
+    grid-template-columns: 32px 36px 32px minmax(54px, 1fr) 32px minmax(52px, 76px);
+    gap: 3px; padding-inline: 4px;
+  }
+  .score-mini-player button { width: 32px; }
+  .score-mini-player .mini-player-primary { width: 36px; }
+  .mini-player-volume { max-width: 76px; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .game-controls-stack { gap: 4px; }
+  .score-mini-player { min-height: 32px; padding-block: 2px; }
+  .score-mini-player button { height: 28px; }
+  .game-view .score-grid { min-height: calc(100dvh - 252px); }
+}

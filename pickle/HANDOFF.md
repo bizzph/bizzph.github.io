@@ -1,3 +1,27 @@
+# PicklePulse v28 Turnover / Handoff
+
+Finalized: 2026-09-19
+
+## v28 changes - minimal scoreboard MP3 transport
+
+- Added a compact local-MP3 transport directly below the scoreboard action toolbar: previous, play/pause, next, seek/progress scrubber, mute/unmute, and volume slider.
+- The compact transport reuses the existing offline IndexedDB MP3 library and persisted queue; it does not create a second player, duplicate blobs, or add network access.
+- Previous/next wrap through the existing queue. Play starts the first queued local track when nothing is active, otherwise it resumes/pauses the current queued track.
+- Playback events update only the compact player controls during normal playback instead of re-rendering the full scoreboard on every time update.
+- On mobile, the match action toolbar and compact music strip share the same sticky controls stack so music controls remain next to scoring controls.
+- Existing scoring/game rules, queue/fairness scheduling, roster, standings, voice-over, Live Display, backup schema, and MP3 storage/security limits are unchanged.
+- Service-worker cache bumped to `picklepulse-v28-0-0`.
+
+## v28 validation
+
+- JavaScript syntax checks for app core, QR module, Live Display module, and service worker: PASS.
+- Minimal scoreboard player contains previous/play-pause/next, seek scrubber, mute, and volume controls: PASS.
+- Mini player actions call the existing local MP3 playback path and existing persisted queue: PASS.
+- Audio `timeupdate`/play/pause/metadata events update the compact controls without a full app render: PASS.
+- No new external URL, upload endpoint, telemetry, cloud audio service, or storage permission was added: PASS.
+
+---
+
 # PicklePulse v27 Turnover / Handoff
 
 Finalized: 2026-09-19

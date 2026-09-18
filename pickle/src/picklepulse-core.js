@@ -1727,6 +1727,7 @@
       this.localTracks = [];
       this.localAudioDbPromise = null;
       this.localMusic = { audio: null, trackId: '', objectUrl: '', resumeAfterSpeech: false };
+      this.lastMp3Volume = normalizeSettings(this.state.settings).mp3Volume || DEFAULT_SETTINGS.mp3Volume;
       this.lofiTimer = null;
       this.lofiStep = 0;
       this.musicTrackIndex = 0;
@@ -2420,6 +2421,19 @@ No completed games in this range.`;
         if (output) output.textContent = `${Math.round(Number(event.target.value) || 0)}%`;
         if (this.localMusic.audio) this.localMusic.audio.volume = Math.min(1, Math.max(0, Number(event.target.value) / 100 || 0));
       }
+      if (event.target && event.target.id === 'mini-mp3-volume') {
+        const volume = Math.min(1, Math.max(0, Number(event.target.value) / 100 || 0));
+        if (this.localMusic.audio) this.localMusic.audio.volume = volume;
+        this.updateMiniPlayerUi({ volume });
+      }
+      if (event.target && event.target.id === 'mini-mp3-seek') {
+        const audio = this.localMusic.audio;
+        const duration = audio && Number.isFinite(audio.duration) ? audio.duration : 0;
+        if (audio && duration > 0) {
+          const position = Math.min(1000, Math.max(0, Number(event.target.value) || 0));
+          audio.currentTime = duration * (position / 1000);
+        }
+      }
     }
 
     resolvedTheme() {
@@ -2574,7 +2588,8 @@ No completed games in this range.`;
           this.state.settings = { ...settings, mp3Queue: nextQueue };
           this.persist();
         }
-        if (this.showAudio && this.isConnected) this.render();
+        if (this.isConnected && (this.showAudio || this.view === 'game')) this.render();
+        else this.updateMiniPlayerUi();
         return this.localTracks;
       } catch (error) {
         if (this.showAudio) this.showToast(error.message || 'Offline MP3 storage unavailable');
@@ -2741,8 +2756,14 @@ No completed games in this range.`;
       const audio = new Audio();
       audio.preload = 'metadata';
       audio.volume = normalizeSettings(this.state.settings).mp3Volume;
+      audio.addEventListener('play', () => this.updateMiniPlayerUi());
+      audio.addEventListener('pause', () => this.updateMiniPlayerUi());
+      audio.addEventListener('timeupdate', () => this.updateMiniPlayerUi());
+      audio.addEventListener('loadedmetadata', () => this.updateMiniPlayerUi());
+      audio.addEventListener('durationchange', () => this.updateMiniPlayerUi());
       audio.addEventListener('ended', () => this.playNextLocalMp3());
       audio.addEventListener('error', () => {
+        this.updateMiniPlayerUi();
         if (this.localMusic.trackId) this.showToast('Could not play this MP3');
       });
       this.localMusic.audio = audio;
@@ -2772,6 +2793,7 @@ No completed games in this range.`;
       audio.volume = normalizeSettings(this.state.settings).mp3Volume;
       await audio.play();
       if (this.showAudio) this.render();
+      else this.updateMiniPlayerUi();
       return true;
     }
 
@@ -2779,6 +2801,7 @@ No completed games in this range.`;
       const audio = this.localMusic.audio;
       if (audio && !audio.paused) audio.pause();
       if (this.showAudio) this.render();
+      else this.updateMiniPlayerUi();
     }
 
     stopLocalMusic(clearSource = false) {
@@ -2798,15 +2821,97 @@ No completed games in this range.`;
     }
 
     async playNextLocalMp3() {
-      const queue = normalizeSettings(this.state.settings).mp3Queue;
+      const queue = this.localTracks.length ? normalizeSettings(this.state.settings).mp3Queue : [];
       if (!queue.length) {
         this.stopLocalMusic(true);
         if (this.showAudio) this.render();
+        else this.updateMiniPlayerUi();
         return;
       }
       const current = queue.indexOf(this.localMusic.trackId);
       const nextId = queue[(current + 1 + queue.length) % queue.length];
       try { await this.playLocalMp3(nextId); } catch (_error) { this.showToast('Could not play next MP3'); }
+    }
+
+    async playPreviousLocalMp3() {
+      const queue = this.localTracks.length ? normalizeSettings(this.state.settings).mp3Queue : [];
+      if (!queue.length) return;
+      const current = queue.indexOf(this.localMusic.trackId);
+      const previousIndex = current < 0 ? queue.length - 1 : (current - 1 + queue.length) % queue.length;
+      try { await this.playLocalMp3(queue[previousIndex]); } catch (_error) { this.showToast('Could not play previous MP3'); }
+    }
+
+    async toggleMiniLocalMp3() {
+      const queue = this.localTracks.length ? normalizeSettings(this.state.settings).mp3Queue : [];
+      if (!queue.length) {
+        this.showToast('Add MP3s from Audio settings first');
+        return;
+      }
+      const audio = this.localMusic.audio;
+      if (this.localMusic.trackId && queue.includes(this.localMusic.trackId) && audio && !audio.paused && !audio.ended) {
+        this.pauseLocalMp3();
+        return;
+      }
+      const id = this.localMusic.trackId && queue.includes(this.localMusic.trackId) ? this.localMusic.trackId : queue[0];
+      try { await this.playLocalMp3(id); } catch (error) { this.showToast(error.message || 'Could not play MP3'); }
+    }
+
+    toggleMiniMp3Mute() {
+      const settings = normalizeSettings(this.state.settings);
+      const current = settings.mp3Volume;
+      if (current > 0.001) this.lastMp3Volume = current;
+      const mp3Volume = current > 0.001 ? 0 : Math.min(1, Math.max(0.05, this.lastMp3Volume || DEFAULT_SETTINGS.mp3Volume));
+      this.state.settings = { ...settings, mp3Volume };
+      if (this.localMusic.audio) this.localMusic.audio.volume = mp3Volume;
+      this.persist();
+      if (this.showAudio) this.render();
+      else this.updateMiniPlayerUi();
+    }
+
+    updateMiniPlayerUi(options = {}) {
+      if (!this.isConnected || typeof this.querySelector !== 'function') return;
+      const player = this.querySelector('[data-role="mini-mp3-player"]');
+      if (!player) return;
+      const settings = normalizeSettings(this.state.settings);
+      const queue = this.localTracks.length ? settings.mp3Queue : [];
+      const audio = this.localMusic.audio;
+      const isPlaying = Boolean(audio && !audio.paused && !audio.ended && this.localMusic.trackId);
+      const canNavigate = queue.length > 0;
+      const play = player.querySelector('[data-action="mini-mp3-toggle"]');
+      const previous = player.querySelector('[data-action="mini-mp3-prev"]');
+      const next = player.querySelector('[data-action="mini-mp3-next"]');
+      const mute = player.querySelector('[data-action="mini-mp3-mute"]');
+      const seek = player.querySelector('#mini-mp3-seek');
+      const volume = player.querySelector('#mini-mp3-volume');
+      if (previous) previous.disabled = !canNavigate;
+      if (next) next.disabled = !canNavigate;
+      if (play) {
+        play.disabled = !canNavigate;
+        const playingState = isPlaying ? '1' : '0';
+        if (play.dataset.playing !== playingState) {
+          play.dataset.playing = playingState;
+          play.innerHTML = icon(isPlaying ? 'pause' : 'play');
+          play.setAttribute('aria-label', isPlaying ? 'Pause background music' : 'Play background music');
+          play.title = isPlaying ? 'Pause' : 'Play';
+        }
+      }
+      const effectiveVolume = Object.prototype.hasOwnProperty.call(options, 'volume') ? options.volume : settings.mp3Volume;
+      if (mute) {
+        const mutedState = effectiveVolume > 0.001 ? '0' : '1';
+        if (mute.dataset.muted !== mutedState) {
+          mute.dataset.muted = mutedState;
+          mute.innerHTML = icon(effectiveVolume > 0.001 ? 'speaker' : 'speakerOff');
+          mute.setAttribute('aria-label', effectiveVolume > 0.001 ? 'Mute background music' : 'Unmute background music');
+          mute.title = effectiveVolume > 0.001 ? 'Mute' : 'Unmute';
+        }
+      }
+      if (volume && document.activeElement !== volume && !Object.prototype.hasOwnProperty.call(options, 'volume')) volume.value = String(Math.round(settings.mp3Volume * 100));
+      if (seek) {
+        const duration = audio && Number.isFinite(audio.duration) ? audio.duration : 0;
+        const currentTime = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        seek.disabled = !(duration > 0 && this.localMusic.trackId);
+        if (document.activeElement !== seek) seek.value = duration > 0 ? String(Math.min(1000, Math.max(0, Math.round((currentTime / duration) * 1000)))) : '0';
+      }
     }
 
     async startLofi() {
@@ -3703,13 +3808,15 @@ No completed games in this range.`;
         this.persist();
         return;
       }
-      if (event.target.id === 'mp3-volume') {
+      if (event.target.id === 'mp3-volume' || event.target.id === 'mini-mp3-volume') {
         const mp3Volume = Math.min(1, Math.max(0, Number(event.target.value) / 100 || 0));
         this.state.settings = { ...normalizeSettings(this.state.settings), mp3Volume };
+        if (mp3Volume > 0.001) this.lastMp3Volume = mp3Volume;
         if (this.localMusic.audio) this.localMusic.audio.volume = mp3Volume;
         const output = this.querySelector('#mp3-volume-value');
         if (output) output.textContent = `${Math.round(mp3Volume * 100)}%`;
         this.persist();
+        this.updateMiniPlayerUi();
         return;
       }
       if (event.target.name === 'format') {
@@ -4076,6 +4183,22 @@ No completed games in this range.`;
       }
       if (action === 'mp3-next') {
         await this.playNextLocalMp3();
+        return;
+      }
+      if (action === 'mini-mp3-prev') {
+        await this.playPreviousLocalMp3();
+        return;
+      }
+      if (action === 'mini-mp3-toggle') {
+        await this.toggleMiniLocalMp3();
+        return;
+      }
+      if (action === 'mini-mp3-next') {
+        await this.playNextLocalMp3();
+        return;
+      }
+      if (action === 'mini-mp3-mute') {
+        this.toggleMiniMp3Mute();
         return;
       }
       if (action === 'mp3-stop') {
@@ -5305,16 +5428,41 @@ No completed games in this range.`;
           <div class="score-grid" aria-live="polite">
             ${scoreOrder.map((index) => this.renderScoreTeam(game, index)).join('')}
           </div>
-          <nav class="game-toolbar" aria-label="Match actions">
-            <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
-            <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
-            <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
-            <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
-            ${game.status === 'complete'
-              ? `<button class="tool-btn" type="button" data-action="new" aria-label="New game" title="New game">${icon('plus')}</button>`
-              : `<button class="tool-btn" type="button" data-action="end" aria-label="End game" title="End game">${icon('trophy')}</button>`}
-          </nav>
+          <div class="game-controls-stack">
+            <nav class="game-toolbar" aria-label="Match actions">
+              <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
+              <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
+              <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
+              <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
+              ${game.status === 'complete'
+                ? `<button class="tool-btn" type="button" data-action="new" aria-label="New game" title="New game">${icon('plus')}</button>`
+                : `<button class="tool-btn" type="button" data-action="end" aria-label="End game" title="End game">${icon('trophy')}</button>`}
+            </nav>
+            ${this.renderMiniMp3Player()}
+          </div>
         </section>
+      `;
+    }
+
+    renderMiniMp3Player() {
+      const settings = normalizeSettings(this.state.settings);
+      const queue = this.localTracks.length ? settings.mp3Queue : [];
+      const audio = this.localMusic.audio;
+      const isPlaying = Boolean(audio && !audio.paused && !audio.ended && this.localMusic.trackId);
+      const duration = audio && Number.isFinite(audio.duration) ? audio.duration : 0;
+      const currentTime = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const position = duration > 0 ? Math.min(1000, Math.max(0, Math.round((currentTime / duration) * 1000))) : 0;
+      const disabled = queue.length ? '' : 'disabled';
+      const seekDisabled = duration > 0 && this.localMusic.trackId ? '' : 'disabled';
+      return `
+        <div class="score-mini-player" data-role="mini-mp3-player" aria-label="Background music controls">
+          <button type="button" data-action="mini-mp3-prev" ${disabled} aria-label="Previous background track" title="Previous">${icon('prev')}</button>
+          <button class="mini-player-primary" type="button" data-action="mini-mp3-toggle" ${disabled} aria-label="${isPlaying ? 'Pause' : 'Play'} background music" title="${isPlaying ? 'Pause' : 'Play'}">${icon(isPlaying ? 'pause' : 'play')}</button>
+          <button type="button" data-action="mini-mp3-next" ${disabled} aria-label="Next background track" title="Next">${icon('next')}</button>
+          <input id="mini-mp3-seek" class="mini-player-seek" type="range" min="0" max="1000" step="1" value="${position}" ${seekDisabled} aria-label="Background track position">
+          <button type="button" data-action="mini-mp3-mute" aria-label="${settings.mp3Volume > 0.001 ? 'Mute' : 'Unmute'} background music" title="${settings.mp3Volume > 0.001 ? 'Mute' : 'Unmute'}">${icon(settings.mp3Volume > 0.001 ? 'speaker' : 'speakerOff')}</button>
+          <input id="mini-mp3-volume" class="mini-player-volume" type="range" min="0" max="100" step="5" value="${Math.round(settings.mp3Volume * 100)}" aria-label="Background music volume">
+        </div>
       `;
     }
 
