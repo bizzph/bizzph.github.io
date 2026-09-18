@@ -8,7 +8,7 @@ PicklePulse is local-first. Queue, roster, scoring, Standings/Games, backups, ro
 
 Persistent app state is stored in the browser's `localStorage`. User-added MP3 blobs are stored separately in same-origin browser IndexedDB (`picklepulse-audio-v1`) because `localStorage` is not suitable for binary audio. Neither store is encrypted and both should be treated like other data in the browser profile/device. Do not put secrets, passwords, medical information, or other sensitive data in player names or backups.
 
-Voice-over uses only speech-synthesis voices that the browser reports as `localService=true`. PicklePulse exposes English 1, English 2, and Tagalog profiles and does not intentionally fall back to a cloud TTS voice. Actual offline voice availability depends on the operating system/browser voice packs installed on that device; unavailable profiles remain unavailable until a local voice is installed.
+Voice-over exposes three profiles: English 1, English 2, and System Default. English 1 / English 2 use the app's local-voice filtering, including the Firefox `urn:moz-tts:` compatibility path for local voices that Gecko may mislabel. System Default deliberately delegates voice choice to the browser/device speech engine; because browsers differ in how they implement their default speech service, PicklePulse cannot independently guarantee that this user-selected profile is offline on every platform. No third-party TTS SDK or PicklePulse-controlled cloud TTS endpoint is included.
 
 
 ## Intentional user sharing
@@ -92,3 +92,7 @@ The scoreboard transport controls the same in-memory `Audio` element and Indexed
 - Version query parameters on local CSS/JS are cache-busting identifiers only; they do not add network endpoints or external dependencies.
 - The scoreboard MP3 controls continue to use only the existing local IndexedDB audio library and local `<audio>` playback.
 
+
+## v30 voice-profile note
+
+v30 removes the Tagalog selector and adds System Default while retaining English 1 / English 2. Legacy `tagalog` state migrates locally to `system`. System Default uses the browser/device Web Speech default rather than adding a network service or TTS provider to the application.

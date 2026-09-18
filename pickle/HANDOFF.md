@@ -1,3 +1,26 @@
+# PicklePulse v30 Turnover / Handoff
+
+## v30 changes - Voice-over profiles simplified
+
+- Voice-over now has exactly three selectable profiles: **English 1**, **English 2**, and **System Default**.
+- English 1 and English 2 keep the existing local-English voice detection/ranking behavior from v29.
+- Tagalog has been removed from the Voice-over selector. Existing persisted `tagalog` selections migrate to `system` during settings normalization.
+- System Default intentionally leaves the utterance voice (and controller language hint) unset so the browser/device can choose its normal default speech voice.
+- Firefox delayed voice enumeration handling remains in place for English 1 / English 2.
+- No scoring, roster, queue/fairness, MP3, standings, completed-game, or Live Display behavior was changed.
+- Shell asset URLs and service-worker cache are bumped to v30 for reliable updates.
+
+## v30 validation
+
+- Core/live/QR/service-worker JavaScript syntax checks: PASS.
+- Voice selector contains exactly English 1, English 2, and System Default: PASS.
+- Tagalog is absent from the rendered Voice-over selector: PASS.
+- Legacy Tagalog persisted setting migrates to System Default: PASS.
+- English 1 / English 2 voice selection logic remains local-English based: PASS.
+- v30 cache-busting URLs and service-worker cache name: PASS.
+
+---
+
 # PicklePulse v29 Turnover / Handoff
 
 ## v29 changes - Firefox audio compatibility and larger scoreboard transport
