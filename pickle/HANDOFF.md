@@ -1,3 +1,29 @@
+# PicklePulse v27 Turnover / Handoff
+
+Finalized: 2026-09-19
+
+## v27 changes - roster pronunciation preview, faster multi-MP3 queue
+
+- Added a **voice preview button to every Roster row**. It speaks that player's exact roster name using the currently selected offline voice profile, voice speed, and voice volume. Preview works even when automatic voice-over is toggled off; it still requires an installed `localService=true` voice.
+- The local MP3 picker is explicitly **multi-select** and the UI now says **Add MP3s**. Valid files selected together are saved in one batch and are **added directly to the playback queue** in selection order.
+- Simplified MP3 navigation: the active queue is the primary list, long queues scroll inside the Audio panel, a **Clear** action removes the queue without deleting saved files, and the duplicate offline-library list is moved into a collapsed **Manage saved tracks** section.
+- Optimized MP3 persistence by upgrading the existing `picklepulse-audio-v1` IndexedDB schema to version 2 with a separate lightweight `track-meta` store. Normal startup/library refreshes read metadata only; MP3 blobs are fetched only when a track is played. Existing v26 tracks are migrated locally during the one-time database upgrade.
+- Multi-file imports now validate selected files first and write all accepted tracks through a **single IndexedDB transaction**, followed by one state persist/library refresh instead of one write/render cycle per song.
+- Added `content-visibility`/intrinsic-size hints to long Roster rows and bounded scrolling for MP3 lists to reduce unnecessary rendering work on large lists while remaining a no-op on browsers that do not support the hint.
+- No scoring, game rules, queue/fairness scheduling, standings calculations, Live Display protocol, backup schema, roster sharing, or network permissions were changed.
+- Service-worker cache bumped to `picklepulse-v27-0-0`.
+
+## v27 validation
+
+- JavaScript syntax checks for app core, QR module, Live Display module, and service worker: PASS.
+- Roster markup/action wiring includes the new per-player pronunciation preview using the selected local voice settings: PASS.
+- MP3 file input keeps `multiple`; batch import writes accepted files to the local blob + metadata stores and appends their IDs directly to `mp3Queue`: PASS.
+- Audio startup/library scan reads `track-meta` instead of the blob store; playback still reads one blob by selected track ID: PASS.
+- MP3 queue is primary/scroll-contained; saved-track management is collapsed by default; queue clearing does not delete stored files: PASS.
+- No new external URL, telemetry, upload API, cloud TTS fallback, `sendBeacon`, XHR, or unrestricted service-worker cache path was added: PASS.
+
+---
+
 # PicklePulse v26 Turnover / Handoff
 
 Finalized: 2026-09-19

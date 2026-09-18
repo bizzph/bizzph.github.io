@@ -20,7 +20,7 @@ Roster QR/codes and exported backups are **not encrypted**. A roster code is an 
 
 - MP3 files are selected explicitly by the user and saved to same-origin IndexedDB. PicklePulse does not upload them, fetch cover art, parse remote playlists, or contact a music service.
 - The MP3 picker is limited to MP3 MIME/extensions and a lightweight ID3/MPEG header check, with a 50 MB per-track cap and a 40-track local-library cap to reduce storage/memory abuse.
-- The library UI keeps only track metadata in memory. A track blob is loaded from IndexedDB only when selected for playback, then played through a browser `blob:` object URL. Object URLs are revoked when their playback source is cleared.
+- The library UI keeps only track metadata in memory. As of v27, that metadata is stored in a separate IndexedDB `track-meta` object store, so normal library scans do not deserialize every saved MP3 blob. A track blob is loaded from the `tracks` store only when selected for playback, then played through a browser `blob:` object URL. Object URLs are revoked when their playback source is cleared.
 - Queue order and volume are lightweight metadata in the normal local app state; the binary MP3 data is not copied into backup JSON or roster share codes.
 - Browser storage quotas still apply. Clearing site data, using private browsing, or browser eviction can remove saved MP3 files.
 
@@ -74,3 +74,7 @@ The v23 audit reviewed first-party HTML, CSS, JavaScript, the service worker, ma
 ## v24 scoring-history note
 
 v24 changes the local scoring/history lifecycle only. It removes the manual score snapshot action and enforces one completed History record per stable game ID, including reversible queue state when a just-completed queued game is reopened. No new network endpoint, external script, telemetry path, permission, or remote-data flow was added in v24. The v23 security audit and Live Display limitations above remain applicable.
+## v27 audio/UI security note
+
+v27 adds roster-name speech preview and multi-file MP3 batching without adding a new network path. Name previews use the same installed `localService=true` speech voices and local speech-synthesis API as normal announcements. Multi-file MP3 imports keep the existing extension/MIME, size, and MP3-signature validation; accepted files are written only to same-origin IndexedDB. Clearing the playback queue removes only local track IDs from app state and does not delete the stored MP3 blobs unless the user explicitly uses the saved-track delete control.
+

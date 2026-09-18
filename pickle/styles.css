@@ -1642,3 +1642,51 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
 @media (max-width: 640px) {
   .audio-panel { max-height: calc(100dvh - 16px - env(safe-area-inset-bottom)); }
 }
+
+/* v27: roster pronunciation preview, compact multi-file MP3 queue, and lighter audio metadata reads */
+.roster-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
+}
+.voice-preview-btn { color: var(--accent); }
+
+.mp3-block-head > div { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.mp3-block-head > div > b { font-size: .75rem; }
+.mp3-block-head > div > span {
+  min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px;
+  display: grid; place-items: center; color: var(--accent); background: var(--accent-soft);
+  font-size: .66rem; font-weight: 900;
+}
+.mp3-compact-action {
+  min-height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px;
+  color: var(--muted); background: var(--surface); font-size: .66rem; font-weight: 850; cursor: pointer;
+}
+.mp3-queue {
+  max-height: min(34vh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.mp3-library-details { border: 1px solid var(--line); border-radius: 14px; background: var(--bg); overflow: clip; }
+.mp3-library-details > summary {
+  min-height: 46px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.mp3-library-details > summary::-webkit-details-marker { display: none; }
+.mp3-library-details > summary > span { min-width: 0; display: grid; gap: 2px; }
+.mp3-library-details > summary b { font-size: .74rem; }
+.mp3-library-details > summary small { color: var(--muted); font-size: .62rem; }
+.mp3-library-details > summary .icon { width: 15px; height: 15px; transition: transform .18s ease; }
+.mp3-library-details[open] > summary .icon { transform: rotate(180deg); }
+.mp3-library-block { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding-top: 8px; }
+.mp3-library { max-height: min(32vh, 280px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+
+@media (max-width: 480px) {
+  .roster-row { grid-template-columns: 34px minmax(0, 1fr) 36px 34px 34px 34px; gap: 6px; }
+  .roster-row .queue-chip { grid-column: 3; grid-row: 1; justify-self: auto; }
+  .roster-row .icon-btn[data-action="preview-player-voice"] { grid-column: 4; grid-row: 1; }
+  .roster-row .icon-btn[data-action="edit-player"] { grid-column: 5; grid-row: 1; }
+  .roster-row .icon-btn[data-action="delete-player"] { grid-column: 6; grid-row: 1; }
+  .mp3-add { min-height: 34px; padding-inline: 8px; white-space: nowrap; }
+}

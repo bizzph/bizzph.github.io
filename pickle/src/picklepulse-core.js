@@ -1221,8 +1221,9 @@
   const MAX_IMPORT_GAMES = 5000;
   const MAX_ROSTER_IMPORT_CHARS = 100000;
   const AUDIO_DB_NAME = 'picklepulse-audio-v1';
-  const AUDIO_DB_VERSION = 1;
+  const AUDIO_DB_VERSION = 2;
   const AUDIO_STORE_NAME = 'tracks';
+  const AUDIO_META_STORE_NAME = 'track-meta';
   const MAX_LOCAL_MP3_BYTES = 50 * 1024 * 1024;
   const MAX_LOCAL_MP3_TRACKS = 40;
   const DEFAULT_APPEARANCE = Object.freeze({ teamA: '', teamB: '', highContrast: false });
@@ -2509,7 +2510,33 @@ No completed games in this range.`;
         const request = indexedDB.open(AUDIO_DB_NAME, AUDIO_DB_VERSION);
         request.onupgradeneeded = () => {
           const db = request.result;
-          if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'id' });
+          const tx = request.transaction;
+          const trackStore = db.objectStoreNames.contains(AUDIO_STORE_NAME)
+            ? tx.objectStore(AUDIO_STORE_NAME)
+            : db.createObjectStore(AUDIO_STORE_NAME, { keyPath: 'id' });
+          const metaStore = db.objectStoreNames.contains(AUDIO_META_STORE_NAME)
+            ? tx.objectStore(AUDIO_META_STORE_NAME)
+            : db.createObjectStore(AUDIO_META_STORE_NAME, { keyPath: 'id' });
+
+          // v2 separates tiny track metadata from MP3 blobs. Migrate older local tracks
+          // in-place so startup/library refreshes no longer deserialize every audio file.
+          if (trackStore && metaStore) {
+            const cursorRequest = trackStore.openCursor();
+            cursorRequest.onsuccess = () => {
+              const cursor = cursorRequest.result;
+              if (!cursor) return;
+              const track = cursor.value || {};
+              if (track.id) {
+                metaStore.put({
+                  id: String(track.id).slice(0, 120),
+                  name: String(track.name || 'Local MP3').slice(0, 120),
+                  size: Math.max(0, Number(track.size) || Number(track.blob && track.blob.size) || 0),
+                  addedAt: Number(track.addedAt) || 0
+                });
+              }
+              cursor.continue();
+            };
+          }
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error || new Error('Could not open offline MP3 storage.'));
@@ -2525,18 +2552,18 @@ No completed games in this range.`;
       try {
         const db = await this.openLocalAudioDb();
         const tracks = await new Promise((resolve, reject) => {
-          const tx = db.transaction(AUDIO_STORE_NAME, 'readonly');
-          const request = tx.objectStore(AUDIO_STORE_NAME).getAll();
+          const tx = db.transaction(AUDIO_META_STORE_NAME, 'readonly');
+          const request = tx.objectStore(AUDIO_META_STORE_NAME).getAll();
           request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
-          request.onerror = () => reject(request.error || new Error('Could not read saved MP3 files.'));
+          request.onerror = () => reject(request.error || new Error('Could not read saved MP3 metadata.'));
         });
         this.localTracks = tracks
-          .filter((track) => track && track.id && track.blob instanceof Blob)
+          .filter((track) => track && track.id)
           .slice(0, MAX_LOCAL_MP3_TRACKS)
           .map((track) => ({
             id: String(track.id).slice(0, 120),
             name: String(track.name || 'Local MP3').slice(0, 120),
-            size: Math.max(0, Number(track.size) || Number(track.blob.size) || 0),
+            size: Math.max(0, Number(track.size) || 0),
             addedAt: Number(track.addedAt) || 0
           }))
           .sort((a, b) => b.addedAt - a.addedAt);
@@ -2565,44 +2592,83 @@ No completed games in this range.`;
       return false;
     }
 
-    async saveLocalMp3(file) {
-      if (!file) return false;
+    async validateLocalMp3(file) {
+      if (!file) throw new Error('Choose an MP3 file.');
       const name = String(file.name || '').trim().slice(0, 120);
       const lowerName = name.toLowerCase();
       const safeType = String(file.type || '').toLowerCase();
       if (!lowerName.endsWith('.mp3') && !['audio/mpeg', 'audio/mp3'].includes(safeType)) {
-        throw new Error('Choose an MP3 file.');
+        throw new Error(`${name || 'File'} is not an MP3.`);
       }
       if (!file.size || file.size > MAX_LOCAL_MP3_BYTES) {
-        throw new Error(`Each MP3 must be ${formatBytes(MAX_LOCAL_MP3_BYTES)} or smaller.`);
+        throw new Error(`${name || 'MP3'} must be ${formatBytes(MAX_LOCAL_MP3_BYTES)} or smaller.`);
       }
       if (!(await this.hasMp3Signature(file))) {
-        throw new Error('This file does not look like a valid MP3.');
+        throw new Error(`${name || 'File'} does not look like a valid MP3.`);
       }
-      if (this.localTracks.length >= MAX_LOCAL_MP3_TRACKS) {
-        throw new Error(`Offline library is limited to ${MAX_LOCAL_MP3_TRACKS} tracks.`);
-      }
-      const db = await this.openLocalAudioDb();
       const id = Players.makeId('track');
-      const record = {
-        id,
-        name: name || 'Local MP3',
-        size: file.size,
-        addedAt: Date.now(),
-        blob: file.slice(0, file.size, 'audio/mpeg')
+      return {
+        record: {
+          id,
+          name: name || 'Local MP3',
+          size: file.size,
+          addedAt: Date.now(),
+          blob: file.slice(0, file.size, 'audio/mpeg')
+        },
+        meta: { id, name: name || 'Local MP3', size: file.size, addedAt: Date.now() }
       };
+    }
+
+    async saveLocalMp3s(files) {
+      const selected = Array.from(files || []).filter(Boolean).slice(0, MAX_LOCAL_MP3_TRACKS);
+      if (!selected.length) return { added: 0, rejected: [] };
+      const remaining = Math.max(0, MAX_LOCAL_MP3_TRACKS - this.localTracks.length);
+      if (!remaining) throw new Error(`Offline library is limited to ${MAX_LOCAL_MP3_TRACKS} tracks.`);
+
+      const prepared = [];
+      const rejected = [];
+      for (const file of selected) {
+        if (prepared.length >= remaining) {
+          rejected.push(`${String(file.name || 'MP3').slice(0, 80)}: library is full`);
+          continue;
+        }
+        try {
+          prepared.push(await this.validateLocalMp3(file));
+        } catch (error) {
+          rejected.push(error.message || `Could not add ${String(file.name || 'MP3').slice(0, 80)}`);
+        }
+      }
+      if (!prepared.length) {
+        throw new Error(rejected[0] || 'No valid MP3 files were selected.');
+      }
+
+      const db = await this.openLocalAudioDb();
       await new Promise((resolve, reject) => {
-        const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
-        tx.objectStore(AUDIO_STORE_NAME).put(record);
+        const tx = db.transaction([AUDIO_STORE_NAME, AUDIO_META_STORE_NAME], 'readwrite');
+        const trackStore = tx.objectStore(AUDIO_STORE_NAME);
+        const metaStore = tx.objectStore(AUDIO_META_STORE_NAME);
+        prepared.forEach(({ record, meta }) => {
+          trackStore.put(record);
+          metaStore.put(meta);
+        });
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error || new Error('Could not save this MP3 offline.'));
-        tx.onabort = () => reject(tx.error || new Error('Could not save this MP3 offline.'));
+        tx.onerror = () => reject(tx.error || new Error('Could not save the selected MP3 files offline.'));
+        tx.onabort = () => reject(tx.error || new Error('Could not save the selected MP3 files offline.'));
       });
+
+      // New files go straight into the playback queue; the queue is persisted as
+      // lightweight IDs while the audio bytes remain only in IndexedDB.
       const settings = normalizeSettings(this.state.settings);
-      this.state.settings = { ...settings, mp3Queue: [...settings.mp3Queue, id].slice(0, 100) };
+      const addedIds = prepared.map(({ record }) => record.id);
+      this.state.settings = { ...settings, mp3Queue: [...new Set([...settings.mp3Queue, ...addedIds])].slice(0, 100) };
       this.persist();
       await this.loadLocalTracks();
-      return true;
+      return { added: prepared.length, rejected };
+    }
+
+    async saveLocalMp3(file) {
+      const result = await this.saveLocalMp3s([file]);
+      return result.added > 0;
     }
 
     async deleteLocalMp3(id) {
@@ -2611,8 +2677,9 @@ No completed games in this range.`;
       if (this.localMusic.trackId === trackId) this.stopLocalMusic(true);
       const db = await this.openLocalAudioDb();
       await new Promise((resolve, reject) => {
-        const tx = db.transaction(AUDIO_STORE_NAME, 'readwrite');
+        const tx = db.transaction([AUDIO_STORE_NAME, AUDIO_META_STORE_NAME], 'readwrite');
         tx.objectStore(AUDIO_STORE_NAME).delete(trackId);
+        tx.objectStore(AUDIO_META_STORE_NAME).delete(trackId);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error || new Error('Could not remove this MP3.'));
       });
@@ -2643,6 +2710,16 @@ No completed games in this range.`;
         else this.stopLocalMusic(true);
       }
       this.render();
+    }
+
+    clearLocalMp3Queue() {
+      const settings = normalizeSettings(this.state.settings);
+      if (!settings.mp3Queue.length) return;
+      this.state.settings = { ...settings, mp3Queue: [] };
+      this.persist();
+      this.stopLocalMusic(true);
+      this.render();
+      this.showToast('MP3 queue cleared; saved tracks were kept');
     }
 
     async getLocalMp3Blob(id) {
@@ -3240,6 +3317,46 @@ No completed games in this range.`;
       }
     }
 
+    previewPlayerVoice(playerId) {
+      const player = this.playerById(playerId);
+      if (!player) return;
+      if (!globalThis.speechSynthesis || !globalThis.SpeechSynthesisUtterance) {
+        this.showToast('Voice preview is unavailable in this browser');
+        return;
+      }
+      this.refreshVoices(false);
+      const voice = this.selectedVoice(false);
+      if (!voice) {
+        this.showToast('Selected offline voice is not installed on this device');
+        return;
+      }
+      try {
+        this.pauseLofiForSpeech();
+        const generation = ++this.voiceGeneration;
+        if (this.voicePauseTimer) {
+          window.clearTimeout(this.voicePauseTimer);
+          this.voicePauseTimer = null;
+        }
+        speechSynthesis.cancel();
+        const settings = normalizeSettings(this.state.settings);
+        const utterance = new SpeechSynthesisUtterance(player.name);
+        utterance.voice = voice;
+        utterance.lang = voice.lang || (settings.voiceProfile === 'tagalog' ? 'fil-PH' : 'en-US');
+        utterance.rate = settings.voiceRate;
+        utterance.pitch = 1;
+        utterance.volume = settings.voiceVolume;
+        const finish = () => {
+          if (generation === this.voiceGeneration) this.resumeLofiAfterSpeech();
+        };
+        utterance.onend = finish;
+        utterance.onerror = finish;
+        speechSynthesis.speak(utterance);
+      } catch (_error) {
+        this.resumeLofiAfterSpeech();
+        this.showToast('Voice preview unavailable');
+      }
+    }
+
     addPlayer(name) {
       const clean = Players.cleanName(name);
       if (!clean) {
@@ -3620,16 +3737,15 @@ No completed games in this range.`;
         const files = [...event.target.files].slice(0, MAX_LOCAL_MP3_TRACKS);
         event.target.value = '';
         (async () => {
-          let added = 0;
-          for (const file of files) {
-            try {
-              if (await this.saveLocalMp3(file)) added += 1;
-            } catch (error) {
-              this.showToast(error.message || 'Could not save MP3');
-              break;
+          try {
+            const result = await this.saveLocalMp3s(files);
+            if (result.added) {
+              const skipped = result.rejected.length;
+              this.showToast(`${result.added} MP3${result.added === 1 ? '' : 's'} added to queue${skipped ? ` · ${skipped} skipped` : ''}`);
             }
+          } catch (error) {
+            this.showToast(error.message || 'Could not save MP3 files');
           }
-          if (added) this.showToast(`${added} MP3${added === 1 ? '' : 's'} saved offline`);
         })();
       }
     }
@@ -3975,6 +4091,10 @@ No completed games in this range.`;
         this.dequeueLocalMp3(target.dataset.track);
         return;
       }
+      if (action === 'mp3-clear-queue') {
+        this.clearLocalMp3Queue();
+        return;
+      }
       if (action === 'mp3-delete') {
         const track = this.localTracks.find((item) => item.id === String(target.dataset.track || ''));
         if (!track) return;
@@ -4186,6 +4306,10 @@ No completed games in this range.`;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
+        return;
+      }
+      if (action === 'preview-player-voice') {
+        this.previewPlayerVoice(target.dataset.player);
         return;
       }
       if (action === 'edit-player') {
@@ -4496,7 +4620,7 @@ No completed games in this range.`;
             <output id="voice-rate-value" for="voice-rate">${settings.voiceRate.toFixed(2)}×</output>
           </label>
 
-          <div class="audio-section-title"><div><b>Local MP3 background music</b><small>Saved only in this browser; nothing is uploaded</small></div><button type="button" class="mp3-add" data-action="choose-mp3">${icon('plus')} Add MP3</button></div>
+          <div class="audio-section-title"><div><b>Local MP3 background music</b><small>Select one or many MP3s. New files are saved offline and queued automatically.</small></div><button type="button" class="mp3-add" data-action="choose-mp3">${icon('plus')} Add MP3s</button></div>
           <input id="mp3-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple hidden>
           <label class="audio-range" for="mp3-volume">
             <span><b>MP3 volume</b><small>Independent from voice-over volume</small></span>
@@ -4505,16 +4629,18 @@ No completed games in this range.`;
           </label>
           ${currentTrack ? `<div class="mp3-now"><div><small>${isPlaying ? 'Now playing' : 'Paused'}</small><b title="${escapeHtml(currentTrack.name)}">${escapeHtml(currentTrack.name)}</b></div><div><button type="button" data-action="mp3-play" data-track="${escapeHtml(currentTrack.id)}" aria-label="${isPlaying ? 'Pause' : 'Play'}">${icon(isPlaying ? 'pause' : 'play')}</button><button type="button" data-action="mp3-next" aria-label="Next track">${icon('arrowDown')}</button><button type="button" data-action="mp3-stop" aria-label="Stop music">${icon('x')}</button></div></div>` : ''}
           <div class="mp3-block">
-            <div class="mp3-block-head"><b>Queue</b><span>${queuedTracks.length}</span></div>
-            ${queuedTracks.length ? `<ol class="mp3-queue">${queuedTracks.map((track, index) => `<li class="${track.id === this.localMusic.trackId ? 'active' : ''}"><span>${index + 1}</span><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-dequeue" data-track="${escapeHtml(track.id)}" aria-label="Remove ${escapeHtml(track.name)} from queue">${icon('x')}</button></li>`).join('')}</ol>` : '<p class="mp3-empty">Queue is empty. Add an MP3 below.</p>'}
+            <div class="mp3-block-head"><div><b>Queue</b><span>${queuedTracks.length}</span></div>${queuedTracks.length ? `<button class="mp3-compact-action" type="button" data-action="mp3-clear-queue">Clear</button>` : ''}</div>
+            ${queuedTracks.length ? `<ol class="mp3-queue">${queuedTracks.map((track, index) => `<li class="${track.id === this.localMusic.trackId ? 'active' : ''}"><span>${index + 1}</span><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-dequeue" data-track="${escapeHtml(track.id)}" aria-label="Remove ${escapeHtml(track.name)} from queue">${icon('x')}</button></li>`).join('')}</ol>` : '<p class="mp3-empty">Queue is empty. Use Add MP3s to select one or many files.</p>'}
           </div>
-          <div class="mp3-block">
-            <div class="mp3-block-head"><b>Offline library</b><span>${this.localTracks.length}</span></div>
-            ${this.localTracks.length ? `<div class="mp3-library">${this.localTracks.map((track) => {
-              const queued = queuedIds.includes(track.id);
-              return `<div><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-queue" data-track="${escapeHtml(track.id)}" ${queued ? 'disabled' : ''} aria-label="${queued ? 'Already queued' : `Add ${escapeHtml(track.name)} to queue`}">${icon(queued ? 'check' : 'plus')}</button><button class="icon-btn danger compact" type="button" data-action="mp3-delete" data-track="${escapeHtml(track.id)}" aria-label="Delete ${escapeHtml(track.name)} from offline storage">${icon('trash')}</button></div>`;
-            }).join('')}</div>` : '<p class="mp3-empty">No saved MP3s. Add files from this device; they remain in local browser storage.</p>'}
-          </div>
+          <details class="mp3-library-details">
+            <summary><span><b>Manage saved tracks</b><small>${this.localTracks.length} stored offline</small></span>${icon('arrowDown')}</summary>
+            <div class="mp3-block mp3-library-block">
+              ${this.localTracks.length ? `<div class="mp3-library">${this.localTracks.map((track) => {
+                const queued = queuedIds.includes(track.id);
+                return `<div><button class="mp3-track-main" type="button" data-action="mp3-play" data-track="${escapeHtml(track.id)}"><b>${escapeHtml(track.name)}</b><small>${formatBytes(track.size)}</small></button><button class="icon-btn compact" type="button" data-action="mp3-queue" data-track="${escapeHtml(track.id)}" ${queued ? 'disabled' : ''} aria-label="${queued ? 'Already queued' : `Add ${escapeHtml(track.name)} to queue`}">${icon(queued ? 'check' : 'plus')}</button><button class="icon-btn danger compact" type="button" data-action="mp3-delete" data-track="${escapeHtml(track.id)}" aria-label="Delete ${escapeHtml(track.name)} from offline storage">${icon('trash')}</button></div>`;
+              }).join('')}</div>` : '<p class="mp3-empty">No saved MP3s yet.</p>'}
+            </div>
+          </details>
 
           <div class="audio-setting">
             <div><b>Built-in court playlist</b><small>Existing synthesized sports cues; stops when local MP3 playback starts</small></div>
@@ -4923,6 +5049,7 @@ No completed games in this range.`;
                 <span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span>
                 <b>${escapeHtml(player.name)}</b>
                 <button class="queue-chip" type="button" data-action="queue-add" data-player="${escapeHtml(player.id)}" ${queued.has(player.id) ? 'disabled' : ''} aria-label="${queued.has(player.id) ? 'Already in queue or on court' : `Add ${escapeHtml(player.name)} to queue`}" title="${queued.has(player.id) ? 'Queued' : 'Add to queue'}">${icon(queued.has(player.id) ? 'check' : 'userPlus')}</button>
+                <button class="icon-btn compact voice-preview-btn" type="button" data-action="preview-player-voice" data-player="${escapeHtml(player.id)}" aria-label="Preview pronunciation of ${escapeHtml(player.name)}" title="Preview voice pronunciation">${icon('speaker')}</button>
                 <button class="icon-btn compact" type="button" data-action="edit-player" data-player="${escapeHtml(player.id)}" aria-label="Edit ${escapeHtml(player.name)}" title="Edit player">${icon('edit')}</button>
                 <button class="icon-btn danger compact" type="button" data-action="delete-player" data-player="${escapeHtml(player.id)}" aria-label="Remove ${escapeHtml(player.name)}">${icon('trash')}</button>
               </article>
