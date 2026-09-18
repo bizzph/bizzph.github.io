@@ -1,10 +1,10 @@
-const CACHE_NAME = 'picklepulse-v28-0-0';
+const CACHE_NAME = 'picklepulse-v29-0-0';
 const ASSETS = [
   './index.html',
-  './styles.css',
-  './src/picklepulse-core.js',
-  './src/qrcode-offline.js',
-  './src/live-sync.js',
+  './styles.css?v=29',
+  './src/picklepulse-core.js?v=29',
+  './src/qrcode-offline.js?v=29',
+  './src/live-sync.js?v=29',
   './manifest.webmanifest',
   './assets/icon.svg'
 ];
@@ -30,9 +30,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(INDEX_URL))
-    );
+    event.respondWith(fetch(event.request).catch(() => caches.match(INDEX_URL)));
     return;
   }
 

@@ -1212,7 +1212,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=29';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -1738,6 +1738,8 @@
       this.lastRemoteVoiceSignature = '';
       this.voiceGeneration = 0;
       this.voicePauseTimer = null;
+      this.voiceRetryTimers = [];
+      this.voiceEnumerationPending = false;
       this._playerMapSource = null;
       this._playerMap = new Map();
       this.draggedQueueId = '';
@@ -1787,6 +1789,7 @@
         navigator.connection.addEventListener('change', this.boundNetwork);
       }
       this.refreshVoices(false);
+      this.scheduleVoiceRefreshes();
       this.applyTheme();
       if (this.mode === 'controller') this.consumeRosterShare();
       this.render();
@@ -1830,6 +1833,8 @@
         window.clearTimeout(this.voicePauseTimer);
         this.voicePauseTimer = null;
       }
+      for (const timer of this.voiceRetryTimers) window.clearTimeout(timer);
+      this.voiceRetryTimers = [];
       if (globalThis.speechSynthesis) speechSynthesis.cancel();
       this.stopLofi(false);
       this.stopLocalMusic(true);
@@ -2456,16 +2461,44 @@ No completed games in this range.`;
       }
     }
 
+    isOfflineVoice(voice) {
+      if (!voice) return false;
+      if (voice.localService === true) return true;
+      // Gecko currently has a bug where local speech-dispatcher/system voices can
+      // be exposed with localService=false. Mozilla-owned local voices use this URI.
+      const uri = String(voice.voiceURI || '');
+      if (/^urn:moz-tts:/i.test(uri)) return true;
+      // Some implementations omit a trustworthy locality flag entirely. Accept
+      // only that unknown case; an explicit non-Mozilla false remains excluded.
+      return typeof voice.localService !== 'boolean';
+    }
+
+    scheduleVoiceRefreshes() {
+      for (const timer of this.voiceRetryTimers) window.clearTimeout(timer);
+      this.voiceRetryTimers = [];
+      if (!globalThis.speechSynthesis || typeof speechSynthesis.getVoices !== 'function') return;
+      for (const delay of [180, 700, 1800, 4000]) {
+        const timer = window.setTimeout(() => {
+          this.voiceRetryTimers = this.voiceRetryTimers.filter((id) => id !== timer);
+          this.refreshVoices(this.showAudio);
+        }, delay);
+        this.voiceRetryTimers.push(timer);
+      }
+    }
+
     refreshVoices(render = true) {
       this.voiceProfiles = { english1: null, english2: null, tagalog: null };
+      this.voiceEnumerationPending = false;
       if (!globalThis.speechSynthesis || typeof speechSynthesis.getVoices !== 'function') {
         this.availableVoices = [];
         return;
       }
       try {
+        const rawVoices = Array.from(speechSynthesis.getVoices() || []);
+        this.voiceEnumerationPending = rawVoices.length === 0;
         const seen = new Set();
-        this.availableVoices = speechSynthesis.getVoices()
-          .filter((voice) => voice && voice.localService === true)
+        this.availableVoices = rawVoices
+          .filter((voice) => voice && this.isOfflineVoice(voice))
           .filter((voice) => {
             const lang = String(voice.lang || '').toLowerCase().replace('_', '-');
             return lang.startsWith('en') || lang.startsWith('fil') || lang.startsWith('tl');
@@ -2484,14 +2517,26 @@ No completed games in this range.`;
           .sort((a, b) => Number(Boolean(b.default)) - Number(Boolean(a.default)) || String(a.name).localeCompare(String(b.name)));
         this.voiceProfiles = {
           english1: english[0] || null,
-          english2: english[1] || null,
+          // Keep two English slots usable even on systems exposing one local English voice.
+          english2: english[1] || english[0] || null,
           tagalog: tagalog[0] || null
         };
         if (render && this.showAudio) this.render();
       } catch (_error) {
         this.availableVoices = [];
+        this.voiceEnumerationPending = true;
         this.voiceProfiles = { english1: null, english2: null, tagalog: null };
       }
+    }
+
+    canUseVoiceProfile(remote = false) {
+      if (this.selectedVoice(remote)) return true;
+      if (!globalThis.speechSynthesis || !globalThis.SpeechSynthesisUtterance) return false;
+      const profile = remote ? 'english1' : normalizeSettings(this.state.settings).voiceProfile;
+      // When Firefox is still enumerating system voices, allow its default English
+      // synthesizer to be attempted. Tagalog still requires an enumerated local voice
+      // so we never silently pronounce Filipino text with the wrong language voice.
+      return this.voiceEnumerationPending && profile !== 'tagalog';
     }
 
     selectedVoice(remote = false) {
@@ -3229,7 +3274,7 @@ No completed games in this range.`;
     announceGame(game, force = false, remote = false, previous = null) {
       if (!this.voiceEnabled() || !game || !globalThis.speechSynthesis || !globalThis.SpeechSynthesisUtterance) return;
       const voice = this.selectedVoice(remote);
-      if (!voice) {
+      if (!voice && !this.canUseVoiceProfile(remote)) {
         if (force && !remote) this.showToast('Selected offline voice is not installed on this device');
         return;
       }
@@ -3259,7 +3304,7 @@ No completed games in this range.`;
           }
           const utterance = new SpeechSynthesisUtterance(segments[index]);
           if (voice) utterance.voice = voice;
-          utterance.lang = voice.lang || (language === 'fil' ? 'fil-PH' : 'en-US');
+          utterance.lang = (voice && voice.lang) || (language === 'fil' ? 'fil-PH' : 'en-US');
           utterance.rate = normalizeSettings(this.state.settings).voiceRate;
           utterance.pitch = 1;
           utterance.volume = remote ? 1 : normalizeSettings(this.state.settings).voiceVolume;
@@ -3431,7 +3476,7 @@ No completed games in this range.`;
       }
       this.refreshVoices(false);
       const voice = this.selectedVoice(false);
-      if (!voice) {
+      if (!voice && !this.canUseVoiceProfile(false)) {
         this.showToast('Selected offline voice is not installed on this device');
         return;
       }
@@ -3445,8 +3490,8 @@ No completed games in this range.`;
         speechSynthesis.cancel();
         const settings = normalizeSettings(this.state.settings);
         const utterance = new SpeechSynthesisUtterance(player.name);
-        utterance.voice = voice;
-        utterance.lang = voice.lang || (settings.voiceProfile === 'tagalog' ? 'fil-PH' : 'en-US');
+        if (voice) utterance.voice = voice;
+        utterance.lang = (voice && voice.lang) || (settings.voiceProfile === 'tagalog' ? 'fil-PH' : 'en-US');
         utterance.rate = settings.voiceRate;
         utterance.pitch = 1;
         utterance.volume = settings.voiceVolume;
@@ -4149,6 +4194,7 @@ No completed games in this range.`;
           this.showColors = false;
           this.showTimerAdjust = false;
           this.refreshVoices(false);
+          this.scheduleVoiceRefreshes();
         }
         this.render();
         return;
@@ -4311,7 +4357,7 @@ No completed games in this range.`;
       if (action === 'toggle-voice') {
         if (this.mode === 'display') {
           const nextEnabled = !this.displayVoiceEnabled;
-          if (nextEnabled && !this.selectedVoice(true)) {
+          if (nextEnabled && !this.canUseVoiceProfile(true)) {
             this.showToast('No offline English voice is installed on this device');
             return;
           }
@@ -4328,7 +4374,7 @@ No completed games in this range.`;
           }
         } else {
           const nextEnabled = !this.state.settings.voiceEnabled;
-          if (nextEnabled && !this.selectedVoice(false)) {
+          if (nextEnabled && !this.canUseVoiceProfile(false)) {
             this.showToast(normalizeSettings(this.state.settings).voiceProfile === 'tagalog'
               ? 'Install an offline Filipino/Tagalog system voice first'
               : 'Selected offline English voice is not installed');
@@ -4713,7 +4759,12 @@ No completed games in this range.`;
         ['english1', 'English 1', this.voiceProfiles.english1],
         ['english2', 'English 2', this.voiceProfiles.english2],
         ['tagalog', 'Tagalog', this.voiceProfiles.tagalog]
-      ].map(([id, label, voice]) => `<option value="${id}" ${profile === id ? 'selected' : ''} ${voice ? '' : 'disabled'}>${label}${voice ? ` · ${escapeHtml(voice.name)}` : ' · not installed'}</option>`).join('');
+      ].map(([id, label, voice]) => {
+        const browserDefault = !voice && this.voiceEnumerationPending && id !== 'tagalog' && globalThis.SpeechSynthesisUtterance;
+        const usable = Boolean(voice || browserDefault);
+        const detail = voice ? ` · ${escapeHtml(voice.name)}` : browserDefault ? ' · system default' : ' · not installed';
+        return `<option value="${id}" ${profile === id ? 'selected' : ''} ${usable ? '' : 'disabled'}>${label}${detail}</option>`;
+      }).join('');
       const queuedIds = settings.mp3Queue;
       const trackMap = new Map(this.localTracks.map((track) => [track.id, track]));
       const queuedTracks = queuedIds.map((id) => trackMap.get(id)).filter(Boolean);
@@ -4731,7 +4782,7 @@ No completed games in this range.`;
             <div><b>Voice-over</b><small>Scores, side outs, match point</small></div>
             <button class="audio-toggle ${settings.voiceEnabled ? 'active' : ''}" type="button" data-action="toggle-voice" aria-pressed="${settings.voiceEnabled}">${icon(settings.voiceEnabled ? 'speaker' : 'speakerOff')}<span>${settings.voiceEnabled ? 'On' : 'Off'}</span></button>
           </div>
-          <label class="audio-select voice-profile-select"><span>Voice</span><select id="voice-profile">${profileOptions}</select><small>Offline-only device voices. Two English slots are kept; Tagalog uses an installed Filipino/Tagalog system voice and never cloud TTS.</small></label>
+          <label class="audio-select voice-profile-select"><span>Voice</span><select id="voice-profile">${profileOptions}</select><small>Device/offline voices only. Firefox may expose system voices late; English can use the system default while detection completes. Tagalog still requires an installed Filipino/Tagalog voice.</small></label>
           <label class="audio-range" for="voice-volume">
             <span><b>Voice volume</b><small>Set voice-over loudness for the court</small></span>
             <input id="voice-volume" type="range" min="20" max="100" step="5" value="${Math.round(settings.voiceVolume * 100)}" aria-label="Voice-over volume">

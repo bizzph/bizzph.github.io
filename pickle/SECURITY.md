@@ -82,3 +82,13 @@ v27 adds roster-name speech preview and multi-file MP3 batching without adding a
 ## v28 compact scoreboard MP3 controls
 
 The scoreboard transport controls the same in-memory `Audio` element and IndexedDB-backed local MP3 queue introduced in v26/v27. It does not add another media source, upload path, remote endpoint, permission, analytics hook, or background service. Seek and volume controls operate only on the current local `blob:` playback object; previous/next resolve IDs from the existing persisted queue.
+
+## v29 Firefox voice compatibility and cache update
+
+- The app still does not add cloud TTS, telemetry, analytics, or an audio upload service.
+- Voice selection prefers voices explicitly reported local. Because Firefox can misreport its own local `urn:moz-tts:` voices as `localService=false`, those Mozilla-owned voice URIs are treated as local. Explicit non-Mozilla voices reported as remote remain rejected.
+- A temporary English system-default fallback is permitted only while Firefox returns an empty voice list; Tagalog never uses this fallback and still requires an enumerated Filipino/Tagalog local voice.
+- Voice discovery retries are bounded to four delayed checks and do not poll continuously.
+- Version query parameters on local CSS/JS are cache-busting identifiers only; they do not add network endpoints or external dependencies.
+- The scoreboard MP3 controls continue to use only the existing local IndexedDB audio library and local `<audio>` playback.
+

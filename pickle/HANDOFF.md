@@ -1,3 +1,35 @@
+# PicklePulse v29 Turnover / Handoff
+
+## v29 changes - Firefox audio compatibility and larger scoreboard transport
+
+- Firefox voice compatibility:
+  - Voice enumeration now retries at 180 ms, 700 ms, 1.8 s, and 4 s because Firefox may initialize Web Speech voices asynchronously and may not immediately populate `speechSynthesis.getVoices()`.
+  - Mozilla `urn:moz-tts:` voices are accepted as local even when Firefox incorrectly reports `localService=false`. Explicit non-Mozilla remote voices remain excluded.
+  - When voice enumeration is still empty, English 1 / English 2 may attempt the browser/system default voice; Tagalog still requires an enumerated Filipino/Tagalog local voice so the app does not silently use an English voice for Tagalog.
+  - If only one local English voice exists, both English profile slots remain usable with that same installed voice.
+- Scoreboard MP3 transport:
+  - Remains directly below the scoring toolbar and is always rendered on the game scoreboard.
+  - Previous / play-pause / next / mute controls now use 44-52 px touch targets with 23-28 px icons.
+  - Seek and volume sliders receive larger Firefox range thumbs/tracks for easier touch use.
+  - Mobile viewport calculations were adjusted for the taller player, with `vh` fallback before `dvh`.
+- Update reliability:
+  - CSS and JavaScript shell assets use `?v=29` versioned URLs so an older controlling service worker cannot return v28 CSS/JS during the first reload after an update.
+  - Service-worker cache bumped to `picklepulse-v29-0-0`.
+- Existing scoring, queue/fairness, standings, roster, offline MP3 database, and completed-game behavior are unchanged.
+
+## v29 validation
+
+- JavaScript syntax checks for core, QR helper, live sync, and service worker: PASS.
+- CSS brace integrity: PASS.
+- Firefox-local voice URI classification test (`urn:moz-tts:` + `localService=false`): PASS.
+- Explicit non-Mozilla remote voice exclusion test: PASS.
+- Bounded voice retry and English pending-enumeration fallback checks: PASS.
+- Scoreboard mini-player render hook and v29 asset-version checks: PASS.
+- Core scoring-engine region compared with v28: unchanged / PASS.
+- Firefox itself is not installed in the build container; Firefox-specific behavior is addressed from the Web Speech API/Gecko compatibility path and static tests.
+
+---
+
 # PicklePulse v28 Turnover / Handoff
 
 Finalized: 2026-09-19
