@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080b12">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="trade-vault-build" content="2026.09.13.4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Trade Vault">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
+  <title>Trade Vault</title>
+  <link rel="manifest" href="manifest.webmanifest?v=20260913.4">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+  <link rel="stylesheet" href="styles.css?v=20260913.4" integrity="sha384-alkM6y+/y3CsKCY5jjQ0lCsw2Ho+ZxIc+GGmeEXnRfsuQU4dEi3u61jgv7uMM4op">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8v9.7a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5z"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H18v3H5.5a1 1 0 0 0 0 2H21v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 13h5v4h-5a2 2 0 1 1 0-4"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 19h14"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path d="M4 8V3m0 0h5M4 3l4.2 4.2A8 8 0 1 1 6 18.5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14M10 11v6m4-6v6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.6-10.6-3.2-3.2L5 15.8zM14.8 6l3.2 3.2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9m-3 0v3m-3-3v3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.8 3 8 7.5 9.5 4.5-1.5 7.5-4.7 7.5-9.5V6z"/><path d="m9 12 2 2 4-5"/></symbol>
+    <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6.5 8a7 7 0 0 1 11.6-1L20 9M4 15l1.9 2A7 7 0 0 0 18 16"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 9-13h-6z"/></symbol>
+    <symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4M11 7h10M3 14l2 2 4-4M11 14h10M3 21l2-2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5zM8 3v6h8V3M8 21v-7h8v7"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.4A8.5 8.5 0 0 1 9.6 3.5 8.5 8.5 0 1 0 20.5 14.4z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  </svg>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <section id="vaultGate" class="gate">
+    <button id="gateThemeBtn" class="icon-button icon-only gate-theme-button" type="button" aria-label="Switch theme" title="Switch theme"><svg><use href="#i-sun"/></svg></button>
+    <div class="gate-card">
+      <div class="brand-mark" aria-hidden="true"><span class="brand-keyhole"></span></div>
+      <h1>Trade Vault</h1>
+      <p class="muted compact-copy">Encrypted on this device. No account. No transaction backend.</p>
+      <p id="startupStatus" class="fine startup-status">Opening local vault…</p>
+
+      <div id="createVaultPanel" hidden>
+        <label>New passphrase<input id="newPassphrase" type="password" autocomplete="new-password" minlength="16" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="16+ characters"></label>
+        <label>Confirm<input id="confirmPassphrase" type="password" autocomplete="new-password" minlength="16" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="Repeat passphrase"></label>
+        <div class="pin-grid">
+          <label>4-digit PIN<input id="newPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
+          <label>Confirm PIN<input id="confirmPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
+        </div>
+        <p class="fine pin-security-note">The PIN is a convenience unlock for this device. A 4-digit PIN is weaker than your passphrase, so keep the device protected.</p>
+        <button id="createVaultBtn" class="primary wide auth-button" type="button" aria-label="Create encrypted vault" title="Create encrypted vault"><svg><use href="#i-shield"/></svg><span>Create vault</span></button>
+        <p class="fine">Keep your passphrase safe. It is still required for recovery and encrypted-backup restores.</p>
+      </div>
+
+      <div id="unlockVaultPanel" hidden>
+        <div id="pinUnlockGroup" hidden>
+          <label>4-digit PIN<input id="unlockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••" aria-describedby="unlockStatus"></label>
+          <p class="fine">Unlocks automatically after the fourth digit.</p>
+          <button id="usePassphraseBtn" class="auth-switch" type="button">Use passphrase instead</button>
+        </div>
+        <div id="passphraseUnlockGroup">
+          <label>Passphrase<input id="unlockPassphrase" type="password" autocomplete="current-password" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="Vault passphrase" aria-describedby="unlockStatus"></label>
+          <p class="fine">No Unlock button — the vault opens automatically after you stop typing.</p>
+          <button id="usePinBtn" class="auth-switch" type="button" hidden>Use 4-digit PIN</button>
+        </div>
+        <div id="unlockStatus" class="gate-status" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell" hidden>
+    <header class="topbar">
+      <button class="brand-button icon-only" type="button" data-view-target="overview" aria-label="Overview" title="Overview"><span class="brand-dot"></span></button>
+      <div class="top-title"><strong id="pageTitle">Overview</strong><span id="storageStatus">Encrypted local vault</span></div>
+      <div class="top-actions">
+        <button id="settingsBtn" class="icon-button icon-only" type="button" aria-label="General settings" title="General settings"><svg><use href="#i-settings"/></svg></button>
+        <button id="themeToggleBtn" class="icon-button icon-only" type="button" aria-label="Switch theme" title="Switch theme"><svg><use href="#i-sun"/></svg></button>
+        <button id="installBtn" class="icon-button icon-only" type="button" aria-label="Install app" title="Install app" hidden><svg><use href="#i-install"/></svg></button>
+        <button id="lockBtn" class="icon-button icon-only" type="button" aria-label="Lock vault" title="Lock vault"><svg><use href="#i-lock"/></svg></button>
+      </div>
+    </header>
+
+    <main>
+      <section id="overviewPage" class="app-page" data-page="overview">
+        <div class="page-head">
+          <div><p class="eyebrow">PORTFOLIO</p><h2>Overview</h2></div>
+          <div class="head-actions">
+            <label class="icon-button icon-only file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><input id="csvInput" type="file" accept=".csv,text/csv" hidden></label>
+            <button id="openManualBtn" class="icon-button primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
+          </div>
+        </div>
+
+        <div class="overview-toolbar">
+          <div class="holding-purpose-tabs overview-purpose-tabs" role="tablist" aria-label="Overview purpose">
+            <button class="purpose-tab active" type="button" data-overview-purpose="TRADE" role="tab" aria-selected="true">Trading</button>
+            <button class="purpose-tab" type="button" data-overview-purpose="HOLD" role="tab" aria-selected="false">Long-term</button>
+          </div>
+          <div class="overview-market-controls">
+            <span id="overviewMarketStatus" class="market-status">Live pricing off</span>
+            <button id="overviewMarketToggleBtn" class="icon-button icon-only" type="button" aria-pressed="false" aria-label="Turn live pricing on" title="Live pricing off"><svg><use href="#i-bolt"/></svg></button>
+            <button id="overviewMarketRefreshBtn" class="icon-button icon-only" type="button" aria-label="Reconnect live pricing" title="Reconnect live pricing"><svg><use href="#i-refresh"/></svg></button>
+          </div>
+        </div>
+
+        <section id="warningBanner" class="warning" hidden></section>
+
+        <section class="metrics" aria-label="Purpose analytics summary">
+          <article class="metric"><span id="metricTransactionsLabel">Realized P&amp;L</span><strong id="metricTransactions">—</strong><small id="metricDateRange">No matched exits</small></article>
+          <article class="metric"><span id="metricBuyVolumeLabel">Win rate</span><strong id="metricBuyVolume">—</strong><small id="metricBuyVolumeNote">Matched sells</small></article>
+          <article class="metric"><span id="metricFeesLabel">Profit factor</span><strong id="metricFees">—</strong><small id="metricFeesNote">Gross profit ÷ gross loss</small></article>
+          <article class="metric"><span id="metricPnlLabel">Max drawdown</span><strong id="metricPnl">—</strong><small id="metricPnlNote">Realized P&amp;L path</small></article>
+        </section>
+
+        <article class="panel analytics-panel">
+          <div class="panel-head analytics-panel-head"><div><p class="eyebrow" id="analyticsEyebrow">TRADING QUALITY</p><h3 id="analyticsTitle">Performance diagnostics</h3><p id="analyticsDescription" class="panel-copy">Focused on matched sell events so open holdings do not distort trading statistics.</p></div></div>
+          <div id="analyticsStats" class="analytics-stats"></div>
+        </article>
+
+        <div class="overview-grid">
+          <article id="performancePanel" class="panel performance-panel">
+            <div class="panel-head"><div><p class="eyebrow" id="performanceEyebrow">REALIZED PERFORMANCE</p><h3 id="performanceTitle">Cumulative P&amp;L</h3></div></div>
+            <div id="performanceChart" class="performance-chart empty-state">No matched exits yet.</div>
+          </article>
+
+          <article class="panel allocation-panel">
+            <div class="panel-head"><div><p class="eyebrow">EXPOSURE</p><h3 id="allocationTitle">Trading cost-basis allocation</h3></div></div>
+            <div id="allocationChart" class="bar-chart empty-state">No holdings yet.</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="holdingsPage" class="app-page" data-page="holdings" hidden>
+        <div class="page-head">
+          <div><p class="eyebrow">PORTFOLIO</p><h2>Holdings</h2><div id="marketStatus" class="market-status">Live pricing off</div></div>
+          <div class="head-actions">
+            <button id="marketToggleBtn" class="icon-button icon-only" type="button" aria-pressed="false" aria-label="Turn live pricing on" title="Live pricing off"><svg><use href="#i-bolt"/></svg></button>
+            <button id="marketRefreshBtn" class="icon-button icon-only" type="button" aria-label="Reconnect live pricing" title="Reconnect live pricing"><svg><use href="#i-refresh"/></svg></button>
+          </div>
+        </div>
+
+        <div class="holding-purpose-tabs" role="tablist" aria-label="Holdings purpose">
+          <button class="purpose-tab active" type="button" data-holdings-purpose="TRADE" role="tab" aria-selected="true">Trading</button>
+          <button class="purpose-tab" type="button" data-holdings-purpose="HOLD" role="tab" aria-selected="false">Long-term</button>
+        </div>
+
+        <div class="holdings-detail-tools mobile-only-controls">
+          <button id="toggleHoldingsDetailsBtn" class="detail-toggle-button" type="button" aria-pressed="false" aria-label="Expand all holding details"><svg><use href="#i-chevron"/></svg><span>Expand all</span></button>
+        </div>
+
+        <article class="panel data-panel">
+          <div class="table-wrap desktop-table">
+            <table class="holdings-table">
+              <thead><tr><th>Asset</th><th>Quantity</th><th>Avg cost</th><th>Cost basis</th><th>Market price</th><th>PHP value</th><th>Unrealized</th></tr></thead>
+              <tbody id="holdingsBody"><tr><td colspan="7" class="empty-cell">No holdings yet.</td></tr></tbody>
+            </table>
+          </div>
+          <div id="holdingsCards" class="mobile-list holdings-cards"><div class="empty-card">No holdings yet.</div></div>
+        </article>
+      </section>
+
+      <section id="ledgerPage" class="app-page" data-page="ledger" hidden>
+        <div class="page-head ledger-head">
+          <div><p class="eyebrow">HISTORY</p><h2>Ledger</h2></div>
+          <div class="head-actions">
+            <label class="icon-button icon-only file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><input id="ledgerCsvInput" type="file" accept=".csv,text/csv" hidden></label>
+            <button id="ledgerAddBtn" class="icon-button primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
+            <button id="exportBtn" class="icon-button icon-only" type="button" aria-label="Download encrypted backup" title="Encrypted backup"><svg><use href="#i-download"/></svg></button>
+            <label class="icon-button icon-only file-button" aria-label="Restore encrypted backup" title="Restore backup"><svg><use href="#i-restore"/></svg><input id="restoreInput" type="file" accept="application/json,.json" hidden></label>
+            <button id="clearBtn" class="icon-button danger icon-only" type="button" aria-label="Clear vault" title="Clear vault"><svg><use href="#i-trash"/></svg></button>
+          </div>
+        </div>
+
+        <div class="ledger-tools">
+          <div class="search-field"><svg><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Search"></div>
+          <select id="sideFilter" class="filter-select" aria-label="Filter by side"><option value="">All</option><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+          <input id="selectAllVisible" class="sr-only" type="checkbox" aria-label="Select all visible transactions">
+          <button id="selectVisibleBtn" class="icon-button icon-only" type="button" aria-label="Select visible transactions" title="Select visible"><svg><use href="#i-checks"/></svg></button>
+          <button id="deleteSelectedBtn" class="icon-button danger icon-only countable" type="button" aria-label="Delete selected transactions" title="Delete selected" disabled><svg><use href="#i-trash"/></svg></button>
+          <span id="selectionCount" class="selection-count" hidden></span>
+        </div>
+
+        <div class="ledger-detail-tools mobile-only-controls">
+          <button id="toggleLedgerDetailsBtn" class="detail-toggle-button" type="button" aria-pressed="false" aria-label="Expand all visible transaction details"><svg><use href="#i-chevron"/></svg><span>Expand all</span></button>
+        </div>
+
+        <article class="panel data-panel">
+          <div class="table-wrap desktop-table">
+            <table class="ledger-table">
+              <thead><tr><th></th><th>Date</th><th>Pair</th><th>Purpose</th><th>Side</th><th>Price</th><th>Qty</th><th>Total</th><th>Fee</th><th>Net acquired</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+              <tbody id="transactionsBody"><tr><td colspan="13" class="empty-cell">No transactions yet.</td></tr></tbody>
+            </table>
+          </div>
+          <div id="transactionsCards" class="mobile-list transaction-cards"><div class="empty-card">No transactions yet.</div></div>
+        </article>
+      </section>
+    </main>
+
+    <nav class="floating-nav" aria-label="Main navigation">
+      <button class="nav-button icon-only active" type="button" data-view-target="overview" aria-label="Overview" title="Overview"><svg><use href="#i-home"/></svg></button>
+      <button class="nav-button icon-only" type="button" data-view-target="holdings" aria-label="Holdings" title="Holdings"><svg><use href="#i-wallet"/></svg></button>
+      <button class="nav-button icon-only" type="button" data-view-target="ledger" aria-label="Ledger" title="Ledger"><svg><use href="#i-list"/></svg></button>
+      <button id="floatingAddBtn" class="nav-button nav-primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
+    </nav>
+  </div>
+
+  <dialog id="settingsDialog">
+    <form id="settingsForm" novalidate>
+      <div class="dialog-head">
+        <div><p class="eyebrow">PREFERENCES</p><h3>General settings</h3></div>
+        <button id="closeSettingsBtn" type="button" class="icon-button icon-only" aria-label="Close settings" title="Close settings"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <p class="settings-copy">Fee defaults affect new transactions only. Auto-lock and the optional local PIN apply to this browser/device.</p>
+      <p class="settings-copy security-copy"><strong>Network:</strong> live pricing is off by default. When enabled, Trade Vault can connect only to the public Coins.ph market WebSocket and sends pair symbols only. No analytics, telemetry, account API, or transaction upload is built in.</p>
+      <div class="form-grid">
+        <label>Buy fee (%)<input name="buyFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
+        <label>Sell fee (%)<input name="sellFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
+        <label>Auto-lock after (minutes)<input name="autoLockMinutes" required type="number" inputmode="numeric" min="1" max="120" step="1" value="5"></label>
+        <div class="calculation-note">Locks after inactivity and uses the same limit when the app is backgrounded.</div>
+        <div class="calculation-note span-2">BUY fees are calculated from the executed base quantity. SELL fees are calculated from the quote total. You can still override the exact exchange-reported fee on each transaction.</div>
+        <div class="settings-section span-2">
+          <strong>4-digit PIN</strong>
+          <span id="pinStatus" class="settings-inline-status">Checking…</span>
+        </div>
+        <label>Vault passphrase <span class="optional-tag">ONLY TO SET/CHANGE PIN</span><input name="pinPassphrase" type="password" autocomplete="current-password" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="Leave blank to keep PIN"></label>
+        <div></div>
+        <label>New PIN <span class="optional-tag">OPTIONAL</span><input name="newPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
+        <label>Confirm new PIN<input name="confirmPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
+        <div class="pin-security-note calculation-note span-2">PIN unlock stays local and is not included in encrypted backups. Because four digits have only 10,000 combinations, the passphrase remains the stronger recovery credential.</div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelSettingsBtn" class="icon-button icon-only" aria-label="Cancel" title="Cancel"><svg><use href="#i-x"/></svg></button>
+        <button type="submit" id="saveSettingsBtn" class="icon-button primary icon-only" aria-label="Save settings" title="Save settings"><svg><use href="#i-save"/></svg></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="manualDialog">
+    <form id="manualForm" novalidate>
+      <div class="dialog-head">
+        <div><p id="manualEyebrow" class="eyebrow">TRANSACTION</p><h3 id="manualTitle">Add transaction</h3></div>
+        <button id="closeManualBtn" type="button" class="icon-button icon-only" aria-label="Close" title="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="form-grid">
+        <div id="scanImport" class="scan-import span-2">
+          <div class="scan-import-head"><div><strong>Fill from copied trade text</strong><span>Use Google Lens, iOS Live Text, or another device text-copy feature, then paste below. Trade Vault fills the fields automatically and parses everything locally.</span></div></div>
+          <div id="receiptTextWrap">
+            <textarea id="receiptTextInput" rows="7" maxlength="100000" placeholder="Paste copied trade details here…"></textarea>
+            <div class="scan-actions">
+              <button id="parseReceiptTextBtn" class="scan-button parse-text-button" type="button">Re-fill fields</button>
+              <button id="clearReceiptTextBtn" class="scan-button" type="button">Clear text</button>
+            </div>
+          </div>
+        </div>
+        <label>Date<input name="date" required type="datetime-local"></label>
+        <label>ID <span class="auto-tag">AUTO</span><input name="id" readonly type="text" placeholder="Generated"></label>
+        <label>Pair<input name="pair" required type="text" value="BTC/PHP" placeholder="BTC/PHP"></label>
+        <label>Type<select name="type"><option>LIMIT</option><option>MARKET</option><option>OTHER</option></select></label>
+        <label>Side<select name="side"><option>BUY</option><option>SELL</option></select></label>
+        <label>Purpose<select name="purpose"><option value="TRADE">Trading</option><option value="HOLD">Long-term</option></select></label>
+        <label>Price<input name="price" required type="text" inputmode="decimal" placeholder="6250000"></label>
+        <label>Quantity<input name="executed" required type="text" inputmode="decimal" placeholder="0.00015"></label>
+        <label>Total <span class="auto-tag">AUTO</span><input name="total" readonly type="text" inputmode="decimal" placeholder="Calculated"></label>
+        <input name="reportedTotal" type="hidden" value="">
+        <label>Fee <span class="auto-tag">AUTO</span><input name="fee" readonly type="text" placeholder="Calculated"></label>
+        <div id="feeRuleNote" class="calculation-note span-2">Fee rate comes from General settings and applies to new transactions only.</div>
+        <label class="span-2">Fee override <span class="optional-tag">OPTIONAL</span><input name="feeOverride" type="text" placeholder="Use the exchange-reported fee if different"></label>
+        <label class="span-2">Notes <span class="optional-tag">OPTIONAL</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Add context for this transaction"></textarea></label>
+        <div id="manualStatus" class="manual-status span-2" role="status" aria-live="polite"></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelManualBtn" class="icon-button icon-only" aria-label="Cancel" title="Cancel"><svg><use href="#i-x"/></svg></button>
+        <button type="submit" id="saveManualBtn" class="icon-button primary icon-only" aria-label="Save transaction" title="Save transaction"><svg><use href="#i-save"/></svg></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js?v=20260913.4" integrity="sha384-Vmd0CucasrdI/1tBNvea+gFc4zFa58cZmP6ygdV5BsHkBPqKMFINtujRGLadq26w" defer></script>
+</body>
+</html>

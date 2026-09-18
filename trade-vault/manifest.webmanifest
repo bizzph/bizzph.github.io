@@ -1,0 +1,25 @@
+{
+  "name": "Trade Vault — Local Trade Tracker",
+  "short_name": "Trade Vault",
+  "description": "An encrypted local-first trade transaction tracker and analytics PWA with optional public Coins.ph live pricing.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070a12",
+  "theme_color": "#0b1020",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
