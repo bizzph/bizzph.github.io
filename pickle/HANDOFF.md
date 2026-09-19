@@ -1,4 +1,26 @@
-# PicklePulse v31 Turnover / Handoff
+# PicklePulse v32 Turnover / Handoff
+
+## v32 changes - queue callouts and court assignment
+
+- Waiting queue rows now include the same player pronunciation preview/callout button used in the roster. It speaks the optional per-player pronunciation hint when present, otherwise the visible player name.
+- Filling an open queue court no longer auto-assigns Team A / Team B. Four players are dispatched to the court as an ungrouped set.
+- Each occupied Court card now contains four explicit starting-position slots: Team A Right, Team A Left, Team B Right, Team B Left.
+- Assignment is accessible by tap/click (select a player, then a slot) and desktop drag/drop. Assigning into an occupied slot swaps players when possible. This avoids making drag/drop the only interaction on touch devices.
+- The Court card New game button stays disabled until all four unique positions are assigned. It then opens New Game with the exact team/side order prefilled.
+- Starting that New Game atomically removes the four players from the queue court and moves them to the scorekeeper on-court state. Cancelling the New Game setup leaves the queue court intact.
+- Queue-court completion still works without team assignment; in that case player rotation stats are recorded but pair/opponent history is not fabricated.
+- Shell asset URLs and the service-worker cache are bumped to v32.
+
+## v32 validation
+
+- JavaScript syntax: PASS.
+- New court fill produces four players with no automatic team/side assignments: PASS.
+- Tap/assignment state maps slots in order A Right, A Left, B Right, B Left: PASS.
+- Reassigning a player into an occupied slot swaps the two assigned players: PASS.
+- Starting a court-backed scored game clears the source queue court and preserves the selected New Game player order: PASS.
+- Existing PickleEngine scoring module is unchanged from v31: PASS.
+- Production archive integrity and checksums: PASS.
+
 
 ## v31 changes - per-player VoiceOver pronunciation
 

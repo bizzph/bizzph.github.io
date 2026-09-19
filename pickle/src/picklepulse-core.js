@@ -646,15 +646,21 @@
       const courtPlayers = safe(raw.players, 4);
       const teamA = safe(raw.teams && raw.teams[0], 2).filter((id) => courtPlayers.includes(id));
       const teamB = safe(raw.teams && raw.teams[1], 2).filter((id) => courtPlayers.includes(id) && !teamA.includes(id));
-      const teams = teamA.length === 2 && teamB.length === 2 && new Set([...teamA, ...teamB]).size === 4
-        ? [teamA, teamB]
-        : courtPlayers.length === 4
-          ? [[courtPlayers[0], courtPlayers[1]], [courtPlayers[2], courtPlayers[3]]]
-          : [[], []];
+      const legacySlots = [teamA[0] || '', teamA[1] || '', teamB[0] || '', teamB[1] || ''];
+      const slotSource = Array.isArray(raw.slots) ? raw.slots.slice(0, 4) : legacySlots;
+      const usedSlots = new Set();
+      const slots = Array.from({ length: 4 }, (_, slotIndex) => {
+        const id = String(slotSource[slotIndex] || '');
+        if (!id || !courtPlayers.includes(id) || usedSlots.has(id)) return '';
+        usedSlots.add(id);
+        return id;
+      });
+      const teams = [slots.slice(0, 2).filter(Boolean), slots.slice(2, 4).filter(Boolean)];
       return {
         id: `court-${index + 1}`,
         players: courtPlayers,
         teams,
+        slots,
         assignedAt: Number(raw.assignedAt) || 0
       };
     });
@@ -950,7 +956,7 @@
       });
     }
     next.courtCount = desired;
-    next.courts = Array.from({ length: desired }, (_, index) => next.courts[index] || { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 });
+    next.courts = Array.from({ length: desired }, (_, index) => next.courts[index] || { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 });
     return normalizeQueue(next, players);
   }
 
@@ -976,15 +982,49 @@
     for (let i = 0; i < fillCount; i += 1) {
       const group = chooseCourtGroup(next, remaining);
       remaining = remaining.filter((id) => !group.includes(id));
-      const teams = bestTeamsForGroup(next, group);
       next.courts[openIndexes[i]] = {
         id: `court-${openIndexes[i] + 1}`,
         players: group,
-        teams,
+        teams: [[], []],
+        slots: ['', '', '', ''],
         assignedAt: now
       };
     }
     next.pending = [];
+    return normalizeQueue(next, players);
+  }
+
+  function assignCourtSlot(queue, courtIndex, playerId, slotIndex, players) {
+    const next = normalizeQueue(queue, players);
+    const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
+    const court = next.courts[index];
+    const id = String(playerId || '');
+    const slot = Math.max(0, Math.min(3, Math.floor(Number(slotIndex))));
+    if (!court || court.players.length !== 4 || !court.players.includes(id)) return next;
+    const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4) : ['', '', '', ''];
+    while (slots.length < 4) slots.push('');
+    const from = slots.indexOf(id);
+    const displaced = slots[slot] || '';
+    for (let i = 0; i < slots.length; i += 1) if (slots[i] === id) slots[i] = '';
+    slots[slot] = id;
+    if (displaced && displaced !== id && from >= 0 && from !== slot) slots[from] = displaced;
+    court.slots = slots;
+    court.teams = [slots.slice(0, 2).filter(Boolean), slots.slice(2, 4).filter(Boolean)];
+    return normalizeQueue(next, players);
+  }
+
+  function startCourtGame(queue, courtIndex, selectedIds, gameId, players) {
+    const next = normalizeQueue(queue, players);
+    const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
+    const court = next.courts[index];
+    const selected = unique(selectedIds).filter(Boolean);
+    if (!court || court.players.length !== 4 || selected.length !== 4 || !samePlayers(selected, court.players)) return next;
+    const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4).map(String) : [];
+    if (slots.length !== 4 || slots.some((id) => !id) || new Set(slots).size !== 4 || !samePlayers(slots, court.players)) return next;
+    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 };
+    next.pending = [];
+    next.onCourt = selected;
+    next.activeGameId = String(gameId || '');
     return normalizeQueue(next, players);
   }
 
@@ -1017,7 +1057,7 @@
     const court = next.courts[index];
     if (!court || court.players.length !== 4) return next;
     recordCompletedGroup(next, court.players, court.teams, now);
-    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 };
+    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 };
     next.pending = [];
     return normalizeQueue(next, players);
   }
@@ -1034,7 +1074,7 @@
         next.waiting.push(id);
       }
     });
-    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], assignedAt: 0 };
+    next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 };
     return normalizeQueue(next, players);
   }
 
@@ -1200,6 +1240,8 @@
     cancelPending,
     setCourtCount,
     fillOpenCourts,
+    assignCourtSlot,
+    startCourtGame,
     completeCourt,
     cancelCourt,
     startQueuedGame,
@@ -1218,7 +1260,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=31';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=32';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -1755,6 +1797,12 @@
       this.queueDropTargetId = '';
       this.queueDropAfter = false;
       this.queuePointerId = null;
+      this.courtGameDraft = null;
+      this.selectedCourtPlayer = { court: -1, id: '' };
+      this.draggedCourtPlayerId = '';
+      this.draggedCourtIndex = -1;
+      this.courtDropSlot = -1;
+      this.courtPointerId = null;
       this.boundClick = this.onClick.bind(this);
       this.boundSubmit = this.onSubmit.bind(this);
       this.boundChange = this.onChange.bind(this);
@@ -3675,6 +3723,11 @@ No completed games in this range.`;
         this.showToast('A selected player is missing');
         return;
       }
+      const courtDraft = !this.editingGame && this.courtGameDraft && Array.isArray(this.courtGameDraft.slots) ? this.courtGameDraft : null;
+      if (courtDraft && (format !== 'doubles' || !Players.samePlayers(selectedIds, courtDraft.slots))) {
+        this.showToast('Court setup must use the same four players');
+        return;
+      }
       const editing = Boolean(this.editingGame && this.state.currentGame && this.state.currentGame.status === 'active');
       const previousGame = editing ? this.state.currentGame : null;
       if (this.state.currentGame && this.state.currentGame.status === 'active' && !editing) {
@@ -3713,6 +3766,9 @@ No completed games in this range.`;
             this.state.queue = Players.cancelQueuedGame(this.state.queue, previousGame.id, this.state.players);
           }
         }
+      } else if (courtDraft) {
+        this.state.queue = Players.startCourtGame(this.state.queue, courtDraft.courtIndex, selectedIds, game.id, this.state.players);
+        this.courtGameDraft = null;
       } else {
         this.state.queue = Players.startQueuedGame(this.state.queue, selectedIds, game.id, this.state.players);
       }
@@ -3773,7 +3829,52 @@ No completed games in this range.`;
       }
     }
 
+    resetCourtDrag() {
+      this.draggedCourtPlayerId = '';
+      this.draggedCourtIndex = -1;
+      this.courtDropSlot = -1;
+      this.querySelectorAll('.court-position-slot.is-drop-target, .court-player-chip.is-dragging').forEach((element) => {
+        element.classList.remove('is-drop-target', 'is-dragging');
+      });
+    }
+
+    commitCourtDrop() {
+      const courtIndex = this.draggedCourtIndex;
+      const playerId = this.draggedCourtPlayerId;
+      const slot = this.courtDropSlot;
+      if (courtIndex < 0 || !playerId || slot < 0 || slot > 3) {
+        this.resetCourtDrag();
+        return;
+      }
+      this.state.queue = Players.assignCourtSlot(this.state.queue, courtIndex, playerId, slot, this.state.players);
+      if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+      this.selectedCourtPlayer = { court: -1, id: '' };
+      this.resetCourtDrag();
+      this.persist();
+      if (this.liveController) this.liveController.broadcast();
+      this.render();
+    }
+
     onQueueDragStart(event) {
+      const courtHandle = event.target && event.target.closest ? event.target.closest('[data-court-drag-player]') : null;
+      if (courtHandle) {
+        const courtIndex = Number(courtHandle.dataset.court);
+        const id = String(courtHandle.dataset.courtDragPlayer || courtHandle.dataset.player || '');
+        const court = this.state.queue.courts[courtIndex];
+        if (!court || !court.players.includes(id)) {
+          event.preventDefault();
+          return;
+        }
+        this.draggedCourtPlayerId = id;
+        this.draggedCourtIndex = courtIndex;
+        this.courtDropSlot = -1;
+        courtHandle.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', id);
+        }
+        return;
+      }
       const handle = event.target && event.target.closest ? event.target.closest('[data-queue-drag]') : null;
       if (!handle) return;
       const id = String(handle.dataset.player || '');
@@ -3793,6 +3894,16 @@ No completed games in this range.`;
     }
 
     onQueueDragOver(event) {
+      if (this.draggedCourtPlayerId) {
+        const slotElement = event.target && event.target.closest ? event.target.closest('[data-court-slot]') : null;
+        if (!slotElement || Number(slotElement.dataset.court) !== this.draggedCourtIndex) return;
+        event.preventDefault();
+        this.courtDropSlot = Number(slotElement.dataset.courtSlot);
+        this.querySelectorAll('.court-position-slot.is-drop-target').forEach((element) => element.classList.remove('is-drop-target'));
+        slotElement.classList.add('is-drop-target');
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        return;
+      }
       if (!this.draggedQueueId) return;
       const row = event.target && event.target.closest ? event.target.closest('[data-queue-player]') : null;
       if (!row || row.dataset.queuePlayer === this.draggedQueueId) return;
@@ -3805,12 +3916,18 @@ No completed games in this range.`;
     }
 
     onQueueDrop(event) {
+      if (this.draggedCourtPlayerId) {
+        event.preventDefault();
+        this.commitCourtDrop();
+        return;
+      }
       if (!this.draggedQueueId) return;
       event.preventDefault();
       this.commitQueueReorder();
     }
 
     onQueueDragEnd() {
+      if (this.draggedCourtPlayerId) this.resetCourtDrag();
       if (this.draggedQueueId) this.resetQueueDrag();
     }
 
@@ -3913,6 +4030,8 @@ No completed games in this range.`;
       }
       if (event.target.id === 'queue-court-count') {
         this.state.queue = Players.setCourtCount(this.state.queue, Number(event.target.value), this.state.players);
+        this.courtGameDraft = null;
+        this.selectedCourtPlayer = { court: -1, id: '' };
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4151,6 +4270,63 @@ No completed games in this range.`;
         this.updatePlayerSlot(`team${team}Player2`, value);
         return;
       }
+      if (action === 'court-select-player') {
+        const courtIndex = Number(target.dataset.court);
+        const playerId = String(target.dataset.player || '');
+        const court = this.state.queue.courts[courtIndex];
+        if (!court || !court.players.includes(playerId)) return;
+        const isSame = this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex && this.selectedCourtPlayer.id === playerId;
+        this.selectedCourtPlayer = isSame ? { court: -1, id: '' } : { court: courtIndex, id: playerId };
+        this.render();
+        return;
+      }
+      if (action === 'court-assign-slot') {
+        const courtIndex = Number(target.dataset.court);
+        const slot = Number(target.dataset.slot);
+        const court = this.state.queue.courts[courtIndex];
+        if (!court || court.players.length !== 4 || slot < 0 || slot > 3) return;
+        const selected = this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex ? String(this.selectedCourtPlayer.id || '') : '';
+        if (!selected) {
+          const occupant = Array.isArray(court.slots) ? String(court.slots[slot] || '') : '';
+          if (occupant) {
+            this.selectedCourtPlayer = { court: courtIndex, id: occupant };
+            this.render();
+          }
+          return;
+        }
+        this.state.queue = Players.assignCourtSlot(this.state.queue, courtIndex, selected, slot, this.state.players);
+        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'court-new-game') {
+        const courtIndex = Number(target.dataset.court);
+        const court = this.state.queue.courts[courtIndex];
+        const slots = court && Array.isArray(court.slots) ? court.slots.slice(0, 4).map(String) : [];
+        if (!court || slots.length !== 4 || slots.some((id) => !id) || new Set(slots).size !== 4 || !Players.samePlayers(slots, court.players)) {
+          this.showToast('Assign all four team and side positions first');
+          return;
+        }
+        this.courtGameDraft = { courtIndex, slots };
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        if (this.state.currentGame && this.state.currentGame.status === 'active') {
+          this.pendingView = 'setup';
+          this.showLeaveWarning = true;
+        } else {
+          this.view = 'setup';
+        }
+        this.render();
+        return;
+      }
+      if (action === 'cancel-court-draft') {
+        this.courtGameDraft = null;
+        this.view = 'queue';
+        this.render();
+        return;
+      }
       if (action === 'queue-defer-next') {
         this.state.queue = Players.toggleDeferNext(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
@@ -4166,14 +4342,20 @@ No completed games in this range.`;
         return;
       }
       if (action === 'court-done') {
-        this.state.queue = Players.completeCourt(this.state.queue, Number(target.dataset.court), this.state.players, Date.now());
+        const courtIndex = Number(target.dataset.court);
+        this.state.queue = Players.completeCourt(this.state.queue, courtIndex, this.state.players, Date.now());
+        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+        if (this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex) this.selectedCourtPlayer = { court: -1, id: '' };
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
       if (action === 'court-cancel') {
-        this.state.queue = Players.cancelCourt(this.state.queue, Number(target.dataset.court), this.state.players, Date.now());
+        const courtIndex = Number(target.dataset.court);
+        this.state.queue = Players.cancelCourt(this.state.queue, courtIndex, this.state.players, Date.now());
+        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+        if (this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex) this.selectedCourtPlayer = { court: -1, id: '' };
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4182,6 +4364,8 @@ No completed games in this range.`;
       if (action === 'queue-new-session') {
         if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Completed games and the roster stay intact.')) return;
         this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
+        this.courtGameDraft = null;
+        this.selectedCourtPlayer = { court: -1, id: '' };
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4913,6 +5097,15 @@ No completed games in this range.`;
           teamBPlayer2: game.teams[1].playerIds[1] || ''
         };
       }
+      if (this.courtGameDraft && Array.isArray(this.courtGameDraft.slots) && this.courtGameDraft.slots.length === 4) {
+        const slots = this.courtGameDraft.slots;
+        return {
+          teamAPlayer1: slots[0] || '',
+          teamAPlayer2: slots[1] || '',
+          teamBPlayer1: slots[2] || '',
+          teamBPlayer2: slots[3] || ''
+        };
+      }
       const pending = this.state.queue.pending;
       if (!Array.isArray(pending) || pending.length !== 4) return {};
       return {
@@ -4925,7 +5118,8 @@ No completed games in this range.`;
 
     renderSetup() {
       const hasPlayers = this.state.players.length >= 2;
-      const pending = !this.editingGame && this.state.queue.pending.length === 4;
+      const courtDraft = !this.editingGame && this.courtGameDraft && Array.isArray(this.courtGameDraft.slots) && this.courtGameDraft.slots.length === 4;
+      const pending = !this.editingGame && !courtDraft && this.state.queue.pending.length === 4;
       return `
         <section class="setup-view setup-stack">
           ${this.editingGame ? `
@@ -4933,6 +5127,12 @@ No completed games in this range.`;
               <span class="next-match-icon" aria-hidden="true">${icon('reset')}</span>
               <div><b>Reset game</b><span>Change players or settings. The current score and timer will be cleared.</span></div>
               <button class="icon-btn compact" type="button" data-action="cancel-game-edit" aria-label="Cancel game reset" title="Cancel">${icon('x')}</button>
+            </aside>
+          ` : courtDraft ? `
+            <aside class="next-match-banner">
+              <span class="next-match-icon" aria-hidden="true">${icon('users')}</span>
+              <div><b>Court ${Number(this.courtGameDraft.courtIndex) + 1}</b><span>Teams and sides copied from the court assignment</span></div>
+              <button class="icon-btn compact" type="button" data-action="cancel-court-draft" aria-label="Cancel court game setup" title="Cancel">${icon('x')}</button>
             </aside>
           ` : pending ? `
             <aside class="next-match-banner">
@@ -5289,16 +5489,34 @@ No completed games in this range.`;
       if (!court.players.length) {
         return `<article class="court-card is-open"><header><b>Court ${index + 1}</b><span>Open</span></header><div class="court-open-mark">${icon('ball')}<span>Waiting for 4</span></div></article>`;
       }
-      const teams = court.teams && court.teams.length === 2 ? court.teams : [court.players.slice(0, 2), court.players.slice(2, 4)];
+      const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4) : ['', '', '', ''];
+      while (slots.length < 4) slots.push('');
+      const slotLabels = ['A · Right', 'A · Left', 'B · Right', 'B · Left'];
+      const positionFor = (id) => {
+        const slot = slots.indexOf(id);
+        return slot >= 0 ? slotLabels[slot] : 'Unassigned';
+      };
+      const complete = slots.every(Boolean) && new Set(slots).size === 4;
+      const selectedId = this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === index ? String(this.selectedCourtPlayer.id || '') : '';
       return `
-        <article class="court-card is-active">
-          <header><b>Court ${index + 1}</b><span>Playing</span></header>
-          <div class="court-matchup">
-            <div><small>Team A</small><strong>${teams[0].map((id) => escapeHtml(this.playerName(id))).join(' + ')}</strong></div>
-            <i>vs</i>
-            <div><small>Team B</small><strong>${teams[1].map((id) => escapeHtml(this.playerName(id))).join(' + ')}</strong></div>
+        <article class="court-card is-active court-assignment-card" data-court-card="${index}">
+          <header><b>Court ${index + 1}</b><span>${complete ? 'Ready' : '4 players'}</span></header>
+          <div class="court-player-list" aria-label="Court ${index + 1} players">
+            ${court.players.map((id) => {
+              const selected = selectedId === id;
+              return `<button type="button" class="court-player-chip ${selected ? 'is-selected' : ''}" draggable="true" data-action="court-select-player" data-court="${index}" data-player="${escapeHtml(id)}" data-court-drag-player="${escapeHtml(id)}" aria-pressed="${selected}" aria-label="${escapeHtml(this.playerName(id))}, ${escapeHtml(positionFor(id))}. Select to assign team and side"><span class="court-player-chip-grip">${icon('grip')}</span><span><b>${escapeHtml(this.playerName(id))}</b><small>${escapeHtml(positionFor(id))}</small></span></button>`;
+            }).join('')}
           </div>
-          <div class="court-actions">
+          <div class="court-assign-hint"><span>${icon('swap')}</span><span>${selectedId ? `Now choose a side for ${escapeHtml(this.playerName(selectedId))}` : 'Tap a player, then a side · or drag a player into a side'}</span></div>
+          <div class="court-position-grid" aria-label="Assign Court ${index + 1} team and starting side">
+            ${slots.map((id, slot) => {
+              const team = slot < 2 ? 'A' : 'B';
+              const side = slot % 2 === 0 ? 'Right' : 'Left';
+              return `<button type="button" class="court-position-slot ${id ? 'has-player' : ''} ${this.courtDropSlot === slot && this.draggedCourtIndex === index ? 'is-drop-target' : ''}" data-action="court-assign-slot" data-court="${index}" data-slot="${slot}" data-court-slot="${slot}" aria-label="Team ${team} ${side}${id ? `, ${escapeHtml(this.playerName(id))}` : ', empty'}"><span class="court-position-label"><b>Team ${team}</b><small>${side}</small></span><span class="court-position-player">${id ? escapeHtml(this.playerName(id)) : 'Drop / tap'}</span></button>`;
+            }).join('')}
+          </div>
+          <div class="court-actions court-assignment-actions">
+            <button type="button" class="court-new-game" data-action="court-new-game" data-court="${index}" ${complete ? '' : 'disabled'}>${icon('play')} New game</button>
             <button type="button" class="court-done" data-action="court-done" data-court="${index}">${icon('check')} Done</button>
             <button type="button" class="court-cancel" data-action="court-cancel" data-court="${index}">${icon('x')} Cancel</button>
           </div>
@@ -5351,6 +5569,7 @@ No completed games in this range.`;
                   </span>
                   <span class="queue-row-actions">
                     ${showDefer ? `<button type="button" class="queue-defer-next ${isDeferred ? 'is-active' : ''}" data-action="queue-defer-next" data-player="${escapeHtml(id)}" ${!isDeferred && !canDefer ? 'disabled' : ''} aria-label="${isDeferred ? 'Undo next-batch defer for' : 'Move to next batch:'} ${escapeHtml(this.playerName(id))}" title="${isDeferred ? 'Undo next batch' : canDefer ? 'Skip the next batch once' : 'Needs another waiting player'}">${icon('arrowDown')}<span>${isDeferred ? 'Undo' : 'Next'}</span></button>` : ''}
+                    <button type="button" class="queue-voice-preview" data-action="preview-player-voice" data-player="${escapeHtml(id)}" aria-label="Preview pronunciation for ${escapeHtml(this.playerName(id))}" title="Pronounce name">${icon('speaker')}</button>
                     <button type="button" class="queue-remove-only" data-action="queue-remove" data-player="${escapeHtml(id)}" aria-label="Remove from queue">${icon('x')}</button>
                   </span>
                 </li>

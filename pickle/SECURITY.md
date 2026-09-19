@@ -100,3 +100,8 @@ v30 removes the Tagalog selector and adds System Default while retaining English
 ## v31 player-pronunciation note
 
 v31 adds an optional per-player pronunciation string stored with the local roster. It is handled like the player name: persisted in browser localStorage and included in JSON backups, but it is not uploaded to a PicklePulse service. The value is escaped when rendered and passed only as plain text to the selected Web Speech voice. Controller announcements use it only for speech; visible player names remain unchanged. Roster share QR/code remains name-only in this build.
+
+
+## v32 court-assignment note
+
+v32 adds only local queue/court assignment state. Court slot assignments are stored inside the existing local PicklePulse state and are not transmitted to a new service. The new queue pronunciation button reuses the existing Web Speech path and does not add a network TTS provider. Court drag/drop carries only local player IDs inside the page; a tap/click assignment path remains available and no external drag/drop library was added.

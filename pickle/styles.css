@@ -1829,3 +1829,55 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
 /* v31: per-player VoiceOver pronunciation hint */
 .player-edit-dialog label > span small { font-size: .62rem; font-weight: 750; opacity: .75; }
 .player-pronunciation-help { color: var(--muted); font-size: .65rem; font-weight: 650; line-height: 1.4; }
+
+/* v32: explicit court team/side assignment + queue name callout */
+.queue-voice-preview { width: 34px; height: 34px; border: 0; border-radius: 10px; display: grid; place-items: center; color: var(--accent); background: var(--accent-soft); cursor: pointer; }
+.queue-voice-preview .icon { width: 16px; height: 16px; }
+.queue-voice-preview:focus-visible, .court-player-chip:focus-visible, .court-position-slot:focus-visible, .court-new-game:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+
+.court-assignment-card { overflow: visible; }
+.court-player-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 10px 10px 7px; }
+.court-player-chip { min-width: 0; min-height: 46px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; color: var(--text); background: var(--bg); text-align: left; cursor: grab; }
+.court-player-chip:active { cursor: grabbing; }
+.court-player-chip.is-selected { border-color: color-mix(in srgb, var(--accent) 62%, var(--line)); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+.court-player-chip.is-dragging { opacity: .46; }
+.court-player-chip-grip { width: 22px; height: 28px; display: grid; place-items: center; color: var(--muted); }
+.court-player-chip-grip .icon { width: 17px; height: 17px; }
+.court-player-chip > span:last-child { min-width: 0; display: grid; gap: 1px; }
+.court-player-chip b, .court-player-chip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.court-player-chip b { font-size: .78rem; }
+.court-player-chip small { color: var(--muted); font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .035em; }
+.court-assign-hint { min-height: 34px; padding: 0 11px 7px; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .64rem; font-weight: 750; line-height: 1.3; }
+.court-assign-hint .icon { width: 15px; height: 15px; flex: 0 0 auto; }
+.court-position-grid { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0 10px 10px; }
+.court-position-grid::after { content: ''; position: absolute; top: 0; bottom: 10px; left: 50%; width: 1px; background: color-mix(in srgb, var(--line) 85%, transparent); pointer-events: none; }
+.court-position-slot { position: relative; z-index: 1; min-width: 0; min-height: 58px; padding: 6px 8px; border: 1px dashed color-mix(in srgb, var(--line) 88%, var(--muted)); border-radius: 12px; display: grid; align-content: center; gap: 3px; color: var(--muted); background: var(--surface-2); text-align: left; cursor: pointer; }
+.court-position-slot:nth-child(1), .court-position-slot:nth-child(2) { border-left: 3px solid var(--team-a, var(--accent)); }
+.court-position-slot:nth-child(3), .court-position-slot:nth-child(4) { border-right: 3px solid var(--team-b, #4e5f8d); }
+.court-position-slot.has-player { border-style: solid; color: var(--text); background: var(--bg); }
+.court-position-slot.is-drop-target { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent); }
+.court-position-label { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.court-position-label b { color: var(--muted); font-size: .59rem; letter-spacing: .045em; text-transform: uppercase; }
+.court-position-label small { color: var(--muted); font-size: .58rem; font-weight: 850; text-transform: uppercase; }
+.court-position-player { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; font-weight: 900; }
+.court-assignment-actions { grid-template-columns: 1.25fr .8fr .8fr; }
+.court-assignment-actions button { min-height: 44px; }
+.court-new-game { color: #fff; background: var(--accent) !important; }
+.court-new-game:disabled { opacity: .38; cursor: not-allowed; filter: saturate(.5); }
+.court-new-game + button { border-left: 1px solid var(--line); }
+
+@media (max-width: 480px) {
+  .queue-voice-preview, .queue-remove-only { width: 36px; height: 36px; }
+  .court-player-list { grid-template-columns: 1fr 1fr; gap: 5px; padding: 8px 8px 6px; }
+  .court-player-chip { min-height: 48px; padding: 6px; }
+  .court-assign-hint { padding-inline: 9px; }
+  .court-position-grid { gap: 5px; padding: 0 8px 8px; }
+  .court-position-grid::after { bottom: 8px; }
+  .court-position-slot { min-height: 64px; padding: 7px; }
+  .court-position-player { font-size: .76rem; }
+  .court-assignment-actions button { min-height: 46px; font-size: .7rem; }
+}
+.court-position-slot:nth-child(1) { grid-column: 1; grid-row: 1; }
+.court-position-slot:nth-child(2) { grid-column: 1; grid-row: 2; }
+.court-position-slot:nth-child(3) { grid-column: 2; grid-row: 1; }
+.court-position-slot:nth-child(4) { grid-column: 2; grid-row: 2; }
