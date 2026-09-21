@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "crypto-php-alerts-v1";
+const CACHE_NAME = "crypto-php-alerts-v2";
 const APP_SHELL = [
   "./",
   "./index.html",

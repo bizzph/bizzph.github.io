@@ -7,6 +7,8 @@
 
   const PAIR_KEYS = ["crypto_php_pair_1_v2", "crypto_php_pair_2_v2"];
   const ALERT_PREFIX = "crypto_php_alert_";
+  const SETTINGS_KEY = "crypto_php_general_settings_v1";
+  const DEFAULT_ALERT_PERCENTAGES = [1.1, 0.6, 3];
 
   const REST_MS = 15000;
   const HIDDEN_REST_MS = 60000;
@@ -19,16 +21,20 @@
 
   const timeEl = $("time");
   const alertPanel = $("alertPanel");
+  const settingsPanel = $("settingsPanel");
   const panelBackdrop = $("panelBackdrop");
   const panelTitle = $("panelTitle");
   const aboveInput = $("aboveInput");
   const belowInput = $("belowInput");
   const repeatInput = $("repeatInput");
+  const alertReferencePrice = $("alertReferencePrice");
+  const percentageInputs = [$("percentageInput1"), $("percentageInput2"), $("percentageInput3")];
 
   let fallbackTimer = null;
   let timeTimer = null;
   let destroyed = false;
   let activeAlertSlot = null;
+  let alertPercentages = [...DEFAULT_ALERT_PERCENTAGES];
 
   function blankAlert() {
     return {
@@ -111,7 +117,11 @@
     document.documentElement.style.setProperty("--vvh", `${Math.max(120, height)}px`);
     document.documentElement.style.setProperty("--vvtop", `${Math.max(0, offsetTop)}px`);
 
-    if (alertPanel.classList.contains("open") && document.activeElement?.matches("#aboveInput, #belowInput")) {
+    const panelInputFocused = document.activeElement?.matches(
+      "#aboveInput, #belowInput, #percentageInput1, #percentageInput2, #percentageInput3"
+    );
+
+    if ((alertPanel.classList.contains("open") || settingsPanel.classList.contains("open")) && panelInputFocused) {
       requestAnimationFrame(() => document.activeElement.scrollIntoView({ block: "center", behavior: "smooth" }));
     }
   }
@@ -135,6 +145,86 @@
       minimumFractionDigits: 2,
       maximumFractionDigits: 6
     });
+  }
+
+  function parsePercentage(value) {
+    const n = Number(String(value ?? "").trim());
+    return Number.isFinite(n) && n > 0 && n < 100 ? n : null;
+  }
+
+  function formatPercentage(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "0";
+    return String(Number(n.toFixed(4)));
+  }
+
+  function formatPriceInput(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "";
+
+    const decimals = Math.abs(n) >= 1000 ? 2 : Math.abs(n) >= 1 ? 4 : 8;
+    return String(Number(n.toFixed(decimals)));
+  }
+
+  function loadGeneralSettings() {
+    alertPercentages = [...DEFAULT_ALERT_PERCENTAGES];
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+      const values = Array.isArray(saved?.alertPercentages) ? saved.alertPercentages : [];
+
+      if (values.length === 3) {
+        const parsed = values.map(parsePercentage);
+        if (parsed.every(value => value !== null)) alertPercentages = parsed;
+      }
+    } catch (_) {}
+  }
+
+  function saveGeneralSettingsState() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ alertPercentages }));
+    } catch (_) {}
+  }
+
+  function syncPercentageInputs() {
+    percentageInputs.forEach((input, index) => {
+      input.value = formatPercentage(alertPercentages[index]);
+    });
+  }
+
+  function renderPercentageButtons() {
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      const index = Number(button.dataset.index);
+      const direction = button.dataset.direction;
+      const percentage = alertPercentages[index];
+      const sign = direction === "below" ? "−" : "+";
+      button.textContent = `${sign}${formatPercentage(percentage)}%`;
+    });
+  }
+
+  function syncAlertQuickControls(slot) {
+    const hasPrice = Number.isFinite(slot?.currentPrice) && slot.currentPrice > 0;
+    alertReferencePrice.textContent = hasPrice ? compact(slot.currentPrice) : "price unavailable";
+
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      button.disabled = !hasPrice;
+    });
+  }
+
+  function applyAlertPercentage(direction, index) {
+    const slot = activeAlertSlot;
+    if (!slot || !Number.isFinite(slot.currentPrice) || slot.currentPrice <= 0) return;
+
+    const percentage = alertPercentages[index];
+    if (!Number.isFinite(percentage)) return;
+
+    const multiplier = direction === "below"
+      ? 1 - (percentage / 100)
+      : 1 + (percentage / 100);
+    const targetPrice = slot.currentPrice * multiplier;
+    const input = direction === "below" ? belowInput : aboveInput;
+
+    input.value = formatPriceInput(targetPrice);
   }
 
   function normalize(payload, expectedPair) {
@@ -296,6 +386,7 @@
     }
 
     slot.currentPrice = price;
+    if (activeAlertSlot === slot && alertPanel.classList.contains("open")) syncAlertQuickControls(slot);
     checkAlert(slot, price);
     slot.previousPrice = price;
     slot.lastUpdate = Date.now();
@@ -527,9 +618,12 @@
   }
 
   function openAlert(slot) {
+    closeSettings();
     activeAlertSlot = slot;
     panelTitle.textContent = `${slot.base}/${QUOTE} Price Alert`;
     syncAlertInputs(slot);
+    renderPercentageButtons();
+    syncAlertQuickControls(slot);
     alertPanel.classList.add("open");
     panelBackdrop.classList.add("open");
     updateVisualViewport();
@@ -537,12 +631,44 @@
 
   function closeAlert() {
     alertPanel.classList.remove("open");
-    panelBackdrop.classList.remove("open");
+    if (!settingsPanel.classList.contains("open")) panelBackdrop.classList.remove("open");
     activeAlertSlot = null;
 
     if (document.activeElement?.matches("#aboveInput, #belowInput")) {
       document.activeElement.blur();
     }
+  }
+
+  function openSettings() {
+    closeAlert();
+    syncPercentageInputs();
+    settingsPanel.classList.add("open");
+    panelBackdrop.classList.add("open");
+    updateVisualViewport();
+  }
+
+  function closeSettings() {
+    settingsPanel.classList.remove("open");
+    if (!alertPanel.classList.contains("open")) panelBackdrop.classList.remove("open");
+
+    if (document.activeElement?.matches("#percentageInput1, #percentageInput2, #percentageInput3")) {
+      document.activeElement.blur();
+    }
+  }
+
+  function saveSettings() {
+    const next = percentageInputs.map(input => parsePercentage(input.value));
+    const invalidIndex = next.findIndex(value => value === null);
+
+    if (invalidIndex !== -1) {
+      percentageInputs[invalidIndex].focus();
+      return;
+    }
+
+    alertPercentages = next;
+    saveGeneralSettingsState();
+    renderPercentageButtons();
+    closeSettings();
   }
 
   async function saveAlert() {
@@ -618,18 +744,34 @@
     slots.forEach(bindSlot);
 
     $("refreshBtn").addEventListener("click", refreshAll);
+    $("settingsBtn").addEventListener("click", openSettings);
     $("fullscreenBtn").addEventListener("click", fullscreen);
     $("saveAlertBtn").addEventListener("click", saveAlert);
     $("clearAlertBtn").addEventListener("click", clearAlert);
     $("closeAlertBtn").addEventListener("click", closeAlert);
     $("panelCloseX").addEventListener("click", closeAlert);
-    panelBackdrop.addEventListener("click", closeAlert);
+    $("saveSettingsBtn").addEventListener("click", saveSettings);
+    $("closeSettingsBtn").addEventListener("click", closeSettings);
+    $("settingsCloseX").addEventListener("click", closeSettings);
 
-    document.addEventListener("keydown", event => {
-      if (event.key === "Escape" && alertPanel.classList.contains("open")) closeAlert();
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      button.addEventListener("click", () => {
+        applyAlertPercentage(button.dataset.direction, Number(button.dataset.index));
+      });
     });
 
-    [aboveInput, belowInput].forEach(input => {
+    panelBackdrop.addEventListener("click", () => {
+      if (alertPanel.classList.contains("open")) closeAlert();
+      if (settingsPanel.classList.contains("open")) closeSettings();
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      if (alertPanel.classList.contains("open")) closeAlert();
+      if (settingsPanel.classList.contains("open")) closeSettings();
+    });
+
+    [aboveInput, belowInput, ...percentageInputs].forEach(input => {
       input.addEventListener("focus", updateVisualViewport);
     });
 
@@ -670,6 +812,8 @@
   }
 
   function start() {
+    loadGeneralSettings();
+    renderPercentageButtons();
     bind();
 
     slots.forEach(slot => {

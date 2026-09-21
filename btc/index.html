@@ -509,6 +509,65 @@ input {
     font-size: clamp(34px, 19vh, 68px);
   }
 }
+
+.quick-price-note,
+.settings-note {
+  margin-top: 9px;
+  font-size: clamp(11px, 2.7vw, 14px);
+  line-height: 1.35;
+  font-weight: 700;
+  opacity: 0.58;
+}
+
+.percent-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.percent-shortcuts button {
+  min-width: 0;
+  height: 34px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: clamp(11px, 2.6vw, 14px);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.percent-shortcuts button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.percent-shortcuts button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.settings-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-fields .field input[type="number"] {
+  text-align: center;
+}
+
+#saveSettingsBtn {
+  background: #30d158;
+  color: #000;
+}
+
+@media (max-width: 430px) {
+  .settings-fields {
+    grid-template-columns: 1fr;
+  }
+}
   </style>
 </head>
 <body>
@@ -555,6 +614,7 @@ input {
 
     <div class="controls">
       <button type="button" id="refreshBtn" aria-label="Refresh both pairs">↻</button>
+      <button type="button" id="settingsBtn" aria-label="General settings">⚙</button>
       <button type="button" id="fullscreenBtn" aria-label="Fullscreen">⛶</button>
     </div>
   </main>
@@ -568,13 +628,25 @@ input {
       <div class="field">
         <label for="aboveInput">Went above</label>
         <input id="aboveInput" type="number" inputmode="decimal" step="any" placeholder="optional" />
+        <div class="percent-shortcuts" aria-label="Went above percentage shortcuts">
+          <button type="button" data-alert-percent data-direction="above" data-index="0">+1.1%</button>
+          <button type="button" data-alert-percent data-direction="above" data-index="1">+0.6%</button>
+          <button type="button" data-alert-percent data-direction="above" data-index="2">+3%</button>
+        </div>
       </div>
 
       <div class="field">
         <label for="belowInput">Went below</label>
         <input id="belowInput" type="number" inputmode="decimal" step="any" placeholder="optional" />
+        <div class="percent-shortcuts" aria-label="Went below percentage shortcuts">
+          <button type="button" data-alert-percent data-direction="below" data-index="0">−1.1%</button>
+          <button type="button" data-alert-percent data-direction="below" data-index="1">−0.6%</button>
+          <button type="button" data-alert-percent data-direction="below" data-index="2">−3%</button>
+        </div>
       </div>
     </div>
+
+    <div class="quick-price-note">Shortcuts use current price: <strong id="alertReferencePrice">--</strong></div>
 
     <label class="check-row">
       <input id="repeatInput" type="checkbox" />
@@ -588,6 +660,32 @@ input {
     </div>
   </div>
 
+  <div id="settingsPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <button type="button" id="settingsCloseX" class="panel-close-x" aria-label="Close general settings">×</button>
+    <div id="settingsTitle" class="panel-title">General Settings</div>
+    <div class="settings-note">Set the three percentage shortcuts used by both Went above and Went below alerts. Values are calculated from the live current price.</div>
+
+    <div class="settings-fields">
+      <div class="field">
+        <label for="percentageInput1">Button 1 (%)</label>
+        <input id="percentageInput1" type="number" inputmode="decimal" min="0.01" max="99.99" step="0.01" />
+      </div>
+      <div class="field">
+        <label for="percentageInput2">Button 2 (%)</label>
+        <input id="percentageInput2" type="number" inputmode="decimal" min="0.01" max="99.99" step="0.01" />
+      </div>
+      <div class="field">
+        <label for="percentageInput3">Button 3 (%)</label>
+        <input id="percentageInput3" type="number" inputmode="decimal" min="0.01" max="99.99" step="0.01" />
+      </div>
+    </div>
+
+    <div class="panel-actions">
+      <button type="button" id="saveSettingsBtn">Save</button>
+      <button type="button" id="closeSettingsBtn">Close</button>
+    </div>
+  </div>
+
   <script>
 (() => {
   "use strict";
@@ -598,6 +696,8 @@ input {
 
   const PAIR_KEYS = ["crypto_php_pair_1_v2", "crypto_php_pair_2_v2"];
   const ALERT_PREFIX = "crypto_php_alert_";
+  const SETTINGS_KEY = "crypto_php_general_settings_v1";
+  const DEFAULT_ALERT_PERCENTAGES = [1.1, 0.6, 3];
 
   const REST_MS = 15000;
   const HIDDEN_REST_MS = 60000;
@@ -610,16 +710,20 @@ input {
 
   const timeEl = $("time");
   const alertPanel = $("alertPanel");
+  const settingsPanel = $("settingsPanel");
   const panelBackdrop = $("panelBackdrop");
   const panelTitle = $("panelTitle");
   const aboveInput = $("aboveInput");
   const belowInput = $("belowInput");
   const repeatInput = $("repeatInput");
+  const alertReferencePrice = $("alertReferencePrice");
+  const percentageInputs = [$("percentageInput1"), $("percentageInput2"), $("percentageInput3")];
 
   let fallbackTimer = null;
   let timeTimer = null;
   let destroyed = false;
   let activeAlertSlot = null;
+  let alertPercentages = [...DEFAULT_ALERT_PERCENTAGES];
 
   function blankAlert() {
     return {
@@ -702,7 +806,11 @@ input {
     document.documentElement.style.setProperty("--vvh", `${Math.max(120, height)}px`);
     document.documentElement.style.setProperty("--vvtop", `${Math.max(0, offsetTop)}px`);
 
-    if (alertPanel.classList.contains("open") && document.activeElement?.matches("#aboveInput, #belowInput")) {
+    const panelInputFocused = document.activeElement?.matches(
+      "#aboveInput, #belowInput, #percentageInput1, #percentageInput2, #percentageInput3"
+    );
+
+    if ((alertPanel.classList.contains("open") || settingsPanel.classList.contains("open")) && panelInputFocused) {
       requestAnimationFrame(() => document.activeElement.scrollIntoView({ block: "center", behavior: "smooth" }));
     }
   }
@@ -726,6 +834,86 @@ input {
       minimumFractionDigits: 2,
       maximumFractionDigits: 6
     });
+  }
+
+  function parsePercentage(value) {
+    const n = Number(String(value ?? "").trim());
+    return Number.isFinite(n) && n > 0 && n < 100 ? n : null;
+  }
+
+  function formatPercentage(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "0";
+    return String(Number(n.toFixed(4)));
+  }
+
+  function formatPriceInput(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "";
+
+    const decimals = Math.abs(n) >= 1000 ? 2 : Math.abs(n) >= 1 ? 4 : 8;
+    return String(Number(n.toFixed(decimals)));
+  }
+
+  function loadGeneralSettings() {
+    alertPercentages = [...DEFAULT_ALERT_PERCENTAGES];
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+      const values = Array.isArray(saved?.alertPercentages) ? saved.alertPercentages : [];
+
+      if (values.length === 3) {
+        const parsed = values.map(parsePercentage);
+        if (parsed.every(value => value !== null)) alertPercentages = parsed;
+      }
+    } catch (_) {}
+  }
+
+  function saveGeneralSettingsState() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ alertPercentages }));
+    } catch (_) {}
+  }
+
+  function syncPercentageInputs() {
+    percentageInputs.forEach((input, index) => {
+      input.value = formatPercentage(alertPercentages[index]);
+    });
+  }
+
+  function renderPercentageButtons() {
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      const index = Number(button.dataset.index);
+      const direction = button.dataset.direction;
+      const percentage = alertPercentages[index];
+      const sign = direction === "below" ? "−" : "+";
+      button.textContent = `${sign}${formatPercentage(percentage)}%`;
+    });
+  }
+
+  function syncAlertQuickControls(slot) {
+    const hasPrice = Number.isFinite(slot?.currentPrice) && slot.currentPrice > 0;
+    alertReferencePrice.textContent = hasPrice ? compact(slot.currentPrice) : "price unavailable";
+
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      button.disabled = !hasPrice;
+    });
+  }
+
+  function applyAlertPercentage(direction, index) {
+    const slot = activeAlertSlot;
+    if (!slot || !Number.isFinite(slot.currentPrice) || slot.currentPrice <= 0) return;
+
+    const percentage = alertPercentages[index];
+    if (!Number.isFinite(percentage)) return;
+
+    const multiplier = direction === "below"
+      ? 1 - (percentage / 100)
+      : 1 + (percentage / 100);
+    const targetPrice = slot.currentPrice * multiplier;
+    const input = direction === "below" ? belowInput : aboveInput;
+
+    input.value = formatPriceInput(targetPrice);
   }
 
   function normalize(payload, expectedPair) {
@@ -887,6 +1075,7 @@ input {
     }
 
     slot.currentPrice = price;
+    if (activeAlertSlot === slot && alertPanel.classList.contains("open")) syncAlertQuickControls(slot);
     checkAlert(slot, price);
     slot.previousPrice = price;
     slot.lastUpdate = Date.now();
@@ -1118,9 +1307,12 @@ input {
   }
 
   function openAlert(slot) {
+    closeSettings();
     activeAlertSlot = slot;
     panelTitle.textContent = `${slot.base}/${QUOTE} Price Alert`;
     syncAlertInputs(slot);
+    renderPercentageButtons();
+    syncAlertQuickControls(slot);
     alertPanel.classList.add("open");
     panelBackdrop.classList.add("open");
     updateVisualViewport();
@@ -1128,12 +1320,44 @@ input {
 
   function closeAlert() {
     alertPanel.classList.remove("open");
-    panelBackdrop.classList.remove("open");
+    if (!settingsPanel.classList.contains("open")) panelBackdrop.classList.remove("open");
     activeAlertSlot = null;
 
     if (document.activeElement?.matches("#aboveInput, #belowInput")) {
       document.activeElement.blur();
     }
+  }
+
+  function openSettings() {
+    closeAlert();
+    syncPercentageInputs();
+    settingsPanel.classList.add("open");
+    panelBackdrop.classList.add("open");
+    updateVisualViewport();
+  }
+
+  function closeSettings() {
+    settingsPanel.classList.remove("open");
+    if (!alertPanel.classList.contains("open")) panelBackdrop.classList.remove("open");
+
+    if (document.activeElement?.matches("#percentageInput1, #percentageInput2, #percentageInput3")) {
+      document.activeElement.blur();
+    }
+  }
+
+  function saveSettings() {
+    const next = percentageInputs.map(input => parsePercentage(input.value));
+    const invalidIndex = next.findIndex(value => value === null);
+
+    if (invalidIndex !== -1) {
+      percentageInputs[invalidIndex].focus();
+      return;
+    }
+
+    alertPercentages = next;
+    saveGeneralSettingsState();
+    renderPercentageButtons();
+    closeSettings();
   }
 
   async function saveAlert() {
@@ -1209,18 +1433,34 @@ input {
     slots.forEach(bindSlot);
 
     $("refreshBtn").addEventListener("click", refreshAll);
+    $("settingsBtn").addEventListener("click", openSettings);
     $("fullscreenBtn").addEventListener("click", fullscreen);
     $("saveAlertBtn").addEventListener("click", saveAlert);
     $("clearAlertBtn").addEventListener("click", clearAlert);
     $("closeAlertBtn").addEventListener("click", closeAlert);
     $("panelCloseX").addEventListener("click", closeAlert);
-    panelBackdrop.addEventListener("click", closeAlert);
+    $("saveSettingsBtn").addEventListener("click", saveSettings);
+    $("closeSettingsBtn").addEventListener("click", closeSettings);
+    $("settingsCloseX").addEventListener("click", closeSettings);
 
-    document.addEventListener("keydown", event => {
-      if (event.key === "Escape" && alertPanel.classList.contains("open")) closeAlert();
+    document.querySelectorAll("[data-alert-percent]").forEach(button => {
+      button.addEventListener("click", () => {
+        applyAlertPercentage(button.dataset.direction, Number(button.dataset.index));
+      });
     });
 
-    [aboveInput, belowInput].forEach(input => {
+    panelBackdrop.addEventListener("click", () => {
+      if (alertPanel.classList.contains("open")) closeAlert();
+      if (settingsPanel.classList.contains("open")) closeSettings();
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      if (alertPanel.classList.contains("open")) closeAlert();
+      if (settingsPanel.classList.contains("open")) closeSettings();
+    });
+
+    [aboveInput, belowInput, ...percentageInputs].forEach(input => {
       input.addEventListener("focus", updateVisualViewport);
     });
 
@@ -1261,6 +1501,8 @@ input {
   }
 
   function start() {
+    loadGeneralSettings();
+    renderPercentageButtons();
     bind();
 
     slots.forEach(slot => {
