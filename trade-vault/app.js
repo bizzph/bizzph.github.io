@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.21.2';
+const APP_BUILD = '2026.09.21.3';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -1833,7 +1833,7 @@ function renderTransactions() {
     <div class="transaction-summary">
       <input type="checkbox" data-select-key="${escapeHtml(tx._recordKey)}" aria-label="Select ${escapeHtml(tx.pair)} transaction"${checked ? ' checked' : ''}>
       <div class="transaction-summary-main">
-        <div class="transaction-summary-top"><strong class="pair-name">${escapeHtml(tx.pair)}</strong><span class="side ${tx.side.toLowerCase()}">${escapeHtml(tx.side)}</span></div>
+        <div class="transaction-summary-top"><strong class="pair-name">${escapeHtml(tx.pair)}</strong><span class="side ${tx.side.toLowerCase()}">${escapeHtml(tx.side)}</span>${tx.side === 'BUY' && tx.sold ? '<span class="sold-status" aria-label="Sale status sold">Sold</span>' : ''}</div>
         <div class="card-sub">${escapeHtml(shortDate(tx.date))} · ${escapeHtml(purpose)}</div>
       </div>
       <div class="transaction-net-summary">

@@ -204,6 +204,7 @@ tbody tr:hover { background: var(--row-hover); }
 .side { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .05em; }
 .side.buy { background: rgba(132,243,189,.11); color: var(--accent); }
 .side.sell { background: rgba(255,143,143,.1); color: var(--danger-text); }
+.sold-status { display: inline-flex; align-items: center; padding: 3px 7px; border: 1px solid rgba(255, 194, 102, .28); border-radius: 999px; background: rgba(255, 194, 102, .09); color: var(--warning); font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
 .status { max-width: 150px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; }
 .note-cell { max-width: 190px; overflow: hidden; color: var(--soft-text); font-size: 10px; text-overflow: ellipsis; }
 .status.warn { color: var(--warning); }
