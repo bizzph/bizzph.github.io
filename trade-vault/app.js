@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.18.4';
+const APP_BUILD = '2026.09.21.2';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -421,7 +421,7 @@ function clearSensitiveUi() {
   const txBody = $('transactionsBody');
   const holdingsBody = $('holdingsBody');
   const allocation = $('allocationChart');
-  if (txBody) txBody.innerHTML = '<tr><td colspan="13" class="empty-cell">Vault locked.</td></tr>';
+  if (txBody) txBody.innerHTML = '<tr><td colspan="14" class="empty-cell">Vault locked.</td></tr>';
   if (holdingsBody) holdingsBody.innerHTML = '<tr><td colspan="7" class="empty-cell">Vault locked.</td></tr>';
   if ($('transactionsCards')) $('transactionsCards').innerHTML = '<div class="empty-card">Vault locked.</div>';
   if ($('holdingsCards')) $('holdingsCards').innerHTML = '<div class="empty-card">Vault locked.</div>';
@@ -522,6 +522,16 @@ async function deleteTransaction(recordKey) {
   await idbDelete('records', recordKey);
   transactions = transactions.filter(item => item._recordKey !== recordKey);
   selectedRecordKeys.delete(recordKey);
+}
+
+async function setBuySoldStatus(recordKey, sold) {
+  if (!vaultKey) throw new Error('Vault is locked.');
+  const current = transactions.find(item => item._recordKey === recordKey);
+  if (!current) throw new Error('Transaction was not found.');
+  if (current.side !== 'BUY') throw new Error('Only BUY transactions can be marked sold.');
+  const next = { ...current, sold: Boolean(sold), updatedAt: new Date().toISOString() };
+  delete next._recordKey;
+  await updateTransaction(recordKey, next);
 }
 
 async function requestPersistence() {
@@ -1702,6 +1712,13 @@ function fixedCopyValue(value) {
   return formatFixed(value, 18).replace(/,/g, '');
 }
 
+function soldToggleMarkup(tx, compact = false) {
+  if (tx.side !== 'BUY') return '<span class="sold-na" aria-label="Not applicable">—</span>';
+  const sold = Boolean(tx.sold);
+  const label = sold ? 'Marked sold' : 'Mark sold';
+  return `<label class="sold-toggle${compact ? ' compact' : ''}" title="${label}"><input type="checkbox" data-sold-key="${escapeHtml(tx._recordKey)}" aria-label="${label}: ${escapeHtml(tx.pair)}"${sold ? ' checked' : ''}><span class="sold-toggle-track" aria-hidden="true"><span class="sold-toggle-thumb"></span></span><span class="sold-toggle-text">${sold ? 'Sold' : 'Open'}</span></label>`;
+}
+
 async function copyText(text) {
   const value = String(text ?? '');
   if (navigator.clipboard?.writeText) {
@@ -1773,7 +1790,7 @@ function renderTransactions() {
   const filtered = filteredTransactions();
   if (!filtered.length) {
     const message = transactions.length ? 'No matches.' : 'No transactions yet.';
-    body.innerHTML = `<tr><td colspan="13" class="empty-cell">${message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="14" class="empty-cell">${message}</td></tr>`;
     if (cards) cards.innerHTML = `<div class="empty-card">${message}</div>`;
     updateSelectionUi(filtered);
     updateLedgerDetailsToggle(filtered);
@@ -1807,6 +1824,7 @@ function renderTransactions() {
     <td>${feeText}</td>
     <td><div class="net-copy-cell"><strong>${netText}</strong><button type="button" class="inline-copy icon-only" data-action="copy-net" data-key="${escapeHtml(tx._recordKey)}" aria-label="Copy net acquired amount ${escapeHtml(netCopy)}" title="Copy net acquired amount">${icon('copy')}</button></div></td>
     <td class="note-cell" title="${escapeHtml(tx.notes || '')}">${tx.notes ? escapeHtml(tx.notes) : '—'}</td>
+    <td class="sold-cell">${soldToggleMarkup(tx, true)}</td>
     <td class="status ${warn ? 'warn' : ''}" title="${escapeHtml(notes.join(' · '))}">${notes.length ? escapeHtml(notes[0]) : 'OK'}</td>
     <td><div class="row-actions"><button type="button" class="table-action icon-only" data-action="edit" data-key="${escapeHtml(tx._recordKey)}" aria-label="Edit transaction" title="Edit">${icon('edit')}</button><button type="button" class="table-action danger icon-only" data-action="delete" data-key="${escapeHtml(tx._recordKey)}" aria-label="Delete transaction" title="Delete">${icon('trash')}</button></div></td>
   </tr>`).join('');
@@ -1833,6 +1851,7 @@ function renderTransactions() {
         <div class="value-cell"><span>Executed</span><strong>${formatFixed(parseFixed(tx.executed), 12)} ${escapeHtml(tx.base)}</strong></div>
         <div class="value-cell"><span>Total</span><strong>${totalText}</strong></div>
         <div class="value-cell"><span>Fee</span><strong>${feeText}</strong></div>
+        ${tx.side === 'BUY' ? `<div class="value-cell sold-detail span-detail"><span>Sale status</span>${soldToggleMarkup(tx)}</div>` : ''}
         <div class="value-cell span-detail"><span>ID</span><strong class="break-value">${escapeHtml(tx.id)}</strong></div>
         <div class="tx-status ${warn ? 'warn' : ''}">${notes.length ? escapeHtml(notes[0]) : 'OK'}</div>
       </div>
@@ -2025,6 +2044,22 @@ function dateToInputValue(value) {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+function updateManualSoldField(form = $('manualForm')) {
+  if (!form) return;
+  const field = $('manualSoldField');
+  const input = form.elements.sold;
+  if (!field || !input) return;
+  const isEditableBuy = Boolean(editingRecordKey) && String(form.elements.side.value || '').toUpperCase() === 'BUY';
+  field.hidden = !isEditableBuy;
+  input.disabled = !isEditableBuy;
+  if (!isEditableBuy) input.checked = false;
+  const text = field.querySelector('.sold-toggle-text');
+  if (text) text.textContent = input.checked ? 'Sold' : 'Open';
+  const toggle = field.querySelector('.sold-toggle');
+  if (toggle) toggle.title = input.checked ? 'Marked sold' : 'Mark sold';
+  input.setAttribute('aria-label', input.checked ? 'Marked sold. Toggle to mark this BUY item open' : 'Mark this BUY item sold');
+}
+
 function setManualMode(tx = null) {
   const form = $('manualForm');
   form.reset();
@@ -2038,6 +2073,7 @@ function setManualMode(tx = null) {
 
   if (!tx) {
     ensureManualDefaults(form);
+    updateManualSoldField(form);
     updateManualCalculations(form);
     return;
   }
@@ -2051,7 +2087,9 @@ function setManualMode(tx = null) {
   form.elements.price.value = tx.price;
   form.elements.executed.value = tx.executed;
   form.elements.notes.value = tx.notes || '';
+  form.elements.sold.checked = Boolean(tx.side === 'BUY' && tx.sold);
   form.elements.reportedTotal.value = '';
+  updateManualSoldField(form);
   updateManualCalculations(form);
   form.elements.feeOverride.value = `${tx.feeAmount || '0'} ${tx.feeAsset || tx.quote}`.trim();
   setManualStatus(`Editing ${tx.source === 'csv' ? 'an imported' : 'a manual'} transaction. Saving replaces only this encrypted local record.`, 'info');
@@ -2739,6 +2777,25 @@ async function init() {
   };
   $('transactionsBody')?.addEventListener('click', handleTransactionAction);
   $('transactionsCards')?.addEventListener('click', handleTransactionAction);
+  const handleSoldToggle = async event => {
+    const input = event.target.closest('input[data-sold-key]');
+    if (!input) return;
+    const recordKey = input.dataset.soldKey;
+    const desired = input.checked;
+    input.disabled = true;
+    try {
+      await setBuySoldStatus(recordKey, desired);
+      renderAll();
+      toast(desired ? 'BUY item marked sold.' : 'BUY item marked open.');
+    } catch (error) {
+      console.error(error);
+      input.checked = !desired;
+      input.disabled = false;
+      toast(error.message || 'Could not update sale status.');
+    }
+  };
+  $('transactionsBody')?.addEventListener('change', handleSoldToggle);
+  $('transactionsCards')?.addEventListener('change', handleSoldToggle);
   $('openManualBtn')?.addEventListener('click', openManual);
   $('closeManualBtn')?.addEventListener('click', () => { editingRecordKey = null; $('manualDialog').close(); });
   $('cancelManualBtn')?.addEventListener('click', () => { editingRecordKey = null; $('manualDialog').close(); });
@@ -2770,6 +2827,7 @@ async function init() {
       event.currentTarget.elements.reportedTotal.value = '';
     }
     if (event.target.matches('input[name="pair"], select[name="side"]')) event.currentTarget.elements.reportedTotal.value = '';
+    if (event.target.matches('select[name="side"], input[name="sold"]')) updateManualSoldField(event.currentTarget);
     setManualStatus('');
     updateManualCalculations(event.currentTarget);
   });
@@ -2777,6 +2835,7 @@ async function init() {
     if (event.target.matches('input[name="price"], input[name="executed"], input[name="pair"], select[name="side"]')) {
       event.currentTarget.elements.reportedTotal.value = '';
     }
+    if (event.target.matches('select[name="side"], input[name="sold"]')) updateManualSoldField(event.currentTarget);
     setManualStatus('');
     updateManualCalculations(event.currentTarget);
   });
@@ -2798,6 +2857,8 @@ async function init() {
         const original = transactions.find(item => item._recordKey === editingRecordKey);
         tx.source = original?.source || tx.source;
         tx.addedAt = original?.addedAt || tx.addedAt;
+        if (tx.side === 'BUY') tx.sold = Boolean(form.elements.sold?.checked);
+        else delete tx.sold;
         tx.updatedAt = new Date().toISOString();
         await updateTransaction(editingRecordKey, tx);
       } else {

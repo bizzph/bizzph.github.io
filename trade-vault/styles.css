@@ -192,7 +192,7 @@ main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 ca
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 .holdings-table { min-width: 890px; }
-.ledger-table { min-width: 1450px; }
+.ledger-table { min-width: 1540px; }
 th, td { padding: 13px 14px; border-bottom: 1px solid var(--line-soft); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 th { position: sticky; top: 0; z-index: 2; background: var(--table-head-bg); color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
 th:first-child, td:first-child, .holdings-table th:nth-child(1), .holdings-table td:nth-child(1), .ledger-table th:nth-child(2), .ledger-table td:nth-child(2), .ledger-table th:nth-child(3), .ledger-table td:nth-child(3) { text-align: left; }
@@ -213,6 +213,27 @@ tbody tr:hover { background: var(--row-hover); }
 .table-action { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: transparent; }
 .table-action.danger { border-color: var(--danger-border); color: var(--danger-text); }
 .table-action svg { width: 15px; height: 15px; }
+.sold-cell { min-width: 108px; text-align: center; }
+.sold-na { color: var(--muted); }
+.sold-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; cursor: pointer; user-select: none; }
+.sold-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.sold-toggle-track { position: relative; display: inline-flex; width: 36px; height: 20px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; background: var(--control-bg); transition: background .16s ease, border-color .16s ease; }
+.sold-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .16s ease, background .16s ease; }
+.sold-toggle input:checked + .sold-toggle-track { border-color: rgba(132,243,189,.45); background: rgba(132,243,189,.15); }
+.sold-toggle input:checked + .sold-toggle-track .sold-toggle-thumb { transform: translateX(16px); background: var(--accent); }
+.sold-toggle input:focus-visible + .sold-toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sold-toggle input:disabled + .sold-toggle-track { opacity: .55; }
+.sold-toggle-text { min-width: 28px; color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .03em; text-transform: uppercase; }
+.sold-toggle input:checked ~ .sold-toggle-text { color: var(--accent); }
+.sold-toggle.compact { gap: 5px; }
+.sold-toggle.compact .sold-toggle-text { font-size: 8px; }
+.sold-detail { align-items: start; }
+.sold-detail .sold-toggle { margin-top: 5px; }
+.manual-sold-field { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 58px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--control-bg); }
+.manual-sold-field[hidden] { display: none; }
+.manual-sold-field > div { min-width: 0; }
+.manual-sold-field > div strong { display: block; margin-bottom: 3px; font-size: 11px; }
+.manual-sold-field > div span { display: block; color: var(--muted); font-size: 10px; line-height: 1.35; }
 
 .bar-chart { display: grid; align-content: center; gap: 13px; min-height: 230px; padding: 19px; }
 .empty-state { color: var(--muted); text-align: center; }

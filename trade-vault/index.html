@@ -6,16 +6,16 @@
   <meta name="theme-color" content="#080b12">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <meta name="trade-vault-build" content="2026.09.18.4">
+  <meta name="trade-vault-build" content="2026.09.21.2">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trade Vault">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
   <title>Trade Vault</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260918.4">
+  <link rel="manifest" href="manifest.webmanifest?v=20260921.2">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260918.4" integrity="sha384-TB1GlNOv2w2oLBtEprq/Knkhil0DEQ+Zohg0qQFAa49KskA6+uoLwT1Y1PsD/hDH">
+  <link rel="stylesheet" href="styles.css?v=20260921.2" integrity="sha384-GwsTreBRYx0Iv0xROLhElX/htkNwny62vJgy/PbHl/H++dUOIZdJZg4d03n35kY8">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -218,8 +218,8 @@
         <article class="panel data-panel">
           <div class="table-wrap desktop-table">
             <table class="ledger-table">
-              <thead><tr><th></th><th>Date</th><th>Pair</th><th>Purpose</th><th>Side</th><th>Price</th><th>Qty</th><th>Total</th><th>Fee</th><th>Net acquired</th><th>Notes</th><th>Status</th><th></th></tr></thead>
-              <tbody id="transactionsBody"><tr><td colspan="13" class="empty-cell">No transactions yet.</td></tr></tbody>
+              <thead><tr><th></th><th>Date</th><th>Pair</th><th>Purpose</th><th>Side</th><th>Price</th><th>Qty</th><th>Total</th><th>Fee</th><th>Net acquired</th><th>Notes</th><th>Sold</th><th>Status</th><th></th></tr></thead>
+              <tbody id="transactionsBody"><tr><td colspan="14" class="empty-cell">No transactions yet.</td></tr></tbody>
             </table>
           </div>
           <div id="transactionsCards" class="mobile-list transaction-cards"><div class="empty-card">No transactions yet.</div></div>
@@ -243,7 +243,7 @@
       </div>
       <p class="settings-copy">Fee defaults affect new transactions only. Auto-lock and the optional local PIN apply to this browser/device.</p>
       <p class="settings-copy security-copy"><strong>Network:</strong> live pricing is off by default. When enabled, Trade Vault can connect only to the public Coins.ph market WebSocket and sends pair symbols only. No analytics, telemetry, account API, or transaction upload is built in.</p>
-      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.18.4</span></p>
+      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.21.2</span></p>
       <div class="form-grid">
         <label>Buy fee (%)<input name="buyFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
         <label>Sell fee (%)<input name="sellFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
@@ -297,6 +297,10 @@
         <label>Fee <span class="auto-tag">AUTO</span><input name="fee" readonly type="text" placeholder="Calculated"></label>
         <div id="feeRuleNote" class="calculation-note span-2">Fee rate comes from General settings and applies to new transactions only.</div>
         <label class="span-2">Fee override <span class="optional-tag">OPTIONAL</span><input name="feeOverride" type="text" placeholder="Use the exchange-reported fee if different"></label>
+        <div id="manualSoldField" class="manual-sold-field span-2" hidden>
+          <div><strong>Sale status</strong><span>Mark this BUY history item as sold.</span></div>
+          <label class="sold-toggle" title="Mark sold"><input name="sold" type="checkbox" aria-label="Mark this BUY item sold"><span class="sold-toggle-track" aria-hidden="true"><span class="sold-toggle-thumb"></span></span><span class="sold-toggle-text">Open</span></label>
+        </div>
         <label class="span-2">Notes <span class="optional-tag">OPTIONAL</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Add context for this transaction"></textarea></label>
         <div id="manualStatus" class="manual-status span-2" role="status" aria-live="polite"></div>
       </div>
@@ -307,6 +311,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20260918.4" integrity="sha384-Al2FJNluFJjqPTaKezkmxvPnv7NhSs9Kie5/fO5L99LlNCiWfsS5rNJ6M8rUuTke" defer></script>
+  <script src="app.js?v=20260921.2" integrity="sha384-bmEVmupC9nSKlPqLz5358CN7tqqULQljagNZ4E7cAYCBqrC1hj+9nUVX7tme8/Nm" defer></script>
 </body>
 </html>

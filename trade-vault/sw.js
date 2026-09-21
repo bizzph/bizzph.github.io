@@ -1,5 +1,5 @@
-const BUILD = '20260918.4';
-const CACHE = 'trade-vault-shell-v27';
+const BUILD = '20260921.2';
+const CACHE = 'trade-vault-shell-v29';
 const INDEX_PATH = `./index.html?tvbuild=${BUILD}`;
 const SHELL = [
   INDEX_PATH,
@@ -91,23 +91,43 @@ self.addEventListener('fetch', event => {
   const scope = self.registration.scope;
   const indexUrl = new URL(INDEX_PATH, scope).href;
 
-  // Navigations prefer a fresh document, but never wait indefinitely for an ISP
-  // route that is connected yet unable to reach the origin. A short timeout falls
-  // back to the verified local shell so the PWA still opens on problematic Wi-Fi.
+  // Navigations are local-first. This prevents installed-PWA startup from being
+  // held hostage by an ISP/Wi-Fi route that reports online but stalls the origin.
+  // A fresh document is fetched in the background and cached for the next launch.
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
+      const cached = await caches.match(indexUrl);
+      if (cached) {
+        event.waitUntil((async () => {
+          try {
+            const preloaded = await Promise.race([
+              event.preloadResponse.catch(() => null),
+              new Promise(resolve => setTimeout(() => resolve(null), NETWORK_TIMEOUT_MS))
+            ]);
+            if (preloaded?.ok && preloaded.type === 'basic') {
+              await cacheResponse(indexUrl, preloaded.clone());
+              return;
+            }
+            await refreshIndex(indexUrl);
+          } catch {}
+        })());
+        return cached;
+      }
+
       try {
-        const preloaded = await event.preloadResponse;
+        const preloaded = await Promise.race([
+          event.preloadResponse.catch(() => null),
+          new Promise(resolve => setTimeout(() => resolve(null), NETWORK_TIMEOUT_MS))
+        ]);
         if (preloaded?.ok && preloaded.type === 'basic') {
           event.waitUntil(cacheResponse(indexUrl, preloaded.clone()));
           return preloaded;
         }
       } catch {}
+
       try {
         return await refreshIndex(indexUrl);
       } catch {
-        const cached = await caches.match(indexUrl);
-        if (cached) return cached;
         return new Response('Trade Vault could not load the app shell. Open it once on a working connection so the offline copy can be created.', {
           status: 503,
           headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
