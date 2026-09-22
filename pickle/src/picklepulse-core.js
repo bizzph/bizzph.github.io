@@ -1260,7 +1260,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=32';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=33';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -1286,7 +1286,8 @@
     lofiTrack: 'sunny',
     mp3Volume: 0.45,
     mp3Queue: [],
-    scoreboardSwapped: false
+    scoreboardSwapped: false,
+    watchScoreboardSwapped: false
   });
   // `lofiEnabled` / `lofiTrack` remain in persisted settings for backward-compatible backups.
   // Playback is now a short, rotating court-music playlist rather than a single repeating lo-fi pattern.
@@ -1588,7 +1589,10 @@
       lofiTrack,
       mp3Volume,
       mp3Queue,
-      scoreboardSwapped: Boolean(source.scoreboardSwapped)
+      scoreboardSwapped: Boolean(source.scoreboardSwapped),
+      watchScoreboardSwapped: Object.prototype.hasOwnProperty.call(source, 'watchScoreboardSwapped')
+        ? Boolean(source.watchScoreboardSwapped)
+        : Boolean(source.scoreboardSwapped)
     };
   }
 
@@ -1771,6 +1775,7 @@
       this.displayVoiceEnabled = false;
       this.displayVoiceURI = '';
       this.displayScoreboardSwapped = false;
+      this.controllerServerFocus = false;
       this.availableVoices = [];
       this.voiceProfiles = { english1: null, english2: null };
       this.playerNameDraft = '';
@@ -2440,7 +2445,7 @@ No completed games in this range.`;
           startedAt: game.timer.startedAt
         },
         appearance: normalizeAppearance(this.state.appearance),
-        displaySwapped: Boolean(this.state.settings.scoreboardSwapped),
+        displaySwapped: Boolean(normalizeSettings(this.state.settings).watchScoreboardSwapped),
         nextQueue: this.nextQueuePlayers().slice(0, 4).map((name) => Players.cleanName(name)).filter(Boolean)
       };
     }
@@ -4521,8 +4526,22 @@ No completed games in this range.`;
           const settings = normalizeSettings(this.state.settings);
           this.state.settings = { ...settings, scoreboardSwapped: !settings.scoreboardSwapped };
           this.persist();
-          if (this.liveController) this.liveController.broadcast();
         }
+        this.render();
+        return;
+      }
+      if (action === 'swap-watch-scoreboard') {
+        if (this.mode !== 'controller') return;
+        const settings = normalizeSettings(this.state.settings);
+        this.state.settings = { ...settings, watchScoreboardSwapped: !settings.watchScoreboardSwapped };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
+      if (action === 'toggle-server-focus') {
+        if (this.mode !== 'controller' || !this.state.currentGame) return;
+        this.controllerServerFocus = !this.controllerServerFocus;
         this.render();
         return;
       }
@@ -5720,8 +5739,9 @@ No completed games in this range.`;
       const settings = normalizeSettings(this.state.settings);
       const voice = settings.voiceEnabled;
       const scoreOrder = settings.scoreboardSwapped ? [1, 0] : [0, 1];
+      const serverFocused = Boolean(this.controllerServerFocus);
       return `
-        <section class="game-view">
+        <section class="game-view ${serverFocused ? 'server-focused' : ''}">
           ${this.renderLiveBar()}
           <div class="game-meta">
             <button class="timer-btn" type="button" data-action="toggle-timer" ${game.status === 'complete' ? 'disabled' : ''} aria-label="${game.timer.running ? 'Pause timer' : 'Start timer'}">
@@ -5738,13 +5758,24 @@ No completed games in this range.`;
               <button class="icon-btn subtle" type="button" data-action="reset-timer" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset timer" title="Reset timer">${icon('reset')}</button>
             </div>
           </div>
-          <div class="score-grid" aria-live="polite">
-            ${scoreOrder.map((index) => this.renderScoreTeam(game, index)).join('')}
+          <div class="controller-score-stage">
+            ${serverFocused ? `
+              <section class="controller-server-focus ${game.status === 'complete' ? 'complete' : ''}" aria-live="polite">
+                <span class="controller-server-kicker">${game.status === 'complete' ? 'Game status' : 'Current server'}</span>
+                <strong>${game.status === 'complete' ? 'FINAL' : escapeHtml(serve.playerName)}</strong>
+                <span class="controller-server-detail">${game.status === 'complete' ? `${game.teams[0].score}–${game.teams[1].score}` : `${escapeHtml(serve.side)} side · ${escapeHtml(Engine.spokenScore(game))}`}</span>
+              </section>
+            ` : ''}
+            <div class="score-grid" aria-live="polite">
+              ${scoreOrder.map((index) => this.renderScoreTeam(game, index)).join('')}
+            </div>
           </div>
           <div class="game-controls-stack">
             <nav class="game-toolbar" aria-label="Match actions">
               <button class="tool-btn" type="button" data-action="undo" ${game.rallies.length ? '' : 'disabled'} aria-label="Undo last rally" title="Undo">${icon('undo')}</button>
-              <button class="tool-btn" type="button" data-action="swap-scoreboard" aria-label="Swap scoreboard sides" title="Swap display sides">${icon('swap')}</button>
+              <button class="tool-btn ${settings.scoreboardSwapped ? 'active' : ''}" type="button" data-action="swap-scoreboard" aria-label="Swap controller scoreboard sides" title="Swap controller scoreboard">${icon('swap')}</button>
+              <button class="tool-btn ${settings.watchScoreboardSwapped ? 'active' : ''}" type="button" data-action="swap-watch-scoreboard" aria-label="Swap live display scoreboard sides" title="Swap ?watch= scoreboard">${icon('displaySwap')}</button>
+              <button class="tool-btn ${serverFocused ? 'active' : ''}" type="button" data-action="toggle-server-focus" aria-label="${serverFocused ? 'Make scoreboard large' : 'Make current server large'}" title="${serverFocused ? 'Scoreboard focus' : 'Current server focus'}">${icon('serverFocus')}</button>
               <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
               <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
               ${game.status === 'complete'
@@ -5888,7 +5919,7 @@ No completed games in this range.`;
       const remoteSwapped = Boolean(game.displaySwapped) !== Boolean(this.displayScoreboardSwapped);
       const scoreOrder = remoteSwapped ? [1, 0] : [0, 1];
       return `
-        <main class="remote-scoreboard ${nextQueue.length ? 'has-next-queue' : ''}">
+        <main class="remote-scoreboard ${game.status === 'complete' ? 'is-final' : ''} ${nextQueue.length ? 'has-next-queue' : ''}">
           <div class="remote-meta">
             <time data-role="match-clock" class="${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
             <div class="remote-call ${game.status === 'complete' ? 'complete' : ''}">
@@ -5902,7 +5933,7 @@ No completed games in this range.`;
           </div>
           ${nextQueue.length ? `
             <aside class="remote-next-queue" aria-label="Next players in queue">
-              <div class="remote-next-title">${icon('users')}<span>Next 4</span></div>
+              <div class="remote-next-title">${icon('users')}<span>Next up</span></div>
               <ol>${nextQueue.map((name, index) => `<li><span>${index + 1}</span><b>${escapeHtml(name)}</b></li>`).join('')}</ol>
             </aside>
           ` : ''}

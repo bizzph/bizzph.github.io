@@ -1881,3 +1881,156 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
 .court-position-slot:nth-child(2) { grid-column: 1; grid-row: 2; }
 .court-position-slot:nth-child(3) { grid-column: 2; grid-row: 1; }
 .court-position-slot:nth-child(4) { grid-column: 2; grid-row: 2; }
+
+/* v33: independent controller/watch swaps, current-server focus, and larger final queue. */
+.game-toolbar {
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+}
+.controller-score-stage {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.controller-server-focus {
+  min-height: clamp(230px, 38dvh, 430px);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(8px, 1.8vh, 18px);
+  padding: clamp(20px, 4vw, 48px);
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: clamp(22px, 3vw, 34px);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 74%, var(--surface)), var(--surface));
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.controller-server-kicker {
+  color: var(--accent);
+  font-size: clamp(.8rem, 1.4vw, 1.05rem);
+  font-weight: 950;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.controller-server-focus strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: clamp(3.25rem, 10vw, 8.5rem);
+  font-weight: 950;
+  line-height: .9;
+  letter-spacing: -.045em;
+}
+.controller-server-detail {
+  color: var(--muted);
+  font-size: clamp(1.1rem, 3vw, 2.25rem);
+  font-weight: 900;
+}
+.controller-server-focus.complete strong { color: var(--accent); }
+.game-view.server-focused .game-meta .serve-call { opacity: .5; }
+.game-view.server-focused .score-grid {
+  min-height: clamp(150px, 24dvh, 235px);
+}
+.game-view.server-focused .score-team {
+  min-height: 0;
+  grid-template-rows: auto 1fr auto;
+  padding: 10px 12px;
+}
+.game-view.server-focused .team-name { padding-top: 10px; font-size: clamp(.8rem, 1.6vw, 1rem); }
+.game-view.server-focused .team-score { font-size: clamp(4rem, 12vw, 7rem); }
+.game-view.server-focused .score-action { min-height: 28px; font-size: .68rem; }
+.game-view.server-focused .team-letter { top: 10px; left: 10px; min-width: 29px; height: 29px; }
+
+/* Final spectator view: make the upcoming queue a major, distance-readable element. */
+.remote-scoreboard.is-final.has-next-queue {
+  padding-bottom: clamp(285px, 39dvh, 420px);
+}
+.remote-scoreboard.is-final .remote-next-queue {
+  width: min(1500px, calc(100vw - clamp(24px, 4vw, 72px)));
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(13px, 2vh, 22px);
+  padding: clamp(20px, 2.8vw, 36px);
+  border-top-width: 5px;
+  border-radius: clamp(22px, 3vw, 34px);
+  background: rgb(16 21 18 / 96%);
+}
+.remote-scoreboard.is-final .remote-next-title {
+  justify-content: center;
+  font-size: clamp(1rem, 1.9vw, 1.45rem);
+  letter-spacing: .14em;
+}
+.remote-scoreboard.is-final .remote-next-title .icon {
+  width: clamp(24px, 2.5vw, 38px);
+  height: clamp(24px, 2.5vw, 38px);
+}
+.remote-scoreboard.is-final .remote-next-queue ol {
+  gap: clamp(10px, 1.8vw, 22px);
+}
+.remote-scoreboard.is-final .remote-next-queue li {
+  min-height: clamp(96px, 15dvh, 160px);
+  grid-template-columns: clamp(48px, 5vw, 72px) minmax(0, 1fr);
+  gap: clamp(10px, 1.3vw, 18px);
+  padding: clamp(12px, 1.7vw, 22px);
+  border-radius: clamp(16px, 2vw, 24px);
+}
+.remote-scoreboard.is-final .remote-next-queue li > span {
+  width: clamp(48px, 5vw, 72px);
+  height: clamp(48px, 5vw, 72px);
+  border-radius: clamp(13px, 1.5vw, 20px);
+  font-size: clamp(1.05rem, 1.7vw, 1.45rem);
+}
+.remote-scoreboard.is-final .remote-next-queue li > b {
+  font-size: clamp(1.7rem, 3.6vw, 3.8rem);
+  line-height: 1;
+}
+
+@media (max-width: 700px) {
+  .game-view.server-focused .game-meta .serve-call { display: none; }
+  .controller-server-focus { min-height: clamp(210px, 36dvh, 330px); padding: 18px 12px; }
+  .controller-server-focus strong { font-size: clamp(3rem, 17vw, 6rem); }
+  .controller-server-detail { font-size: clamp(1rem, 5vw, 1.45rem); }
+  .game-view.server-focused .score-grid { min-height: 160px; }
+  .game-toolbar { grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); }
+
+  .remote-scoreboard.is-final.has-next-queue { padding-bottom: 360px; }
+  .remote-scoreboard.is-final .remote-next-queue {
+    width: calc(100vw - 12px);
+    gap: 10px;
+    padding: 14px;
+  }
+  .remote-scoreboard.is-final .remote-next-queue ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+  .remote-scoreboard.is-final .remote-next-queue li {
+    min-height: 105px;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+  .remote-scoreboard.is-final .remote-next-queue li > span {
+    width: 42px;
+    height: 42px;
+    font-size: .95rem;
+  }
+  .remote-scoreboard.is-final .remote-next-queue li > b {
+    font-size: clamp(1.25rem, 6vw, 2rem);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-height: 620px) and (min-width: 701px) {
+  .remote-scoreboard.is-final.has-next-queue { padding-bottom: 218px; }
+  .remote-scoreboard.is-final .remote-next-queue { padding: 12px 18px; gap: 9px; }
+  .remote-scoreboard.is-final .remote-next-queue li { min-height: 82px; }
+  .remote-scoreboard.is-final .remote-next-queue li > b { font-size: clamp(1.35rem, 3vw, 2.5rem); }
+}
+
+/* v33.1: final queue uses two wide columns so full player names stay readable at distance. */
+.remote-scoreboard.is-final .remote-next-queue ol {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.remote-scoreboard.is-final .remote-next-queue li > b {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
