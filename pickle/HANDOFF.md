@@ -1,3 +1,27 @@
+# PicklePulse v34 Turnover / Handoff
+
+## v34 changes - synced server focus and final queue takeover
+
+- The controller scoreboard **Current server / Scoreboard** focus toggle now broadcasts as part of the live state, so connected `?watch=` displays mirror the controller focus mode immediately.
+- Live server-focus mode makes the current server the dominant, distance-readable element while retaining a compact scoreboard below it.
+- The live **Next up** payload now excludes waiting-list players who used the opt-out / skip-next control, matching the controller queue's eligible next-player logic. Opt-out and undo both rebroadcast the updated list to connected viewers.
+- When a game is final and a next queue exists, `remote-next-queue` becomes a full-viewport spectator screen with a large 2x2 next-four layout and full player names.
+- Existing independent controller-scoreboard swap, watch-scoreboard swap, spectator local swap, scoring, queue fairness, audio, roster, standings, and completed-game behavior remain intact.
+- Shell asset URLs and the service-worker cache are bumped to v34.
+
+## v34 validation
+
+- Core/live/service-worker JavaScript syntax checks: PASS.
+- CSS parser validation: PASS (0 parse errors).
+- Waiting-list defer regression: deferred player is excluded and the next eligible player moves into the four-player live payload: PASS.
+- Live snapshot includes controller server-focus state: PASS.
+- Controller server-focus toggle triggers a live broadcast: PASS.
+- Remote active-game render applies the `server-focused` state: PASS.
+- Remote completed-game render applies `is-final has-next-queue`; v34 CSS makes that queue fixed, full viewport, and 2x2: PASS.
+- v34 cache-busting URLs and service-worker cache name: PASS.
+
+---
+
 # PicklePulse v32 Turnover / Handoff
 
 ## v32 changes - queue callouts and court assignment

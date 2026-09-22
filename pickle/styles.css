@@ -2034,3 +2034,195 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* v34: mirror controller server focus to ?watch=, keep remote queue in sync with opt-outs,
+   and make the final next-queue view fill the spectator screen. */
+.remote-scoreboard.server-focused:not(.is-final) {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-meta {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-meta time {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-call {
+  width: min(96%, 1500px);
+  min-height: min(58dvh, 600px);
+  align-content: center;
+  gap: clamp(10px, 2vh, 22px);
+  padding: clamp(24px, 4vw, 64px);
+  border-width: 2px;
+  border-color: rgb(106 212 155 / 45%);
+  background: linear-gradient(145deg, rgb(106 212 155 / 13%), rgb(255 255 255 / 5%));
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-call-label {
+  font-size: clamp(.85rem, 1.7vw, 1.3rem);
+  letter-spacing: .16em;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+  overflow: visible;
+  text-overflow: clip;
+  font-size: clamp(4rem, 11vw, 10rem);
+  line-height: .9;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-call-detail {
+  font-size: clamp(1.1rem, 3vw, 2.4rem) !important;
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-grid {
+  min-height: clamp(135px, 22dvh, 230px);
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-team {
+  min-height: 0;
+  padding: clamp(10px, 1.4vw, 18px);
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-team h2 {
+  font-size: clamp(.9rem, 2vw, 1.35rem);
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-team > strong {
+  font-size: clamp(4rem, 10vw, 7rem);
+}
+
+/* On a finished game, Next up owns the entire spectator viewport. */
+.remote-scoreboard.is-final.has-next-queue {
+  padding: 0;
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-queue {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  transform: none;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: clamp(16px, 3vh, 34px);
+  padding: max(clamp(20px, 3vw, 54px), env(safe-area-inset-top)) max(clamp(20px, 3vw, 54px), env(safe-area-inset-right)) max(clamp(20px, 3vw, 54px), env(safe-area-inset-bottom)) max(clamp(20px, 3vw, 54px), env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  background: #101512;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-title {
+  align-self: center;
+  justify-content: center;
+  font-size: clamp(1.2rem, 2.6vw, 2.3rem);
+  letter-spacing: .16em;
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-title::before {
+  content: 'FINAL';
+  padding: .38em .6em;
+  border-radius: .55em;
+  color: #101512;
+  background: #6ad49b;
+  font-size: .72em;
+  letter-spacing: .12em;
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-queue ol {
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 2vw, 28px);
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-queue li {
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: clamp(52px, 6vw, 92px) minmax(0, 1fr);
+  gap: clamp(12px, 2vw, 28px);
+  padding: clamp(14px, 2.4vw, 36px);
+  border-width: 2px;
+  border-radius: clamp(18px, 2.5vw, 34px);
+  background: rgb(255 255 255 / 7%);
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-queue li > span {
+  width: clamp(52px, 6vw, 92px);
+  height: clamp(52px, 6vw, 92px);
+  border-radius: clamp(14px, 1.6vw, 24px);
+  font-size: clamp(1.2rem, 2.2vw, 2rem);
+}
+.remote-scoreboard.is-final.has-next-queue .remote-next-queue li > b {
+  font-size: clamp(2rem, 5.5vw, 5.8rem);
+  line-height: .95;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call {
+    width: 100%;
+    min-height: min(55dvh, 480px);
+    padding: 20px 12px;
+  }
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+    font-size: clamp(3.2rem, 16vw, 6.4rem);
+  }
+  .remote-scoreboard.server-focused:not(.is-final) .remote-grid {
+    min-height: 145px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue {
+    gap: 12px;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-title {
+    font-size: clamp(.9rem, 4.5vw, 1.35rem);
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue ol {
+    gap: 9px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue li {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue li > span {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    font-size: .9rem;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue li > b {
+    font-size: clamp(1.25rem, 7vw, 2.6rem);
+  }
+}
+
+@media (max-height: 620px) and (min-width: 701px) {
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call {
+    min-height: 50dvh;
+    padding: 16px 28px;
+  }
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+    font-size: clamp(3rem, 10vw, 6rem);
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue {
+    gap: 10px;
+    padding: 10px 18px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-title {
+    font-size: 1rem;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue ol {
+    gap: 10px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue li {
+    min-height: 0;
+    padding: 10px 16px;
+  }
+  .remote-scoreboard.is-final.has-next-queue .remote-next-queue li > b {
+    font-size: clamp(1.5rem, 4vw, 3.2rem);
+  }
+}

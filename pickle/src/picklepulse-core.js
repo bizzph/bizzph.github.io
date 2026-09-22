@@ -1260,7 +1260,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=33';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=34';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -1643,7 +1643,8 @@
       rallies: [],
       nextQueue: (Array.isArray(game.nextQueue) ? game.nextQueue : []).slice(0, 4).map((name) => Players.cleanName(name)).filter(Boolean),
       appearance: normalizeAppearance(game.appearance),
-      displaySwapped: Boolean(game.displaySwapped)
+      displaySwapped: Boolean(game.displaySwapped),
+      displayServerFocused: Boolean(game.displayServerFocused)
     };
   }
 
@@ -2414,7 +2415,9 @@ No completed games in this range.`;
     }
 
     nextQueuePlayers() {
+      const deferred = new Set(Array.isArray(this.state.queue.deferred) ? this.state.queue.deferred : []);
       return this.state.queue.waiting
+        .filter((id) => !deferred.has(id))
         .slice(0, 4)
         .map((id) => this.playerById(id))
         .filter(Boolean)
@@ -2446,6 +2449,7 @@ No completed games in this range.`;
         },
         appearance: normalizeAppearance(this.state.appearance),
         displaySwapped: Boolean(normalizeSettings(this.state.settings).watchScoreboardSwapped),
+        displayServerFocused: Boolean(this.controllerServerFocus),
         nextQueue: this.nextQueuePlayers().slice(0, 4).map((name) => Players.cleanName(name)).filter(Boolean)
       };
     }
@@ -4542,6 +4546,7 @@ No completed games in this range.`;
       if (action === 'toggle-server-focus') {
         if (this.mode !== 'controller' || !this.state.currentGame) return;
         this.controllerServerFocus = !this.controllerServerFocus;
+        if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
@@ -5917,9 +5922,10 @@ No completed games in this range.`;
         ? game.nextQueue.slice(0, 4).map((name) => String(name || '').trim()).filter(Boolean)
         : [];
       const remoteSwapped = Boolean(game.displaySwapped) !== Boolean(this.displayScoreboardSwapped);
+      const serverFocused = game.status === 'active' && Boolean(game.displayServerFocused);
       const scoreOrder = remoteSwapped ? [1, 0] : [0, 1];
       return `
-        <main class="remote-scoreboard ${game.status === 'complete' ? 'is-final' : ''} ${nextQueue.length ? 'has-next-queue' : ''}">
+        <main class="remote-scoreboard ${game.status === 'complete' ? 'is-final' : ''} ${serverFocused ? 'server-focused' : ''} ${nextQueue.length ? 'has-next-queue' : ''}">
           <div class="remote-meta">
             <time data-role="match-clock" class="${remaining <= 60000 ? 'timer-low' : ''}">${formatCountdown(remaining)}</time>
             <div class="remote-call ${game.status === 'complete' ? 'complete' : ''}">
