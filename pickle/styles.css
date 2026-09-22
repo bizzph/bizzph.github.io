@@ -2337,9 +2337,16 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
   .queue-config-card .queue-type-help { display: none; }
   .queue-config-card .queue-session-reset { justify-self: end; }
 }
+/* v36: the focused spectator call must occupy the real first/only meta column.
+   Older base CSS pins .remote-call to grid-column: 2, which creates an implicit
+   second column and pushes the serving card to the right side of ?watch=. */
 .remote-scoreboard.server-focused:not(.is-final) .remote-call {
+  grid-column: 1 / -1;
+  grid-row: 1;
   width: 100%;
   max-width: none;
+  justify-self: stretch;
+  box-sizing: border-box;
 }
 @media (max-width: 920px) {
   .queue-config-card label {

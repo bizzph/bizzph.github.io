@@ -1,4 +1,11 @@
-# PicklePulse v35 Turnover / Handoff
+# PicklePulse v36 Turnover / Handoff
+
+## v36 fix - focused spectator serve call
+- Fixed `?watch=` server-focus layout where `remote-call` still inherited `grid-column: 2` from legacy CSS and was pushed into an implicit right-side column.
+- In server-focus mode, `remote-call` now explicitly occupies `grid-column: 1 / -1`, stretches across the full available spectator scoreboard width, and remains the dominant distance-readable serving banner.
+- Cache-busting asset URLs and the service-worker cache are bumped to v36 so installed/PWA copies receive the CSS fix.
+
+## Previous v35 handoff
 
 ## v35 changes - full-width live serve call and selectable queue rotations
 
