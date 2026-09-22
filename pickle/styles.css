@@ -2365,3 +2365,23 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
     grid-row: auto;
   }
 }
+
+/* v38: keep the normal spectator server-name sizing unchanged; only the
+   explicit server-focus view gets the larger distance-readable typography. */
+.remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+  width: 100%;
+  font-size: clamp(5.5rem, min(15vw, 22dvh), 15rem);
+  line-height: .82;
+}
+
+@media (max-width: 700px) {
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+    font-size: clamp(4.25rem, min(20vw, 20dvh), 9rem);
+  }
+}
+
+@media (max-height: 620px) and (min-width: 701px) {
+  .remote-scoreboard.server-focused:not(.is-final) .remote-call strong {
+    font-size: clamp(4rem, min(12vw, 25dvh), 9rem);
+  }
+}

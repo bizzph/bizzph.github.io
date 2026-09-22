@@ -1,4 +1,10 @@
-# PicklePulse v36 Turnover / Handoff
+# PicklePulse v38 Turnover / Handoff
+
+## v38 update - larger server-focus name only
+
+- Restored the normal `?watch=` current-server name to the pre-v37 sizing.
+- Retained the larger responsive current-server name only when server-focus mode is active.
+- Cache-busting asset URLs and service-worker cache bumped to v38.
 
 ## v36 fix - focused spectator serve call
 - Fixed `?watch=` server-focus layout where `remote-call` still inherited `grid-column: 2` from legacy CSS and was pushed into an implicit right-side column.
