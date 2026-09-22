@@ -2226,3 +2226,135 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
     font-size: clamp(1.5rem, 4vw, 3.2rem);
   }
 }
+
+/* v35: full-width spectator server call + selectable open-play queue rotations. */
+.remote-scoreboard:not(.server-focused):not(.is-final) .remote-meta {
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(7px, 1.3vh, 14px);
+}
+.remote-scoreboard:not(.server-focused):not(.is-final) .remote-meta time {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+.remote-scoreboard:not(.server-focused):not(.is-final) .remote-call {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  max-width: none;
+  justify-self: stretch;
+  box-sizing: border-box;
+  padding-inline: clamp(18px, 4vw, 60px);
+}
+
+.queue-config-card {
+  grid-template-columns: minmax(220px, 1fr) minmax(155px, .55fr) minmax(260px, 1.35fr) auto;
+  align-items: center;
+}
+.queue-config-card label {
+  min-width: 0;
+}
+.queue-config-card label:first-child select {
+  width: min(100%, 230px);
+  min-width: 170px;
+}
+.queue-type-help {
+  min-width: 0;
+}
+.queue-stay-badge {
+  flex: 0 0 auto;
+  min-height: 20px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, #e5c47b 58%, var(--line));
+  border-radius: 999px;
+  color: #9a6a09;
+  background: color-mix(in srgb, #e5c47b 15%, var(--surface));
+  font-size: .56rem;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+@media (prefers-color-scheme: dark) {
+  .queue-stay-badge { color: #f1d895; }
+}
+
+@media (max-width: 920px) {
+  .queue-config-card {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, .55fr) auto;
+  }
+  .queue-config-card .queue-type-help {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .queue-config-card .queue-session-reset {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 620px) {
+  .queue-config-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px;
+  }
+  .queue-config-card label,
+  .queue-config-card label:first-child {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  }
+  .queue-config-card label:first-child select {
+    width: 100%;
+    min-width: 150px;
+  }
+  .queue-config-card .queue-type-help {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .queue-config-card .queue-session-reset {
+    grid-column: 2;
+    grid-row: 4;
+    align-self: end;
+    display: grid;
+  }
+  .queue-stay-badge,
+  .queue-next-badge {
+    min-height: 18px;
+    padding-inline: 6px;
+    font-size: .5rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 400px) and (max-width: 950px) {
+  .queue-config-card {
+    grid-template-columns: minmax(220px, 1fr) minmax(150px, .7fr) auto;
+  }
+  .queue-config-card .queue-type-help { display: none; }
+  .queue-config-card .queue-session-reset { justify-self: end; }
+}
+.remote-scoreboard.server-focused:not(.is-final) .remote-call {
+  width: 100%;
+  max-width: none;
+}
+@media (max-width: 920px) {
+  .queue-config-card label {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+@media (orientation: landscape) and (max-height: 400px) and (max-width: 620px) {
+  .queue-config-card label,
+  .queue-config-card label:first-child {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .queue-config-card .queue-session-reset {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}

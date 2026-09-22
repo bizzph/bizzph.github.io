@@ -1,3 +1,34 @@
+# PicklePulse v35 Turnover / Handoff
+
+## v35 changes - full-width live serve call and selectable queue rotations
+
+- On `?watch=`, the active-game `remote-call` is now its own full-width row instead of occupying the right/center cell beside the match clock. The normal and controller-triggered server-focus layouts both use the full available scoreboard width.
+- Queue setup now has a **Queue type** dropdown. Existing/legacy sessions default to **Fair Play**, so upgrading does not silently change the current queue behavior.
+- **Fair Play** keeps the existing PicklePulse rotation: fewest queue turns first, then longest waiting.
+- **Paddle Stack / FIFO** uses strict waiting/arrival order and returns completed players to the back of the queue.
+- **Social Mix** keeps fair-play priority but can reach slightly deeper into the eligible waiting pool to reduce repeated player combinations using the app's existing partner/opponent history.
+- **Winners Stay + Split** uses the winning pair from a scored queue game as incumbents, places those winners on opposite teams, and brings in the next two waiting players. Queue-only courts completed without a recorded score continue to rotate all four off because no winner is known.
+- Winner incumbents are visibly tagged **Stays** in the queue. Queue opt-out/defer behavior and the live `remote-next-queue` continue to use the same eligible-next-player calculation.
+- Queue type is saved in local state/backups and preserved when starting a new queue session. The root player/queue schema is bumped to v9.
+- Shell asset URLs and the service-worker cache are bumped to v35.
+
+## v35 validation
+
+- Core/live/QR/service-worker JavaScript syntax checks: PASS.
+- CSS structural/brace validation: PASS.
+- Legacy queue migration defaults to Fair Play: PASS.
+- Fair Play still prioritizes fewer queue turns before wait time: PASS.
+- Paddle Stack / FIFO ignores game-count fairness and follows queue arrival order: PASS.
+- Social Mix keeps the oldest anchor while reaching deeper in the queue when that reduces repeat combinations: PASS.
+- Social Mix staged-next selection survives state normalization/persistence: PASS.
+- Winners Stay + Split retains the scored winning pair, chooses already-waiting players before the losing pair re-enters, and stages winners on opposite teams: PASS.
+- Switching away from Winners Stay clears stale incumbent state: PASS.
+- Completed players are explicitly re-stamped behind everyone already waiting, including legacy/fresh-session timestamp edge cases: PASS.
+- `nextQueuePlayers()` now delegates to the same mode-aware next-batch logic used by the queue UI, keeping `remote-next-queue` consistent with the selected queue type: PASS.
+- v35 cache-busting URLs and service-worker cache name: PASS.
+
+---
+
 # PicklePulse v34 Turnover / Handoff
 
 ## v34 changes - synced server focus and final queue takeover

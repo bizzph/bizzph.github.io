@@ -506,7 +506,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 8;
+  const ROOT_SCHEMA_VERSION = 9;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -605,6 +605,13 @@
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  const QUEUE_TYPES = ['fair', 'fifo', 'social', 'winners-split'];
+
+  function normalizeQueueType(value) {
+    const mode = String(value || 'fair');
+    return QUEUE_TYPES.includes(mode) ? mode : 'fair';
+  }
+
   function clampCourtCount(value) {
     return Math.max(1, Math.min(12, Math.round(Number(value) || 1)));
   }
@@ -692,6 +699,10 @@
         hasJoined: typeof raw.hasJoined === 'boolean' ? raw.hasJoined : Boolean(gamesPlayed || queuedAt || isPresent)
       };
     });
+    const queueType = normalizeQueueType(source.queueType);
+    const challengeWinners = queueType === 'winners-split'
+      ? safe(source.challengeWinners, 2).filter((id) => waiting.includes(id))
+      : [];
     const next = {
       waiting,
       pending,
@@ -699,6 +710,8 @@
       onCourt,
       activeGameId: source.activeGameId ? String(source.activeGameId) : '',
       courtCount,
+      queueType,
+      challengeWinners,
       courts,
       stats,
       pairCounts: normalizeCountMap(source.pairCounts),
@@ -706,10 +719,18 @@
       sequence,
       sessionSeed: String(source.sessionSeed || makeId('queue')).slice(0, 120)
     };
+    const challengeRank = new Map(next.challengeWinners.map((id, index) => [id, index]));
     next.waiting.sort((a, b) => {
+      if (next.queueType === 'winners-split') {
+        const aRank = challengeRank.has(a) ? challengeRank.get(a) : Number.MAX_SAFE_INTEGER;
+        const bRank = challengeRank.has(b) ? challengeRank.get(b) : Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+      }
       const left = next.stats[a] || {};
       const right = next.stats[b] || {};
-      if ((left.fairTurns || 0) !== (right.fairTurns || 0)) return (left.fairTurns || 0) - (right.fairTurns || 0);
+      if (next.queueType === 'fair' || next.queueType === 'social') {
+        if ((left.fairTurns || 0) !== (right.fairTurns || 0)) return (left.fairTurns || 0) - (right.fairTurns || 0);
+      }
       const leftAt = Number(left.queuedAt) || Number.MAX_SAFE_INTEGER;
       const rightAt = Number(right.queuedAt) || Number.MAX_SAFE_INTEGER;
       if (leftAt !== rightAt) return leftAt - rightAt;
@@ -718,7 +739,18 @@
     });
     if (next.pending.length) {
       const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
-      next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+      if (next.queueType === 'winners-split' && next.challengeWinners.length === 2) {
+        const winners = next.challengeWinners.filter((id) => eligible.includes(id));
+        const newcomers = eligible.filter((id) => !winners.includes(id)).slice(0, 2);
+        next.pending = winners.length === 2 && newcomers.length === 2
+          ? [winners[0], newcomers[0], winners[1], newcomers[1]]
+          : (eligible.length >= 4 ? eligible.slice(0, 4) : []);
+      } else if (next.queueType === 'social') {
+        const group = selectedQueueGroups(next)[0] || [];
+        next.pending = group.length === 4 ? group : [];
+      } else {
+        next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+      }
     }
     return next;
   }
@@ -733,10 +765,53 @@
     return Math.max(0, courtSlots * 4);
   }
 
+  function socialGroup(next, remaining) {
+    const window = remaining.slice(0, Math.min(8, remaining.length));
+    return chooseCourtGroup(next, window);
+  }
+
+  function selectedQueueGroups(queue) {
+    const next = queue && typeof queue === 'object' ? queue : {};
+    const batchSize = nextQueueBatchSize(next);
+    if (!batchSize) return [];
+    const deferred = new Set(Array.isArray(next.deferred) ? next.deferred : []);
+    const eligible = (Array.isArray(next.waiting) ? next.waiting : []).filter((id) => !deferred.has(id));
+    const groupCount = Math.floor(batchSize / 4);
+    if (!groupCount) return [];
+
+    if (normalizeQueueType(next.queueType) === 'social') {
+      const groups = [];
+      let remaining = eligible.slice();
+      for (let index = 0; index < groupCount && remaining.length >= 4; index += 1) {
+        const group = socialGroup(next, remaining);
+        if (group.length !== 4) break;
+        groups.push(group);
+        remaining = remaining.filter((id) => !group.includes(id));
+      }
+      return groups;
+    }
+
+    if (normalizeQueueType(next.queueType) === 'winners-split' && Array.isArray(next.challengeWinners) && next.challengeWinners.length === 2) {
+      const winners = next.challengeWinners.filter((id) => eligible.includes(id));
+      const newcomers = eligible.filter((id) => !winners.includes(id));
+      const groups = [];
+      if (winners.length === 2 && newcomers.length >= 2) {
+        groups.push([winners[0], newcomers[0], winners[1], newcomers[1]]);
+        const used = new Set(groups[0]);
+        const rest = eligible.filter((id) => !used.has(id));
+        for (let index = 1; index < groupCount; index += 1) {
+          const group = rest.slice((index - 1) * 4, index * 4);
+          if (group.length === 4) groups.push(group);
+        }
+        return groups;
+      }
+    }
+
+    return Array.from({ length: groupCount }, (_, index) => eligible.slice(index * 4, index * 4 + 4)).filter((group) => group.length === 4);
+  }
+
   function nextQueueBatchPlayers(queue) {
-    const batchSize = nextQueueBatchSize(queue);
-    const deferred = new Set(Array.isArray(queue && queue.deferred) ? queue.deferred : []);
-    return batchSize ? (Array.isArray(queue && queue.waiting) ? queue.waiting : []).filter((id) => !deferred.has(id)).slice(0, batchSize) : [];
+    return selectedQueueGroups(queue).flat();
   }
 
   function toggleDeferNext(queue, playerId, players) {
@@ -876,7 +951,18 @@
   function prepareNextFour(queue, players) {
     const next = normalizeQueue(queue, players);
     const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
-    next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+    if (next.queueType === 'winners-split' && next.challengeWinners.length === 2) {
+      const winners = next.challengeWinners.filter((id) => eligible.includes(id));
+      const newcomers = eligible.filter((id) => !winners.includes(id)).slice(0, 2);
+      next.pending = winners.length === 2 && newcomers.length === 2
+        ? [winners[0], newcomers[0], winners[1], newcomers[1]]
+        : (eligible.length >= 4 ? eligible.slice(0, 4) : []);
+    } else if (next.queueType === 'social') {
+      const group = selectedQueueGroups({ ...next, courts: [{ id: 'court-1', players: [] }] })[0] || [];
+      next.pending = group.length === 4 ? group : [];
+    } else {
+      next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+    }
     return next;
   }
 
@@ -940,6 +1026,16 @@
     return best;
   }
 
+  function setQueueType(queue, type, players) {
+    const next = normalizeQueue(queue, players);
+    const queueType = normalizeQueueType(type);
+    if (next.queueType === queueType) return next;
+    next.queueType = queueType;
+    next.pending = [];
+    next.challengeWinners = [];
+    return normalizeQueue(next, players);
+  }
+
   function setCourtCount(queue, count, players) {
     const next = normalizeQueue(queue, players);
     const desired = clampCourtCount(count);
@@ -972,16 +1068,12 @@
   function fillOpenCourts(queue, players, now = Date.now()) {
     const next = normalizeQueue(queue, players);
     const openIndexes = next.courts.map((court, index) => court.players.length ? -1 : index).filter((index) => index >= 0);
-    const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
-    const fillCount = Math.min(openIndexes.length, Math.floor(eligible.length / 4));
-    if (!fillCount) return next;
-    const selected = eligible.slice(0, fillCount * 4);
+    const groups = selectedQueueGroups(next).slice(0, openIndexes.length);
+    if (!groups.length) return next;
+    const selected = groups.flat();
     consumeDeferralsPassedByDispatch(next, selected);
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
-    let remaining = selected.slice();
-    for (let i = 0; i < fillCount; i += 1) {
-      const group = chooseCourtGroup(next, remaining);
-      remaining = remaining.filter((id) => !group.includes(id));
+    groups.forEach((group, i) => {
       next.courts[openIndexes[i]] = {
         id: `court-${openIndexes[i] + 1}`,
         players: group,
@@ -989,7 +1081,7 @@
         slots: ['', '', '', ''],
         assignedAt: now
       };
-    }
+    });
     next.pending = [];
     return normalizeQueue(next, players);
   }
@@ -1029,13 +1121,15 @@
   }
 
   function recordCompletedGroup(next, players, teams, now = Date.now()) {
-    unique(players).forEach((id) => {
+    const latestWaitingAt = next.waiting.reduce((latest, id) => Math.max(latest, Number(next.stats[id] && next.stats[id].queuedAt) || 0), 0);
+    const requeueBase = Math.max(Number(now) || Date.now(), latestWaitingAt + 1);
+    unique(players).forEach((id, index) => {
       if (!next.stats[id]) next.stats[id] = { gamesPlayed: 0, fairTurns: 0, queuedAt: 0, lastPlayedAt: 0, tie: 0, hasJoined: true };
       next.stats[id].gamesPlayed += 1;
       next.stats[id].fairTurns = Math.max(0, Number(next.stats[id].fairTurns) || 0) + 1;
       next.stats[id].hasJoined = true;
       next.stats[id].lastPlayedAt = now;
-      stampQueued(next, id, now);
+      stampQueued(next, id, requeueBase + index);
       if (!next.waiting.includes(id)) next.waiting.push(id);
     });
     if (Array.isArray(teams) && teams.length === 2 && teams[0].length === 2 && teams[1].length === 2) {
@@ -1056,6 +1150,7 @@
     const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
     const court = next.courts[index];
     if (!court || court.players.length !== 4) return next;
+    if (next.queueType === 'winners-split' && next.challengeWinners.some((id) => court.players.includes(id))) next.challengeWinners = [];
     recordCompletedGroup(next, court.players, court.teams, now);
     next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 };
     next.pending = [];
@@ -1093,11 +1188,23 @@
     return normalizeQueue(next, players);
   }
 
-  function finishQueuedGame(queue, gameId, players) {
+  function finishQueuedGame(queue, gameId, players, completedGame = null) {
     const next = normalizeQueue(queue, players);
     if (!next.activeGameId || next.activeGameId !== String(gameId || '')) return next;
     const teams = next.onCourt.length === 4 ? [[next.onCourt[0], next.onCourt[1]], [next.onCourt[2], next.onCourt[3]]] : [[], []];
-    recordCompletedGroup(next, next.onCourt, teams, Date.now());
+    const finishedPlayers = next.onCourt.slice();
+    recordCompletedGroup(next, finishedPlayers, teams, Date.now());
+    next.challengeWinners = [];
+    if (next.queueType === 'winners-split' && completedGame && Array.isArray(completedGame.teams) && completedGame.teams.length === 2) {
+      const scores = completedGame.teams.map((team) => Number(team && team.score) || 0);
+      if (scores[0] !== scores[1]) {
+        const winnerIndex = scores[0] > scores[1] ? 0 : 1;
+        const team = completedGame.teams[winnerIndex] || {};
+        let winners = (Array.isArray(team.playerIds) ? team.playerIds : []).map(String).filter((id) => finishedPlayers.includes(id));
+        if (winners.length !== 2 && teams[winnerIndex]) winners = teams[winnerIndex].slice(0, 2);
+        if (winners.length === 2) next.challengeWinners = winners;
+      }
+    }
     next.onCourt = [];
     next.activeGameId = '';
     next.pending = [];
@@ -1122,7 +1229,7 @@
 
   function resetQueueSession(queue, players) {
     const next = normalizeQueue(queue, players);
-    return normalizeQueue({ courtCount: next.courtCount, sessionSeed: makeId('queue') }, players);
+    return normalizeQueue({ courtCount: next.courtCount, queueType: next.queueType, sessionSeed: makeId('queue') }, players);
   }
 
   function removePlayerEverywhere(queue, playerId, players) {
@@ -1228,6 +1335,7 @@
     normalizePlayer,
     normalizePlayers,
     normalizeQueue,
+    normalizeQueueType,
     addToQueue,
     addAllToQueue,
     removeFromQueue,
@@ -1238,6 +1346,7 @@
     toggleDeferNext,
     prepareNextFour,
     cancelPending,
+    setQueueType,
     setCourtCount,
     fillOpenCourts,
     assignCourtSlot,
@@ -1260,7 +1369,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=34';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=35';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -2415,9 +2524,7 @@ No completed games in this range.`;
     }
 
     nextQueuePlayers() {
-      const deferred = new Set(Array.isArray(this.state.queue.deferred) ? this.state.queue.deferred : []);
-      return this.state.queue.waiting
-        .filter((id) => !deferred.has(id))
+      return Players.nextQueueBatchPlayers(this.state.queue)
         .slice(0, 4)
         .map((id) => this.playerById(id))
         .filter(Boolean)
@@ -3310,7 +3417,7 @@ No completed games in this range.`;
         } else {
           this.state.queueCompletionCheckpoint = null;
         }
-        this.state.queue = Players.finishQueuedGame(this.state.queue, normalizedNext.id, this.state.players);
+        this.state.queue = Players.finishQueuedGame(this.state.queue, normalizedNext.id, this.state.players, normalizedNext);
       } else if (reopenedNow) {
         this.removeHistoryGame(normalizedNext.id);
         const checkpoint = this.state.queueCompletionCheckpoint;
@@ -4036,6 +4143,15 @@ No completed games in this range.`;
       if (event.target.name === 'format') {
         const doubles = event.target.value === 'doubles';
         this.querySelectorAll('.doubles-only').forEach((element) => { element.hidden = !doubles; });
+      }
+      if (event.target.id === 'queue-type') {
+        this.state.queue = Players.setQueueType(this.state.queue, event.target.value, this.state.players);
+        this.courtGameDraft = null;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
       }
       if (event.target.id === 'queue-court-count') {
         this.state.queue = Players.setCourtCount(this.state.queue, Number(event.target.value), this.state.players);
@@ -5561,8 +5677,20 @@ No completed games in this range.`;
       return `
         <section class="queue-view players-view">
           <section class="queue-config-card">
+            <label><span>Queue type</span><select id="queue-type" aria-label="Queue rotation type">
+              <option value="fair" ${queue.queueType === 'fair' ? 'selected' : ''}>Fair Play</option>
+              <option value="fifo" ${queue.queueType === 'fifo' ? 'selected' : ''}>Paddle Stack / FIFO</option>
+              <option value="social" ${queue.queueType === 'social' ? 'selected' : ''}>Social Mix</option>
+              <option value="winners-split" ${queue.queueType === 'winners-split' ? 'selected' : ''}>Winners Stay + Split</option>
+            </select></label>
             <label><span>Queue courts</span><select id="queue-court-count" aria-label="Number of courts used for queueing">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${queue.courtCount === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
-            <p>This setting is only for queue rotation. The scorekeeper still runs one scored game at a time.</p>
+            <p class="queue-type-help">${queue.queueType === 'fifo'
+              ? 'Strict paddle-rack order: the next four waiting go on, and completed players return to the back.'
+              : queue.queueType === 'social'
+                ? 'Fair-play priority, but the next groups can reach slightly deeper in line to reduce repeat player combinations.'
+                : queue.queueType === 'winners-split'
+                  ? 'On scored games, the winning pair stays but splits onto opposite teams; the next two waiting join them. Queue-only courts without a recorded result rotate all four off.'
+                  : 'Fewest queue turns first, then longest waiting. This is the existing PicklePulse fair-rotation behavior.'}</p>
             <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
           </section>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
@@ -5580,6 +5708,7 @@ No completed games in this range.`;
             ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
               const stat = queue.stats[id] || { gamesPlayed: 0 };
               const isDeferred = deferred.has(id);
+              const isChallengeWinner = queue.queueType === 'winners-split' && Array.isArray(queue.challengeWinners) && queue.challengeWinners.includes(id);
               const isNextBatch = batchPlayers.has(id);
               const canDefer = isNextBatch && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
               const showDefer = isDeferred || isNextBatch;
@@ -5588,7 +5717,7 @@ No completed games in this range.`;
                 <li data-queue-player="${escapeHtml(id)}" class="${rowClasses}">
                   <span class="queue-position">${index + 1}</span>
                   <span class="queue-player-copy">
-                    <span class="queue-player-name-row"><b>${escapeHtml(this.playerName(id))}</b>${isNextBatch ? '<em class="queue-next-badge">Up next</em>' : ''}</span>
+                    <span class="queue-player-name-row"><b>${escapeHtml(this.playerName(id))}</b>${isChallengeWinner ? '<em class="queue-stay-badge">Stays</em>' : ''}${isNextBatch ? '<em class="queue-next-badge">Up next</em>' : ''}</span>
                     <small>${Number(stat.gamesPlayed) || 0} game${Number(stat.gamesPlayed) === 1 ? '' : 's'} · ${isDeferred ? 'skips next fill' : escapeHtml(this.queueWaitLabel(id))}</small>
                   </span>
                   <span class="queue-row-actions">
