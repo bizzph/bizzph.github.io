@@ -1,17 +1,25 @@
 {
-  "id": "./",
-  "name": "Minesweeper",
+  "name": "Minesweeper Mobile",
   "short_name": "Minesweeper",
-  "description": "A fast, touch-friendly Minesweeper game with Easy, Medium and Hard levels that works offline.",
+  "description": "Mobile-first Minesweeper that works offline.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#07111f",
-  "theme_color": "#07111f",
   "orientation": "any",
-  "categories": ["games", "entertainment"],
+  "background_color": "#08111f",
+  "theme_color": "#08111f",
   "icons": [
-    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

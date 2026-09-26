@@ -1,28 +1,22 @@
-MINESWEEPER PWA — MOBILE-FIRST BUILD
+MINESWEEPER MOBILE PWA V2
 
 Difficulty:
-- Easy: 9x9, 10 mines
-- Medium: 14x14, 35 mines
-- Hard: 30x16, 100 mines
+Easy   9 x 9   - 10 mines
+Medium 14 x 14 - 35 mines
+Hard   16 x 30 - 100 mines
 
-UX highlights:
-- Large persistent Shovel / Flag controls
-- Bottom thumb-zone tool dock on phones
-- Press-and-hold or right-click as an optional quick flag action
-- First move plus neighboring tiles are safe
-- Tap an opened number when its matching flags are placed to clear adjacent tiles (chording)
-- Larger boards scroll instead of shrinking tiles to unusable sizes
-- Safe-area support for notches and phone home indicators
-- Keyboard shortcuts: S = Shovel, F = Flag, R = Restart
-- Installable and offline-ready PWA
+Key mobile UX changes:
+- App tracks the actual Visual Viewport height.
+- Entire document no longer scrolls; only the game board pans.
+- Board region uses min-height:0 so short screens cannot push controls off-screen.
+- Compact UI automatically activates on short screens.
+- Landscape mode uses side controls.
+- Hard mode keeps playable tile sizes and pans in both directions.
+- Shovel/Flag controls remain visible at all times.
+- No long-press is required to flag.
+- +/-/Fit board controls are available.
+- Safe-area support for notches and home indicators.
+- First reveal is safe.
+- Offline PWA service worker.
 
-RUN LOCALLY
-PWA/service-worker features require HTTP/HTTPS rather than file://.
-
-From this folder:
-  python3 -m http.server 8000
-
-Then visit:
-  http://localhost:8000
-
-For production, deploy this folder to an HTTPS-enabled host.
+Serve over HTTPS or localhost for installation/service worker support.
