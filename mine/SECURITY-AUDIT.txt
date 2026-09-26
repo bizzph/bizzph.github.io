@@ -1,0 +1,17 @@
+MINESWEEPER HARDENED STATIC AUDIT
+
+32c04091a1f61cfe9bc93ae1ad0f5a603052b2ca2c9a3d8747d801aa8459092a  index.html
+64cb213a2823d3c8fa2c89f0f54c9b6ed35573bc39d226bd5fcc35efd7f89c92  app.css
+6473a00523cbf6c7b1faff51de7a7d524d1d9a2c281d9eabae92c95a82e977bc  app.js
+29560b48846d91586a3b57a780ee9c9b6a605c3c4b51e6860ea59351dfa381f6  manifest.webmanifest
+7a936e2a6fe8cc777207b5b1dbc0d760186b3753d3405307151b4cb8a627e4d2  sw.js
+
+Remote/network-capable tokens in page app files:
+NONE
+
+localStorage usage:
+19:      const data=JSON.parse(localStorage.getItem(PB_KEY)||'{}');
+42:      try{ localStorage.setItem(PB_KEY,JSON.stringify(all)); }catch(_){}
+
+Service worker network use (expected: same-origin allowlisted recovery only):
+63:      return fetch(request, {credentials: 'same-origin', redirect: 'error'}).then(response => {
