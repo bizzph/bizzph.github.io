@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Minesweeper">
+  <meta name="description" content="A fast, touch-friendly Minesweeper game that works offline.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <title>Minesweeper</title>
+  <style>
+    :root{
+      --bg:#07111f;--surface:#0d1929;--surface-2:#132238;--surface-3:#1c2f49;
+      --line:rgba(255,255,255,.09);--text:#f7fbff;--muted:#91a3ba;
+      --accent:#5ee18b;--accent-ink:#062611;--flag:#ffbd4a;--flag-ink:#392100;
+      --danger:#ff6b6b;--opened:#dce6f2;--opened-2:#ccd9e6;--shadow:0 20px 60px rgba(0,0,0,.34);
+      --cell:40px;--gap:4px;--radius:24px;
+    }
+    *{box-sizing:border-box}
+    html{background:var(--bg);min-height:100%;-webkit-text-size-adjust:100%}
+    body{margin:0;min-height:100dvh;background:
+      radial-gradient(circle at 20% -10%,rgba(94,225,139,.11),transparent 34rem),
+      radial-gradient(circle at 100% 25%,rgba(77,139,255,.08),transparent 30rem),var(--bg);
+      color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      padding:max(14px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+      -webkit-tap-highlight-color:transparent}
+    button{font:inherit}
+    button,.cell{-webkit-user-select:none;user-select:none}
+    button:focus-visible,.cell:focus-visible{outline:3px solid #8ab4ff;outline-offset:3px}
+    .app{width:min(100%,1040px);margin:0 auto;display:grid;gap:14px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 2px}
+    .brand{min-width:0;display:flex;align-items:center;gap:12px}
+    .brand-mark{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#17283e,#0e1c2d);box-shadow:inset 0 0 0 1px var(--line);font-size:1.35rem;flex:0 0 auto}
+    .brand h1{margin:0;font-size:clamp(1.45rem,5vw,2rem);line-height:1;letter-spacing:-.045em}
+    .brand p{margin:5px 0 0;color:var(--muted);font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .icon-btn,.install-btn{border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-weight:800;min-height:48px;border-radius:15px;cursor:pointer}
+    .icon-btn{width:48px;padding:0;font-size:1.15rem;flex:0 0 auto}
+    .icon-btn:active,.install-btn:active,.difficulty button:active,.tool:active{transform:scale(.98)}
+
+    .card{background:rgba(13,25,41,.94);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .difficulty-card{padding:10px}
+    .section-label{display:flex;align-items:center;justify-content:space-between;padding:3px 3px 10px;gap:10px}
+    .section-label strong{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:#c5d4e6}
+    .section-label span{font-size:.75rem;color:var(--muted)}
+    .difficulty{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .difficulty button{min-height:62px;border:1px solid transparent;border-radius:17px;background:var(--surface-2);color:#c7d4e5;cursor:pointer;padding:9px 6px;font-weight:850;transition:.15s ease}
+    .difficulty button b{display:block;font-size:.96rem}
+    .difficulty button small{display:block;margin-top:3px;color:var(--muted);font-size:.69rem;font-weight:650;white-space:nowrap}
+    .difficulty button.active{background:rgba(94,225,139,.13);border-color:rgba(94,225,139,.48);color:#eafff0;box-shadow:inset 0 0 0 1px rgba(94,225,139,.08)}
+    .difficulty button.active small{color:#aeecc2}
+
+    .scorebar{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;overflow:hidden;background:var(--line);border:1px solid var(--line);border-radius:19px}
+    .stat{background:var(--surface);padding:12px 8px;text-align:center;min-width:0}
+    .stat strong{display:block;font-variant-numeric:tabular-nums;font-size:1.05rem;line-height:1.1}
+    .stat span{display:block;margin-top:4px;color:var(--muted);font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .stat.state strong{font-size:.83rem;padding-top:2px;color:#d8e5f4}
+
+    .game-area{display:grid;gap:10px}
+    .board-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 3px}
+    .board-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:.86rem}
+    .pulse{width:8px;height:8px;border-radius:50%;background:#71839b;box-shadow:0 0 0 4px rgba(113,131,155,.12)}
+    .pulse.playing{background:var(--accent);box-shadow:0 0 0 4px rgba(94,225,139,.13)}
+    .pulse.win{background:#75e6ff;box-shadow:0 0 0 4px rgba(117,230,255,.13)}
+    .pulse.lose{background:var(--danger);box-shadow:0 0 0 4px rgba(255,107,107,.13)}
+    .scroll-hint{display:none;color:var(--muted);font-size:.73rem;align-items:center;gap:5px}
+    .scroll-hint.show{display:flex}
+
+    .board-shell{width:100%;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:rgba(5,14,26,.78);border:1px solid var(--line);border-radius:22px;padding:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.025);scrollbar-width:thin;scrollbar-color:#324760 transparent}
+    .board{display:grid;gap:var(--gap);width:max-content;margin:auto;touch-action:pan-x pan-y;position:relative}
+    .cell{width:var(--cell);height:var(--cell);border:0;border-radius:9px;background:linear-gradient(145deg,#29405d,#213550);color:#fff;display:grid;place-items:center;cursor:pointer;padding:0;font-size:calc(var(--cell)*.48);font-weight:950;line-height:1;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 1px 1px rgba(0,0,0,.16);touch-action:manipulation}
+    .cell:hover:not(.open){filter:brightness(1.12)}
+    .cell:active:not(.open){transform:scale(.94);filter:brightness(1.18)}
+    .cell.open{background:var(--opened);color:#132238;box-shadow:none;cursor:default}
+    .cell.open:nth-child(even){background:var(--opened-2)}
+    .cell.flagged{background:linear-gradient(145deg,#5b4421,#473318)}
+    .cell.mine{background:#ffd7d7}
+    .cell.exploded{background:#ff8b8b}
+    .n1{color:#2166d1!important}.n2{color:#14804a!important}.n3{color:#d13b3b!important}.n4{color:#6538bb!important}.n5{color:#9d2447!important}.n6{color:#087a7a!important}.n7{color:#172234!important}.n8{color:#64748b!important}
+
+    .message{display:none;border:1px solid var(--line);border-radius:17px;padding:11px 13px;background:var(--surface-2);font-size:.84rem;font-weight:750;text-align:center}
+    .message.show{display:block}.message.win{border-color:rgba(94,225,139,.28);background:rgba(94,225,139,.09);color:#c7ffd8}.message.lose{border-color:rgba(255,107,107,.28);background:rgba(255,107,107,.09);color:#ffd1d1}
+
+    .tool-dock{background:rgba(13,25,41,.96);border:1px solid var(--line);border-radius:22px;padding:9px;box-shadow:0 18px 46px rgba(0,0,0,.34);z-index:20}
+    .tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .tool{position:relative;min-height:62px;border:2px solid transparent;border-radius:17px;background:var(--surface-2);color:#c9d6e6;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:900;font-size:.96rem;transition:.12s ease;touch-action:manipulation}
+    .tool .emoji{font-size:1.42rem;line-height:1}.tool small{display:block;font-size:.67rem;color:var(--muted);font-weight:650;margin-top:2px}
+    .tool.active.shovel{background:rgba(94,225,139,.14);border-color:var(--accent);color:#effff3}.tool.active.shovel small{color:#aeecc2}
+    .tool.active.flag{background:rgba(255,189,74,.14);border-color:var(--flag);color:#fff8eb}.tool.active.flag small{color:#f8d998}
+    .tool-kbd{position:absolute;right:9px;top:8px;font-size:.61rem;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 4px;font-weight:700}
+    .dock-hint{text-align:center;color:var(--muted);font-size:.7rem;margin:8px 0 1px}
+
+    .install-btn{display:none;width:100%;padding:10px 14px}.install-btn.show{display:block}
+    footer{text-align:center;color:var(--muted);font-size:.69rem;padding:2px 8px 4px}
+
+    @media (max-width:720px){
+      :root{--cell:36px;--gap:3px;--radius:20px}
+      body{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+      .app{gap:11px}
+      .brand-mark{width:42px;height:42px;border-radius:13px}.brand p{font-size:.75rem}
+      .difficulty-card{padding:8px}.difficulty{gap:6px}.difficulty button{min-height:58px;border-radius:15px}.difficulty button small{font-size:.64rem}
+      .scorebar{border-radius:16px}.stat{padding:10px 5px}.stat strong{font-size:.98rem}.stat span{font-size:.62rem}
+      .board-shell{margin-inline:calc(-1 * max(10px,env(safe-area-inset-left)));width:calc(100% + max(10px,env(safe-area-inset-left)) + max(10px,env(safe-area-inset-right)));border-radius:0;border-left:0;border-right:0;padding:10px 12px}
+      .tool-dock{position:fixed;left:max(10px,env(safe-area-inset-left));right:max(10px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));border-radius:20px;padding:8px;background:rgba(10,22,37,.94);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+      .tool{min-height:60px}.dock-hint{display:none}.tool-kbd{display:none}
+    }
+    @media (max-width:390px){
+      :root{--cell:35px}
+      .brand p{display:none}.difficulty button b{font-size:.88rem}.difficulty button small{font-size:.6rem}.section-label span{display:none}
+      .stat.state{display:none}.scorebar{grid-template-columns:repeat(3,1fr)}
+    }
+    @media (any-pointer:coarse){
+      .icon-btn{min-width:50px;min-height:50px}.difficulty button{min-height:60px}.tool{min-height:64px}
+    }
+    @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">💣</div>
+        <div>
+          <h1>Minesweeper</h1>
+          <p>Clear every safe tile. Flag the mines.</p>
+        </div>
+      </div>
+      <button class="icon-btn" id="newGameBtn" aria-label="Start a new game" title="New game">↻</button>
+    </header>
+
+    <section class="card difficulty-card" aria-labelledby="difficultyTitle">
+      <div class="section-label"><strong id="difficultyTitle">Difficulty</strong><span>Change level anytime</span></div>
+      <div class="difficulty">
+        <button class="active" data-level="easy" aria-pressed="true"><b>Easy</b><small>9×9 · 10 mines</small></button>
+        <button data-level="medium" aria-pressed="false"><b>Medium</b><small>14×14 · 35 mines</small></button>
+        <button data-level="hard" aria-pressed="false"><b>Hard</b><small>30×16 · 100 mines</small></button>
+      </div>
+    </section>
+
+    <section class="scorebar" aria-label="Game statistics">
+      <div class="stat"><strong id="minesLeft">10</strong><span>Mines left</span></div>
+      <div class="stat"><strong id="timer">0:00</strong><span>Time</span></div>
+      <div class="stat"><strong id="moves">0</strong><span>Moves</span></div>
+      <div class="stat state"><strong id="stateText">Ready</strong><span>Status</span></div>
+    </section>
+
+    <main class="game-area">
+      <div class="board-head">
+        <div class="board-title"><span class="pulse" id="pulse"></span><span id="boardLabel">Easy board</span></div>
+        <div class="scroll-hint" id="scrollHint">↔ <span>Swipe board</span></div>
+      </div>
+      <div class="message" id="message" role="status" aria-live="polite"></div>
+      <div class="board-shell" id="boardShell" tabindex="0" aria-label="Scrollable game board">
+        <div class="board" id="board" aria-label="Minesweeper board"></div>
+      </div>
+    </main>
+
+    <section class="tool-dock" aria-label="Game tool">
+      <div class="tools">
+        <button class="tool shovel active" id="shovelBtn" aria-pressed="true">
+          <span class="emoji" aria-hidden="true">⛏️</span><span>Shovel<small>Open tiles</small></span><span class="tool-kbd">S</span>
+        </button>
+        <button class="tool flag" id="flagBtn" aria-pressed="false">
+          <span class="emoji" aria-hidden="true">🚩</span><span>Flag<small>Mark mines</small></span><span class="tool-kbd">F</span>
+        </button>
+      </div>
+      <p class="dock-hint">Choose a tool, then select a tile. You can also right-click or press-and-hold to flag.</p>
+    </section>
+
+    <button class="install-btn" id="installBtn">Install Minesweeper</button>
+    <footer>First move is always safe · Works offline after first visit</footer>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  const LEVELS = {
+    easy:   { rows: 9,  cols: 9,  mines: 10,  label: 'Easy' },
+    medium: { rows: 14, cols: 14, mines: 35,  label: 'Medium' },
+    hard:   { rows: 16, cols: 30, mines: 100, label: 'Hard' }
+  };
+
+  let level = 'easy';
+  let mode = 'shovel';
+  let config = LEVELS[level];
+  let cells = [];
+  let started = false;
+  let finished = false;
+  let flags = 0;
+  let moves = 0;
+  let seconds = 0;
+  let timerId = null;
+  let deferredPrompt = null;
+  let explodedIndex = -1;
+  let suppressClickUntil = 0;
+
+  const $ = id => document.getElementById(id);
+  const boardEl = $('board');
+  const boardShell = $('boardShell');
+  const minesLeftEl = $('minesLeft');
+  const timerEl = $('timer');
+  const movesEl = $('moves');
+  const stateTextEl = $('stateText');
+  const messageEl = $('message');
+  const pulseEl = $('pulse');
+  const boardLabelEl = $('boardLabel');
+  const scrollHintEl = $('scrollHint');
+  const shovelBtn = $('shovelBtn');
+  const flagBtn = $('flagBtn');
+  const installBtn = $('installBtn');
+
+  function vibrate(ms = 10) {
+    if ('vibrate' in navigator) navigator.vibrate(ms);
+  }
+
+  function formatTime(value) {
+    const min = Math.floor(value / 60);
+    const sec = String(value % 60).padStart(2, '0');
+    return `${min}:${sec}`;
+  }
+
+  function setState(name) {
+    stateTextEl.textContent = name;
+    pulseEl.className = 'pulse';
+    if (name === 'Playing') pulseEl.classList.add('playing');
+    if (name === 'Cleared') pulseEl.classList.add('win');
+    if (name === 'Boom') pulseEl.classList.add('lose');
+  }
+
+  function setMode(next, announce = false) {
+    mode = next;
+    const shovel = mode === 'shovel';
+    shovelBtn.classList.toggle('active', shovel);
+    flagBtn.classList.toggle('active', !shovel);
+    shovelBtn.setAttribute('aria-pressed', String(shovel));
+    flagBtn.setAttribute('aria-pressed', String(!shovel));
+    if (announce) vibrate(8);
+  }
+
+  function startTimer() {
+    if (timerId) return;
+    timerId = setInterval(() => {
+      seconds += 1;
+      timerEl.textContent = formatTime(seconds);
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerId);
+    timerId = null;
+  }
+
+  function neighbors(index) {
+    const row = Math.floor(index / config.cols);
+    const col = index % config.cols;
+    const result = [];
+    for (let dr = -1; dr <= 1; dr += 1) {
+      for (let dc = -1; dc <= 1; dc += 1) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr >= 0 && nr < config.rows && nc >= 0 && nc < config.cols) {
+          result.push(nr * config.cols + nc);
+        }
+      }
+    }
+    return result;
+  }
+
+  function createCells() {
+    cells = Array.from({ length: config.rows * config.cols }, (_, i) => ({
+      i, mine: false, open: false, flag: false, count: 0
+    }));
+  }
+
+  function placeMines(safeIndex) {
+    const safeZone = new Set([safeIndex, ...neighbors(safeIndex)]);
+    const pool = cells.map(c => c.i).filter(i => !safeZone.has(i));
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    pool.slice(0, config.mines).forEach(i => { cells[i].mine = true; });
+    cells.forEach(cell => {
+      if (!cell.mine) cell.count = neighbors(cell.i).filter(i => cells[i].mine).length;
+    });
+  }
+
+  function newGame() {
+    stopTimer();
+    config = LEVELS[level];
+    started = false;
+    finished = false;
+    flags = 0;
+    moves = 0;
+    seconds = 0;
+    explodedIndex = -1;
+    createCells();
+    minesLeftEl.textContent = String(config.mines);
+    timerEl.textContent = '0:00';
+    movesEl.textContent = '0';
+    boardLabelEl.textContent = `${config.label} board`;
+    messageEl.textContent = '';
+    messageEl.className = 'message';
+    setState('Ready');
+    boardShell.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+    render();
+  }
+
+  function render() {
+    boardEl.style.gridTemplateColumns = `repeat(${config.cols}, var(--cell))`;
+    boardEl.setAttribute('aria-rowcount', String(config.rows));
+    boardEl.setAttribute('aria-colcount', String(config.cols));
+    const fragment = document.createDocumentFragment();
+
+    cells.forEach(cell => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cell';
+      b.dataset.i = String(cell.i);
+      const row = Math.floor(cell.i / config.cols) + 1;
+      const col = (cell.i % config.cols) + 1;
+      let label = `Row ${row}, column ${col}, closed`;
+
+      if (cell.open) {
+        b.classList.add('open');
+        if (cell.mine) {
+          b.classList.add('mine');
+          if (cell.i === explodedIndex) b.classList.add('exploded');
+          b.textContent = '💣';
+          label = `Row ${row}, column ${col}, mine`;
+        } else if (cell.count) {
+          b.textContent = String(cell.count);
+          b.classList.add(`n${cell.count}`);
+          label = `Row ${row}, column ${col}, ${cell.count} adjacent mines`;
+        } else {
+          label = `Row ${row}, column ${col}, empty`;
+        }
+      } else if (cell.flag) {
+        b.classList.add('flagged');
+        b.textContent = '🚩';
+        label = `Row ${row}, column ${col}, flagged`;
+      }
+      b.setAttribute('aria-label', label);
+      fragment.appendChild(b);
+    });
+
+    boardEl.replaceChildren(fragment);
+    requestAnimationFrame(updateScrollHint);
+  }
+
+  function updateScrollHint() {
+    scrollHintEl.classList.toggle('show', boardShell.scrollWidth > boardShell.clientWidth + 4);
+  }
+
+  function ensureStarted(index) {
+    if (started) return;
+    started = true;
+    placeMines(index);
+    setState('Playing');
+    startTimer();
+  }
+
+  function floodOpen(start) {
+    const queue = [start];
+    const seen = new Set();
+    while (queue.length) {
+      const i = queue.shift();
+      if (seen.has(i)) continue;
+      seen.add(i);
+      const cell = cells[i];
+      if (cell.flag || cell.mine) continue;
+      cell.open = true;
+      if (cell.count === 0) {
+        neighbors(i).forEach(n => {
+          if (!cells[n].open && !cells[n].mine && !cells[n].flag) queue.push(n);
+        });
+      }
+    }
+  }
+
+  function openCell(index, countMove = true) {
+    if (finished) return;
+    const cell = cells[index];
+    if (cell.flag) return;
+
+    if (cell.open) {
+      chordCell(index);
+      return;
+    }
+
+    ensureStarted(index);
+    if (countMove) {
+      moves += 1;
+      movesEl.textContent = String(moves);
+    }
+
+    if (cell.mine) {
+      explodedIndex = index;
+      lose();
+      return;
+    }
+
+    floodOpen(index);
+    checkWin();
+    render();
+  }
+
+  function chordCell(index) {
+    const cell = cells[index];
+    if (finished || !cell.open || cell.count === 0) return;
+    const around = neighbors(index);
+    const flagged = around.filter(i => cells[i].flag).length;
+    if (flagged !== cell.count) return;
+
+    moves += 1;
+    movesEl.textContent = String(moves);
+    for (const i of around) {
+      const target = cells[i];
+      if (target.open || target.flag) continue;
+      if (target.mine) {
+        explodedIndex = i;
+        lose();
+        return;
+      }
+      floodOpen(i);
+    }
+    checkWin();
+    render();
+  }
+
+  function toggleFlag(index, countMove = true) {
+    if (finished) return;
+    const cell = cells[index];
+    if (cell.open) return;
+    if (!cell.flag && flags >= config.mines) return;
+
+    cell.flag = !cell.flag;
+    flags += cell.flag ? 1 : -1;
+    if (countMove) {
+      moves += 1;
+      movesEl.textContent = String(moves);
+    }
+    minesLeftEl.textContent = String(config.mines - flags);
+    vibrate(8);
+    render();
+  }
+
+  function lose() {
+    finished = true;
+    stopTimer();
+    cells.forEach(c => { if (c.mine) c.open = true; });
+    setState('Boom');
+    messageEl.textContent = 'Mine hit. Review the board or start a fresh game.';
+    messageEl.className = 'message show lose';
+    vibrate([40, 30, 80]);
+    render();
+  }
+
+  function checkWin() {
+    const safeTiles = (config.rows * config.cols) - config.mines;
+    const openedSafe = cells.filter(c => c.open && !c.mine).length;
+    if (openedSafe !== safeTiles) return false;
+
+    finished = true;
+    stopTimer();
+    cells.forEach(c => { if (c.mine) c.flag = true; });
+    flags = config.mines;
+    minesLeftEl.textContent = '0';
+    setState('Cleared');
+    messageEl.textContent = `Board cleared in ${formatTime(seconds)} with ${moves} moves. Nice work.`;
+    messageEl.className = 'message show win';
+    vibrate([20, 30, 20]);
+    return true;
+  }
+
+  function actOnCell(index) {
+    if (mode === 'flag') toggleFlag(index);
+    else openCell(index);
+  }
+
+  boardEl.addEventListener('click', event => {
+    if (Date.now() < suppressClickUntil) return;
+    const cellEl = event.target.closest('.cell');
+    if (!cellEl) return;
+    actOnCell(Number(cellEl.dataset.i));
+  });
+
+  boardEl.addEventListener('contextmenu', event => {
+    const cellEl = event.target.closest('.cell');
+    if (!cellEl) return;
+    event.preventDefault();
+    toggleFlag(Number(cellEl.dataset.i));
+  });
+
+  let holdTimer = null;
+  let holdStart = null;
+  boardEl.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'touch') return;
+    const cellEl = event.target.closest('.cell');
+    if (!cellEl) return;
+    holdStart = { x: event.clientX, y: event.clientY, index: Number(cellEl.dataset.i) };
+    holdTimer = setTimeout(() => {
+      toggleFlag(holdStart.index);
+      suppressClickUntil = Date.now() + 500;
+      holdTimer = null;
+    }, 480);
+  });
+  boardEl.addEventListener('pointermove', event => {
+    if (!holdTimer || !holdStart) return;
+    if (Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 10) {
+      clearTimeout(holdTimer); holdTimer = null;
+    }
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(type => {
+    boardEl.addEventListener(type, () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null; holdStart = null;
+    });
+  });
+
+  shovelBtn.addEventListener('click', () => setMode('shovel', true));
+  flagBtn.addEventListener('click', () => setMode('flag', true));
+  $('newGameBtn').addEventListener('click', newGame);
+
+  document.querySelectorAll('.difficulty button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      level = btn.dataset.level;
+      document.querySelectorAll('.difficulty button').forEach(b => {
+        const active = b === btn;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-pressed', String(active));
+      });
+      newGame();
+    });
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key.toLowerCase() === 's') setMode('shovel');
+    if (event.key.toLowerCase() === 'f') setMode('flag');
+    if (event.key.toLowerCase() === 'r') newGame();
+  });
+
+  window.addEventListener('resize', updateScrollHint);
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredPrompt = event;
+    installBtn.classList.add('show');
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn.classList.remove('show');
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    installBtn.classList.remove('show');
+  });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+
+  newGame();
+})();
+</script>
+</body>
+</html>
