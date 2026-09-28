@@ -1,5 +1,5 @@
-const BUILD = '20260921.3';
-const CACHE = 'trade-vault-shell-v30';
+const BUILD = '20260928.1';
+const CACHE = 'trade-vault-shell-v31';
 const INDEX_PATH = `./index.html?tvbuild=${BUILD}`;
 const SHELL = [
   INDEX_PATH,

@@ -1900,12 +1900,85 @@ async function exportEncryptedBackup() {
   toast('Encrypted backup downloaded.');
 }
 
-async function restoreEncryptedBackup(file) {
-  if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup is too large. Maximum supported size is 25 MB.');
+function readBackupFileText(file) {
+  if (typeof file?.text === 'function') {
+    return file.text().catch(() => readBackupFileTextWithReader(file));
+  }
+  return readBackupFileTextWithReader(file);
+}
+
+function readBackupFileTextWithReader(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read the selected backup file.'));
+    reader.onabort = () => reject(new Error('Backup file reading was cancelled.'));
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+function parseBackupJsonText(rawText) {
+  // Android file providers/editors can leave a BOM, zero-width marker, or NUL
+  // at the edge of an otherwise valid JSON file. None are part of the backup.
+  let text = String(rawText ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^[\u200B\u200C\u200D\u2060]+|[\u200B\u200C\u200D\u2060]+$/g, '')
+    .replace(/^\u0000+|\u0000+$/g, '')
+    .trim();
+
+  if (!text) throw new Error('Backup file is empty.');
+
   let parsed;
-  try { parsed = JSON.parse(await file.text()); }
-  catch { throw new Error('Backup is not valid JSON.'); }
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Backup is not valid JSON${error?.message ? `: ${error.message}` : '.'}`);
+  }
+
+  // Some share/export flows wrap JSON as a JSON string. Accept one safe extra layer.
+  if (typeof parsed === 'string') {
+    const nested = parsed.replace(/^\uFEFF/, '').trim();
+    if (nested.startsWith('{') || nested.startsWith('[')) {
+      try { parsed = JSON.parse(nested); }
+      catch { /* Let schema validation report the useful error below. */ }
+    }
+  }
+
+  return parsed;
+}
+
+function normalizeBackupForCompatibility(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+
+  const backup = { ...parsed };
+  if (typeof backup.version === 'string' && /^\d+$/.test(backup.version.trim())) backup.version = Number(backup.version);
+
+  if (backup.vault && typeof backup.vault === 'object' && !Array.isArray(backup.vault)) {
+    backup.vault = { ...backup.vault };
+    if (typeof backup.vault.version === 'string' && /^\d+$/.test(backup.vault.version.trim())) backup.vault.version = Number(backup.vault.version);
+    if (typeof backup.vault.iterations === 'string' && /^\d+$/.test(backup.vault.iterations.trim())) backup.vault.iterations = Number(backup.vault.iterations);
+  }
+
+  if (Array.isArray(backup.records)) {
+    backup.records = backup.records.map(record => {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) return record;
+      const normalized = { ...record };
+      if (typeof normalized.version === 'string' && /^\d+$/.test(normalized.version.trim())) normalized.version = Number(normalized.version);
+      return normalized;
+    });
+  }
+
+  return backup;
+}
+
+async function restoreEncryptedBackup(file) {
+  if (!file) throw new Error('No backup file was selected.');
+  if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup is too large. Maximum supported size is 25 MB.');
+
+  const rawText = await readBackupFileText(file);
+  const parsed = normalizeBackupForCompatibility(parseBackupJsonText(rawText));
   const backup = validateBackupPayload(parsed);
+
   if (!confirm(`Restore ${backup.records.length} encrypted record(s)? This replaces the current local vault.`)) return;
   await idbReplaceVault(backup.vault, backup.records);
   pinConfigured = false;

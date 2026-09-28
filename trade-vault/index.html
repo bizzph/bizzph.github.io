@@ -12,10 +12,10 @@
   <meta name="apple-mobile-web-app-title" content="Trade Vault">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
   <title>Trade Vault</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260921.3">
+  <link rel="manifest" href="manifest.webmanifest?v=20260928.1">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260921.3" integrity="sha384-ApFpZntN4B+wlGteuFy0RqKmVPPnBqInlI5woWhDWJG3nvFDDk5m3O8AUVWNwCvn">
+  <link rel="stylesheet" href="styles.css?v=20260928.1" integrity="sha384-ApFpZntN4B+wlGteuFy0RqKmVPPnBqInlI5woWhDWJG3nvFDDk5m3O8AUVWNwCvn">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -197,7 +197,7 @@
             <label class="icon-button icon-only file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><input id="ledgerCsvInput" type="file" accept=".csv,text/csv" hidden></label>
             <button id="ledgerAddBtn" class="icon-button primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
             <button id="exportBtn" class="icon-button icon-only" type="button" aria-label="Download encrypted backup" title="Encrypted backup"><svg><use href="#i-download"/></svg></button>
-            <label class="icon-button icon-only file-button" aria-label="Restore encrypted backup" title="Restore backup"><svg><use href="#i-restore"/></svg><input id="restoreInput" type="file" accept="application/json,.json" hidden></label>
+            <label class="icon-button icon-only file-button" aria-label="Restore encrypted backup" title="Restore backup"><svg><use href="#i-restore"/></svg><input id="restoreInput" type="file" accept=".json,application/json,text/json,text/plain,application/octet-stream" hidden></label>
             <button id="clearBtn" class="icon-button danger icon-only" type="button" aria-label="Clear vault" title="Clear vault"><svg><use href="#i-trash"/></svg></button>
           </div>
         </div>
@@ -311,6 +311,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20260921.3" integrity="sha384-J6iE4W/neGHO19CYAr96QPqB5aQj2mhYLX7wk4PXIw8lmgnV7AvbPUzWPqP6hmKh" defer></script>
+  <script src="app.js?v=20260928.1" integrity="sha384-j+KZovum3nbVrqajc7Hw4WqKHFarFJmZCMNYl9lXJ51u8BaQhZdN97ljQfDfj3EL" defer></script>
 </body>
 </html>
