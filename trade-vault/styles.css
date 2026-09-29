@@ -453,6 +453,24 @@ dialog form { padding: 21px; }
 
 .build-copy { margin-top: -4px; font-size: 9px; opacity: .78; }
 
-.settings-data-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.settings-data-actions .icon-button { width: auto; min-width: 0; padding: 0 12px; gap: 8px; }
-.settings-data-actions .icon-button svg { width: 16px; height: 16px; }
+.settings-data-heading { align-items: flex-start; }
+.settings-data-heading > div { display: grid; gap: 3px; }
+.settings-data-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.settings-data-action { display: flex; align-items: center; min-width: 0; min-height: 66px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 13px; background: var(--control-bg); text-align: left; }
+button.settings-data-action { width: 100%; color: var(--text); font: inherit; }
+.settings-data-icon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; margin-right: 9px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-2); color: var(--soft-text); }
+.settings-data-icon svg { width: 16px; height: 16px; }
+.settings-data-copy { display: grid; min-width: 0; gap: 2px; }
+.settings-data-copy strong { overflow: hidden; font-size: 11px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+.settings-data-copy small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+@media (max-width: 760px) {
+  .settings-data-actions { grid-template-columns: 1fr; gap: 8px; }
+  .settings-data-action { min-height: 58px; padding: 9px 10px; }
+  .settings-data-icon { flex-basis: 32px; width: 32px; height: 32px; }
+  .settings-data-copy strong { font-size: 12px; }
+  .settings-data-copy small { font-size: 9px; }
+}
+@media (max-width: 390px) {
+  .settings-data-action { border-radius: 12px; }
+  .settings-data-copy small { white-space: normal; }
+}

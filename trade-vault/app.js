@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.29.3';
+const APP_BUILD = '2026.09.29.5';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -1839,7 +1839,7 @@ function renderTransactions() {
       <div class="transaction-net-summary">
         <span>Net acquired</span>
         <div><strong>${netText}</strong><button type="button" class="inline-copy icon-only" data-action="copy-net" data-key="${escapeHtml(tx._recordKey)}" aria-label="Copy net acquired amount ${escapeHtml(netCopy)}" title="Copy net acquired amount">${icon('copy')}</button></div>
-        ${tx.side === 'BUY' ? `<div class="transaction-spend-summary"><span>Total spent</span><strong>${totalText}</strong></div>` : `<div class="transaction-spend-summary"><span>Total Sold</span><strong>${totalText}</strong></div>`}
+        ${tx.side === 'BUY' ? `<div class="transaction-spend-summary"><span>Total spent</span><strong>${totalText}</strong></div>` : `<div class="transaction-spend-summary"><span>Total Sold</span><strong>${formatFixed(parseFixed(tx.executed), 12)} ${escapeHtml(tx.base)}</strong></div>`}
       </div>
       <button type="button" class="detail-toggle icon-only" data-action="toggle-details" data-key="${escapeHtml(tx._recordKey)}" aria-expanded="${expanded}" aria-label="${expanded ? 'Collapse' : 'Expand'} ${escapeHtml(tx.pair)} transaction details" title="${expanded ? 'Collapse details' : 'Expand details'}">${icon('chevron')}</button>
     </div>
@@ -2469,11 +2469,13 @@ async function ensureCurrentAppShell() {
 
   try {
     if (sessionStorage.getItem(BUILD_RELOAD_KEY) === '1') {
-      if (status) {
-        status.className = 'fine startup-status error';
-        status.textContent = 'The app update did not finish cleanly. Close this Trade Vault window/app completely, then open it again.';
-      }
-      return false;
+      // A refresh was already attempted in this tab. Do not brick the app or
+      // trap the user in a reload loop; continue with the current shell and
+      // let the service worker reconcile files in the background.
+      sessionStorage.removeItem(BUILD_RELOAD_KEY);
+      console.warn(`Trade Vault shell marker (${marker || 'missing'}) does not match app build ${APP_BUILD}; continuing after one refresh attempt.`);
+      if (status) status.hidden = true;
+      return true;
     }
     sessionStorage.setItem(BUILD_RELOAD_KEY, '1');
   } catch {}
