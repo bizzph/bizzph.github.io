@@ -1,7 +1,7 @@
 {
   "name": "PicklePulse Pickleball Scorekeeper",
   "short_name": "PicklePulse",
-  "description": "Fast local-first pickleball scoring with players, queue, standings, and an optional offline local-LAN live display.",
+  "description": "Fast local-first pickleball scoring with players, queue, standings, and an optional cross-device live display that works from the hosted PWA or the local LAN server.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0e110f",

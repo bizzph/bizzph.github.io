@@ -1,3 +1,25 @@
+# PicklePulse v40 Turnover / Handoff
+
+Finalized: 2026-09-29
+
+## v40 changes - GitHub Pages PWA Live Display fix
+
+- Fixed hosted-PWA Live Display incorrectly attempting `wss://<github-pages-host>/live`, which cannot work on static GitHub Pages hosting.
+- Live transport is now origin-aware: public/hosted origins use PeerJS 1.5.5 + WebRTC; localhost/private-LAN origins keep using the included same-origin WebSocket relay.
+- `https://bizzph.github.io/pickl/` therefore remains the installable PWA URL and no longer needs a `/live` WebSocket endpoint on GitHub Pages.
+- PeerJS loads only when Live Display is used, from the pinned jsDelivr 1.5.5 asset with SRI.
+- The explicit Live Display confirmation and UI copy now describe both hosted-WebRTC and offline-LAN behavior.
+- Shell asset query versions and the service-worker cache are bumped to v40 so installed v39 PWAs receive the transport fix.
+
+## v40 validation
+
+- JavaScript syntax checks for core, Live Display module, and service worker: PASS.
+- Transport selection: `bizzph.github.io` -> WebRTC; localhost/private IPv4/`.local` -> LAN WebSocket: PASS.
+- Simulated PeerJS controller -> viewer state delivery and viewer count: PASS.
+- Real local WebSocket relay controller -> viewer state delivery on test port 8091: PASS.
+
+---
+
 # PicklePulse v39 LAN Edition Turnover / Handoff
 
 ## v39 LAN edition - no-Internet Live Display

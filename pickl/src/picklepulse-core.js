@@ -1369,7 +1369,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=39';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=40';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -1451,8 +1451,12 @@
     const source = href || (globalThis.location && location.href);
     if (!source) throw new Error('App URL unavailable.');
     const url = new URL(source);
+    const forcedTransport = url.searchParams.get('liveTransport');
     url.search = '';
     url.hash = '';
+    if (forcedTransport === 'lan' || forcedTransport === 'peer') {
+      url.searchParams.set('liveTransport', forcedTransport);
+    }
     url.searchParams.set('watch', normalizeRoomCode(room));
     return url.toString();
   }
@@ -3540,7 +3544,7 @@ No completed games in this range.`;
       }
       if (this.liveController) return true;
       if (!silent && !this.liveNetworkApproved) {
-        const approved = confirm('Live Display will use the PicklePulse server on this local Wi-Fi/LAN to send the scoreboard to viewers who know the room code. No Internet service is used. Start Live Display?');
+        const approved = confirm('Live Display sends the scoreboard only to viewers who know the room code. From the hosted PWA it uses an Internet/WebRTC connection; from the included LAN server it stays on the local network. Start Live Display?');
         if (!approved) return false;
         this.liveNetworkApproved = true;
       }
@@ -3574,7 +3578,7 @@ No completed games in this range.`;
           this.state.liveRoom = room;
           this.persist();
           controller.broadcast();
-          if (!silent) this.showToast(`LAN live · ${room}`);
+          if (!silent) this.showToast(`Live · ${room}`);
           return true;
         } catch (error) {
           controller.stop();
@@ -3585,7 +3589,7 @@ No completed games in this range.`;
             }
             if (!preferred) continue;
           }
-          this.live = { phase: 'error', room, viewers: 0, detail: error.message || 'Unable to connect to LAN relay' };
+          this.live = { phase: 'error', room, viewers: 0, detail: error.message || 'Unable to connect to Live Display' };
           this.render();
           return false;
         }
@@ -5281,7 +5285,7 @@ No completed games in this range.`;
           <form id="join-room-form" class="connect-card" aria-label="Watch a live game">
             <span class="connect-icon" title="Watch live">${icon('radio')}</span>
             <label><span class="sr-only">Room code</span><input name="room" minlength="4" maxlength="8" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off" required><button class="icon-only" type="submit" aria-label="Connect to live game" title="Connect">${icon('play')}</button></label>
-            <small>Local Wi-Fi/LAN · no Internet · WebSocket</small>
+            <small>Live room · hosted PWA uses WebRTC · LAN server uses WebSocket</small>
           </form>
         </section>
       `;

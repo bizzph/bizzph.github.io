@@ -1,6 +1,6 @@
 # PicklePulse security and privacy notes
 
-Updated for LAN edition: 2026-09-29
+Updated for v40 hybrid Live Display: 2026-09-29
 
 ## Default data flow
 
@@ -24,27 +24,30 @@ Roster QR/codes and exported backups are **not encrypted**. A roster code is an 
 - Queue order and volume are lightweight metadata in the normal local app state; the binary MP3 data is not copied into backup JSON or roster share codes.
 - Browser storage quotas still apply. Clearing site data, using private browsing, or browser eviction can remove saved MP3 files.
 
-## Intentional local-network feature: Live Display
+## Intentional network feature: Live Display
 
-Live Display uses only the local PicklePulse server that served the page. It does not contact PeerJS Cloud, a STUN/TURN server, a CDN, or another Internet service.
+Live Display has two transport modes selected from the page origin:
 
-- It starts on the controller only after an explicit user confirmation in the current page session.
-- The browser opens a same-server WebSocket (`ws://` for HTTP or `wss://` for HTTPS) to `/live`.
-- The included zero-dependency Node.js relay keeps rooms in memory and broadcasts controller scoreboard snapshots to spectator displays on the same LAN.
-- New rooms use 8-character cryptographically generated codes. Older 4-8 character room links/codes remain compatible.
-- Only one controller may own a room at a time. Spectator connections are read-only; viewer messages are ignored by the relay.
-- Controller state messages are size-limited by both the browser module and relay. Incoming scoreboard state is normalized and sanitized before rendering.
-- The relay is intentionally unauthenticated inside the LAN. Anyone who can reach the local server and obtains or guesses an active room code can view that scoreboard.
+- **Hosted PWA / normal public HTTPS host:** uses PeerJS 1.5.5 and WebRTC. PeerJS is loaded only when Live Display is explicitly started or a viewer opens a live room. Signaling uses PeerJS Cloud (`0.peerjs.com:443`) and WebRTC uses Google STUN (`stun.l.google.com:19302`). Scoreboard state is sent peer-to-peer after the connection is established. Internet access is required for this mode.
+- **Local host / private LAN address:** uses the included same-origin WebSocket relay (`/live`) from `server.js`. This mode can operate without Internet access when both devices open the app from the local server.
 
-When the server is run over plain HTTP, WebSocket traffic on the local LAN is also unencrypted. Use the optional `TLS_CERT`/`TLS_KEY` server mode on networks where transport encryption is required, and use a certificate trusted by the participating devices.
+Common protections in both modes:
+
+- Controller Live Display starts only after explicit user confirmation in the current page session.
+- New rooms use 8-character cryptographically generated codes; existing 4-8 character room codes remain compatible.
+- Only the controller sends scoreboard state. Viewer-side incoming state is bounded and normalized before rendering.
+- Controller payloads are size-limited before transmission.
+- Anyone who obtains or guesses an active room code may be able to view that scoreboard; room codes are access hints, not authentication.
+
+For LAN relay mode, plain `http://` uses unencrypted `ws://` traffic. Use the optional `TLS_CERT`/`TLS_KEY` mode with certificates trusted by participating devices when encrypted LAN transport is required.
 
 ## Browser hardening in this build
 
-- Content Security Policy limits scripts to PicklePulse itself; there are no external script origins.
-- The browser Live Display implementation derives its relay URL from the page origin. CSP allows WebSocket schemes so HTTP/WSS LAN deployments work across browsers.
+- Content Security Policy keeps first-party scripts same-origin and permits only the pinned jsDelivr origin used to lazy-load PeerJS for hosted-PWA Live Display.
+- CSP allows WebSocket schemes for LAN relay mode. Public hosted origins do not derive a same-origin `/live` socket; they automatically select WebRTC instead.
 - `object` and `frame` content are disabled by CSP.
 - Referrer policy is `no-referrer`.
-- No `eval`, `new Function`, `document.write`, `sendBeacon`, `XMLHttpRequest`, `EventSource`, analytics SDK, ad SDK, telemetry SDK, cloud TTS client, or MP3 upload endpoint exists in PicklePulse first-party code. `WebSocket` is used only by the local-LAN Live Display module.
+- No `eval`, `new Function`, `document.write`, `sendBeacon`, `XMLHttpRequest`, `EventSource`, analytics SDK, ad SDK, telemetry SDK, cloud TTS client, or MP3 upload endpoint exists in PicklePulse first-party code. Live Display uses WebRTC/PeerJS on hosted origins and WebSocket only on local/LAN origins.
 - Roster imports, persisted-state loading, Live Display payloads, and JSON backups have size/count limits to reduce accidental or hostile memory/CPU abuse.
 - Backup import validates before mutating live state, preventing partial imports after a validation failure.
 - The service worker caches only the known PicklePulse application shell. It does not opportunistically cache arbitrary same-origin GET responses.

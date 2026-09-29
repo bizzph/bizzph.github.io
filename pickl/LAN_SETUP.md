@@ -1,8 +1,15 @@
-# PicklePulse LAN Edition - offline live display setup
+# PicklePulse Live Display - hosted PWA and offline LAN setup
 
-This build replaces PeerJS/WebRTC with a small local WebSocket relay. The controller and scoreboard communicate only through the computer running `server.js` on the same Wi-Fi/LAN. The router or hotspot does **not** need Internet access.
+v40 supports two Live Display paths. When the app is opened from the hosted PWA (for example `https://bizzph.github.io/pickl/`), Live Display uses WebRTC/PeerJS. When the app is opened from `localhost` or a private LAN address, it uses the included local WebSocket relay in `server.js`.
 
-## What you need
+
+## Hosted PWA mode (`bizzph.github.io/pickl/`)
+
+No local Node server is required for normal hosted-PWA Live Display. Open the same hosted app on the controller and spectator device, start/share a room, and use the room code or `?watch=ROOMCODE` link.
+
+Hosted mode requires Internet access for the PeerJS signaling service and WebRTC STUN discovery. The app no longer tries to open `wss://bizzph.github.io/live`; GitHub Pages remains static hosting only.
+
+## What you need for offline LAN mode
 
 - One computer with Node.js 18 or newer. This can be a laptop, mini PC, Raspberry Pi, or similar device.
 - A local Wi-Fi/LAN. An old router with no WAN connection, a phone hotspot with mobile data disabled, or a laptop hotspot is fine.
@@ -10,7 +17,7 @@ This build replaces PeerJS/WebRTC with a small local WebSocket relay. The contro
 
 No `npm install` is required. The server has no external package dependencies.
 
-## Start the local server
+## Start the local server for offline LAN mode
 
 From the extracted PicklePulse folder:
 
@@ -48,7 +55,7 @@ set PORT=8090 && node server.js
 
 If the operating system firewall asks whether Node.js may accept local/private-network connections, allow it on the private/local network.
 
-## Use Live Display without Internet
+## Use Live Display without Internet (LAN mode)
 
 1. Connect the server computer, controller, and scoreboard to the same local router/hotspot.
 2. Turn off/disconnect the router WAN or disable mobile data if you want to verify there is no Internet path.
@@ -94,6 +101,7 @@ The server will then print `https://...` addresses and Live Display will automat
 
 - **The page does not open from another device:** confirm both devices are on the same subnet/network, use the printed LAN IP rather than `localhost`, and allow the Node.js server through the computer firewall.
 - **Room says it is already active:** that code already has a controller. Stop Live Display on the other controller or generate another room.
-- **Display keeps waiting for controller:** make sure the controller has started Live Display and both pages were opened from the same PicklePulse LAN server.
+- **Hosted PWA shows a PeerJS/load error:** confirm the device has Internet access and that your network/content blocker allows `cdn.jsdelivr.net`, `0.peerjs.com`, and WebRTC/STUN traffic.
+- **LAN display keeps waiting for controller:** make sure the controller has started Live Display and both pages were opened from the same PicklePulse LAN server.
 - **Server computer changed networks:** restart the server and use the newly printed LAN address.
 - **Port 8080 is occupied:** start with another port, for example `PORT=8090 node server.js`, and use the newly printed URL on all devices.

@@ -20,6 +20,11 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## LAN Live Display
+## Live Display
 
-The LAN Live Display relay and browser WebSocket transport in this edition are first-party code and use only Node.js/browser built-ins. PeerJS is not included or loaded.
+The LAN WebSocket relay and same-origin browser WebSocket transport are first-party code and use only Node.js/browser built-ins.
+
+When PicklePulse is served from a public hosted origin, Live Display lazy-loads **PeerJS 1.5.5** from the pinned jsDelivr URL and verifies it with Subresource Integrity before use. PeerJS is MIT-licensed. It is not loaded for normal scoring/queue/roster use and is not used when the app is opened from the included local LAN server.
+
+PeerJS project: https://peerjs.com/
+License: MIT
