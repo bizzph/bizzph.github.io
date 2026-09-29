@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.29.1';
+const APP_BUILD = '2026.09.29.3';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
