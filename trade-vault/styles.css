@@ -452,3 +452,7 @@ dialog form { padding: 21px; }
 .security-copy { max-width: 72ch; }
 
 .build-copy { margin-top: -4px; font-size: 9px; opacity: .78; }
+
+.settings-data-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-data-actions .icon-button { width: auto; min-width: 0; padding: 0 12px; gap: 8px; }
+.settings-data-actions .icon-button svg { width: 16px; height: 16px; }

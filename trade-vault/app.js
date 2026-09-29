@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.21.3';
+const APP_BUILD = '2026.09.29.1';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -356,7 +356,7 @@ async function savePinForPassphrase(pin, passphrase) {
   await savePinWrapperFromRaw(pin, rawVaultKey);
 }
 
-async function createVault(passphrase, pin) {
+async function createVault(passphrase) {
   const salt = randomBytes(16);
   const rawVaultKey = await deriveKeyBytes(passphrase, salt, PBKDF2_ITERATIONS);
   const key = await importVaultKey(rawVaultKey);
@@ -370,7 +370,7 @@ async function createVault(passphrase, pin) {
     verifier
   };
   await idbPut('meta', vault);
-  await savePinWrapperFromRaw(pin, rawVaultKey);
+  pinConfigured = false;
   vaultKey = key;
   transactions = [];
   showApp();
@@ -1839,7 +1839,7 @@ function renderTransactions() {
       <div class="transaction-net-summary">
         <span>Net acquired</span>
         <div><strong>${netText}</strong><button type="button" class="inline-copy icon-only" data-action="copy-net" data-key="${escapeHtml(tx._recordKey)}" aria-label="Copy net acquired amount ${escapeHtml(netCopy)}" title="Copy net acquired amount">${icon('copy')}</button></div>
-        ${tx.side === 'BUY' ? `<div class="transaction-spend-summary"><span>Total spent</span><strong>${totalText}</strong></div>` : ''}
+        ${tx.side === 'BUY' ? `<div class="transaction-spend-summary"><span>Total spent</span><strong>${totalText}</strong></div>` : `<div class="transaction-spend-summary"><span>Total Sold</span><strong>${totalText}</strong></div>`}
       </div>
       <button type="button" class="detail-toggle icon-only" data-action="toggle-details" data-key="${escapeHtml(tx._recordKey)}" aria-expanded="${expanded}" aria-label="${expanded ? 'Collapse' : 'Expand'} ${escapeHtml(tx.pair)} transaction details" title="${expanded ? 'Collapse details' : 'Expand details'}">${icon('chevron')}</button>
     </div>
@@ -2600,20 +2600,14 @@ async function init() {
     const btn = $('createVaultBtn');
     const pass = $('newPassphrase').value;
     const confirmPass = $('confirmPassphrase').value;
-    const pin = $('newPin').value;
-    const confirmPin = $('confirmPin').value;
     if (pass.length < 16) return toast('Use at least 16 characters for the vault passphrase.');
     if (pass !== confirmPass) return toast('Passphrases do not match.');
-    try { validatePin(pin); } catch (error) { return toast(error.message); }
-    if (pin !== confirmPin) return toast('PINs do not match.');
     try {
       setBusy(btn, true, 'Creating vault…');
-      await createVault(pass, pin);
+      await createVault(pass);
       $('newPassphrase').value = '';
       $('confirmPassphrase').value = '';
-      $('newPin').value = '';
-      $('confirmPin').value = '';
-      toast('Encrypted vault created.');
+      toast('Encrypted vault created. Set an optional 4-digit PIN in General settings.');
     } catch (error) { console.error(error); toast(error.message || 'Could not create vault.'); }
     finally { setBusy(btn, false); }
   });
@@ -2691,8 +2685,7 @@ async function init() {
     finally { event.target.value = ''; }
   };
 
-  $('csvInput')?.addEventListener('change', handleCsvInput);
-  $('ledgerCsvInput')?.addEventListener('change', handleCsvInput);
+  $('settingsCsvInput')?.addEventListener('change', handleCsvInput);
 
 
   $('searchInput')?.addEventListener('input', renderTransactions);
@@ -2954,8 +2947,8 @@ async function init() {
     }
   });
 
-  $('exportBtn')?.addEventListener('click', () => exportEncryptedBackup().catch(error => toast(error.message)));
-  $('restoreInput')?.addEventListener('change', async event => {
+  $('settingsExportBtn')?.addEventListener('click', () => exportEncryptedBackup().catch(error => toast(error.message)));
+  $('settingsRestoreInput')?.addEventListener('change', async event => {
     const file = event.target.files?.[0];
     if (!file) return;
     try { await restoreEncryptedBackup(file); }

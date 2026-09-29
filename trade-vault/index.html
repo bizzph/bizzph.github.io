@@ -58,11 +58,6 @@
       <div id="createVaultPanel" hidden>
         <label>New passphrase<input id="newPassphrase" type="password" autocomplete="new-password" minlength="16" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="16+ characters"></label>
         <label>Confirm<input id="confirmPassphrase" type="password" autocomplete="new-password" minlength="16" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="Repeat passphrase"></label>
-        <div class="pin-grid">
-          <label>4-digit PIN<input id="newPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
-          <label>Confirm PIN<input id="confirmPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
-        </div>
-        <p class="fine pin-security-note">The PIN is a convenience unlock for this device. A 4-digit PIN is weaker than your passphrase, so keep the device protected.</p>
         <button id="createVaultBtn" class="primary wide auth-button" type="button" aria-label="Create encrypted vault" title="Create encrypted vault"><svg><use href="#i-shield"/></svg><span>Create vault</span></button>
         <p class="fine">Keep your passphrase safe. It is still required for recovery and encrypted-backup restores.</p>
       </div>
@@ -100,7 +95,6 @@
         <div class="page-head">
           <div><p class="eyebrow">PORTFOLIO</p><h2>Overview</h2></div>
           <div class="head-actions">
-            <label class="icon-button icon-only file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><input id="csvInput" type="file" accept=".csv,text/csv" hidden></label>
             <button id="openManualBtn" class="icon-button primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
           </div>
         </div>
@@ -194,10 +188,7 @@
         <div class="page-head ledger-head">
           <div><p class="eyebrow">HISTORY</p><h2>Ledger</h2></div>
           <div class="head-actions">
-            <label class="icon-button icon-only file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><input id="ledgerCsvInput" type="file" accept=".csv,text/csv" hidden></label>
             <button id="ledgerAddBtn" class="icon-button primary icon-only" type="button" aria-label="Add transaction" title="Add transaction"><svg><use href="#i-plus"/></svg></button>
-            <button id="exportBtn" class="icon-button icon-only" type="button" aria-label="Download encrypted backup" title="Encrypted backup"><svg><use href="#i-download"/></svg></button>
-            <label class="icon-button icon-only file-button" aria-label="Restore encrypted backup" title="Restore backup"><svg><use href="#i-restore"/></svg><input id="restoreInput" type="file" accept=".json,application/json,text/json,text/plain,application/octet-stream" hidden></label>
             <button id="clearBtn" class="icon-button danger icon-only" type="button" aria-label="Clear vault" title="Clear vault"><svg><use href="#i-trash"/></svg></button>
           </div>
         </div>
@@ -243,7 +234,7 @@
       </div>
       <p class="settings-copy">Fee defaults affect new transactions only. Auto-lock and the optional local PIN apply to this browser/device.</p>
       <p class="settings-copy security-copy"><strong>Network:</strong> live pricing is off by default. When enabled, Trade Vault can connect only to the public Coins.ph market WebSocket and sends pair symbols only. No analytics, telemetry, account API, or transaction upload is built in.</p>
-      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.21.3</span></p>
+      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.29.1</span></p>
       <div class="form-grid">
         <label>Buy fee (%)<input name="buyFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
         <label>Sell fee (%)<input name="sellFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
@@ -259,6 +250,15 @@
         <label>New PIN <span class="optional-tag">OPTIONAL</span><input name="newPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
         <label>Confirm new PIN<input name="confirmPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></label>
         <div class="pin-security-note calculation-note span-2">PIN unlock stays local and is not included in encrypted backups. Because four digits have only 10,000 combinations, the passphrase remains the stronger recovery credential.</div>
+        <div class="settings-section span-2">
+          <strong>Import / Export</strong>
+          <span class="settings-inline-status">Vault-wide data tools</span>
+        </div>
+        <div class="span-2 settings-data-actions">
+          <label class="icon-button file-button" aria-label="Import CSV" title="Import CSV"><svg><use href="#i-upload"/></svg><span>Import CSV</span><input id="settingsCsvInput" type="file" accept=".csv,text/csv" hidden></label>
+          <button id="settingsExportBtn" class="icon-button" type="button" aria-label="Download encrypted backup" title="Download encrypted backup"><svg><use href="#i-download"/></svg><span>Export backup</span></button>
+          <label class="icon-button file-button" aria-label="Restore encrypted backup" title="Restore encrypted backup"><svg><use href="#i-restore"/></svg><span>Restore backup</span><input id="settingsRestoreInput" type="file" accept=".json,application/json,text/json,text/plain,application/octet-stream" hidden></label>
+        </div>
       </div>
       <div class="dialog-actions">
         <button type="button" id="cancelSettingsBtn" class="icon-button icon-only" aria-label="Cancel" title="Cancel"><svg><use href="#i-x"/></svg></button>
