@@ -1,0 +1,12 @@
+{
+  "name": "picklepulse-lan",
+  "version": "39.0.0-lan",
+  "private": true,
+  "description": "PicklePulse local-LAN scoreboard with a zero-dependency WebSocket relay",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

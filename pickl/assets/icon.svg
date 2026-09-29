@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PicklePulse icon">
+  <rect width="512" height="512" rx="112" fill="#10251d"/>
+  <circle cx="256" cy="256" r="156" fill="#d9ff57"/>
+  <g fill="#10251d">
+    <circle cx="203" cy="179" r="17"/><circle cx="273" cy="160" r="17"/><circle cx="329" cy="205" r="17"/>
+    <circle cx="177" cy="251" r="17"/><circle cx="251" cy="239" r="17"/><circle cx="326" cy="271" r="17"/>
+    <circle cx="204" cy="323" r="17"/><circle cx="281" cy="339" r="17"/>
+  </g>
+</svg>
