@@ -6,16 +6,16 @@
   <meta name="theme-color" content="#080b12">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <meta name="trade-vault-build" content="2026.09.29.5">
+  <meta name="trade-vault-build" content="2026.09.29.6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trade Vault">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
   <title>Trade Vault</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260929.5">
+  <link rel="manifest" href="manifest.webmanifest?v=20260929.6">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260929.5" integrity="sha384-aZRWc8tV5ySyO+Xl93Oe953E6k35GKdy21rEB6VJ0zvcS9pemIBT5JLGk7aEJTgI">
+  <link rel="stylesheet" href="styles.css?v=20260929.6" integrity="sha384-6PGfZH8aOROkS2L5LXERl1N3nZm1q8v5G/8zhp9bPXsj2X6J/kCxqeOuSD9E4ULN">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -60,6 +60,13 @@
         <label>Confirm<input id="confirmPassphrase" type="password" autocomplete="new-password" minlength="16" maxlength="256" autocapitalize="none" spellcheck="false" placeholder="Repeat passphrase"></label>
         <button id="createVaultBtn" class="primary wide auth-button" type="button" aria-label="Create encrypted vault" title="Create encrypted vault"><svg><use href="#i-shield"/></svg><span>Create vault</span></button>
         <p class="fine">Keep your passphrase safe. It is still required for recovery and encrypted-backup restores.</p>
+        <div class="fresh-restore-divider" aria-hidden="true"><span>or</span></div>
+        <label class="fresh-restore-action file-button" aria-label="Import encrypted JSON backup" title="Import encrypted JSON backup">
+          <span class="fresh-restore-icon"><svg><use href="#i-restore"/></svg></span>
+          <span class="fresh-restore-copy"><strong>Import JSON backup</strong><small>Restore an existing encrypted Trade Vault backup</small></span>
+          <input id="freshRestoreInput" type="file" accept=".json,application/json,text/json,text/plain,application/octet-stream" hidden>
+        </label>
+        <div id="freshRestoreStatus" class="gate-status fresh-restore-status" role="status" aria-live="polite"></div>
       </div>
 
       <div id="unlockVaultPanel" hidden>
@@ -234,7 +241,7 @@
       </div>
       <p class="settings-copy">Fee defaults affect new transactions only. Auto-lock and the optional local PIN apply to this browser/device.</p>
       <p class="settings-copy security-copy"><strong>Network:</strong> live pricing is off by default. When enabled, Trade Vault can connect only to the public Coins.ph market WebSocket and sends pair symbols only. No analytics, telemetry, account API, or transaction upload is built in.</p>
-      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.29.5</span></p>
+      <p class="settings-copy build-copy"><strong>Build:</strong> <span id="appBuildLabel">2026.09.29.6</span></p>
       <div class="form-grid">
         <label>Buy fee (%)<input name="buyFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
         <label>Sell fee (%)<input name="sellFeePercent" required type="text" inputmode="decimal" value="0.1" placeholder="0.1"></label>
@@ -324,6 +331,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20260929.5" integrity="sha384-TWL5GI1qKh18EWut9Z4oCJs31GWmZigYRr+XyUOUmo8AZRUbs/y/0nq/st1e9aig" defer></script>
+  <script src="app.js?v=20260929.6" integrity="sha384-C1pPhLWqb88f1F55+X3Ya2wS+wWI4P2/sPzJmB7ze7DqAMc+E5pOvuexVX63+eBz" defer></script>
 </body>
 </html>

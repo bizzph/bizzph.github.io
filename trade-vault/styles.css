@@ -149,6 +149,16 @@ button:disabled { cursor: default; opacity: .38; transform: none; }
 .gate-status { min-height: 18px; margin-top: 10px; color: var(--muted); font-size: 11px; }
 .gate-status.error, .startup-status.error { color: var(--danger-text); }
 .startup-status { margin: -7px 0 12px; }
+.fresh-restore-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
+.fresh-restore-divider::before, .fresh-restore-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.fresh-restore-divider span { flex: none; }
+.fresh-restore-action { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 62px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--control-bg); text-align: left; }
+.fresh-restore-icon { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 11px; background: var(--surface-2); color: var(--accent); }
+.fresh-restore-icon svg { width: 19px; height: 19px; }
+.fresh-restore-copy { display: grid; min-width: 0; gap: 2px; }
+.fresh-restore-copy strong { font-size: 12px; line-height: 1.2; }
+.fresh-restore-copy small { color: var(--muted); font-size: 10px; font-weight: 600; line-height: 1.35; }
+.fresh-restore-status { margin-top: 7px; }
 .pin-security-note { line-height: 1.5; }
 .wide { width: 100%; margin-top: 18px; }
 

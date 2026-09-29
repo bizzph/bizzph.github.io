@@ -36,7 +36,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.29.5';
+const APP_BUILD = '2026.09.29.6';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -1971,7 +1971,7 @@ function normalizeBackupForCompatibility(parsed) {
   return backup;
 }
 
-async function restoreEncryptedBackup(file) {
+async function restoreEncryptedBackup(file, { freshStart = false } = {}) {
   if (!file) throw new Error('No backup file was selected.');
   if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup is too large. Maximum supported size is 25 MB.');
 
@@ -1979,12 +1979,20 @@ async function restoreEncryptedBackup(file) {
   const parsed = normalizeBackupForCompatibility(parseBackupJsonText(rawText));
   const backup = validateBackupPayload(parsed);
 
-  if (!confirm(`Restore ${backup.records.length} encrypted record(s)? This replaces the current local vault.`)) return;
+  if (freshStart && await vaultExists()) throw new Error('A local vault already exists. Restore backups from General settings instead.');
+  const restoreMessage = freshStart
+    ? `Import ${backup.records.length} encrypted record(s) from this backup? You will unlock it with the backup passphrase.`
+    : `Restore ${backup.records.length} encrypted record(s)? This replaces the current local vault.`;
+  if (!confirm(restoreMessage)) return false;
+
   await idbReplaceVault(backup.vault, backup.records);
   pinConfigured = false;
   await loadGeneralSettings();
   lockVault();
-  toast('Backup restored atomically. Unlock with the backup passphrase, then set a new local PIN if wanted.');
+  toast(freshStart
+    ? 'Backup imported. Unlock with the backup passphrase.'
+    : 'Backup restored atomically. Unlock with the backup passphrase, then set a new local PIN if wanted.');
+  return true;
 }
 
 function normalizeFeeRatePercent(value) {
@@ -2612,6 +2620,28 @@ async function init() {
       toast('Encrypted vault created. Set an optional 4-digit PIN in General settings.');
     } catch (error) { console.error(error); toast(error.message || 'Could not create vault.'); }
     finally { setBusy(btn, false); }
+  });
+
+  $('freshRestoreInput')?.addEventListener('change', async event => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    const status = $('freshRestoreStatus');
+    input.disabled = true;
+    status.textContent = 'Checking encrypted backup…';
+    status.className = 'gate-status fresh-restore-status';
+    try {
+      const restored = await restoreEncryptedBackup(file, { freshStart: true });
+      if (!restored) status.textContent = '';
+    } catch (error) {
+      console.error(error);
+      status.textContent = error.message || 'Backup import failed.';
+      status.className = 'gate-status fresh-restore-status error';
+      toast(error.message || 'Backup import failed.');
+    } finally {
+      input.disabled = false;
+      input.value = '';
+    }
   });
 
   const setUnlockStatus = (message = '', kind = '') => {
