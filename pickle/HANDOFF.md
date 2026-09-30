@@ -1,4 +1,11 @@
-# PicklePulse v38 Turnover / Handoff
+# PicklePulse v39 Turnover / Handoff
+
+
+## v39 update - spectator server number + serving-side emphasis
+- `?watch=` now shows the current server number (`1` or `2`) in a centered, distance-readable badge between both score sides during active games.
+- The currently serving team receives a stronger tinted background/border treatment and its score sits on a dark number card for faster recognition from afar.
+- Scoring, serving rotation, controller behavior, final/queue views, and existing spectator details are unchanged.
+- Cache-busting asset URLs and service-worker cache bumped to v39.
 
 ## v38 update - larger server-focus name only
 

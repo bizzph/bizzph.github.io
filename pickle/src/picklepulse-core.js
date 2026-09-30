@@ -6065,6 +6065,12 @@ No completed games in this range.`;
           </div>
           <div class="remote-grid">
             ${scoreOrder.map((index) => this.renderRemoteTeam(game, index)).join('')}
+            ${game.status === 'active' ? `
+              <div class="remote-server-number" aria-label="Current server ${Number(game.serverNumber) === 2 ? 2 : 1}">
+                <span>Server</span>
+                <strong>${Number(game.serverNumber) === 2 ? 2 : 1}</strong>
+              </div>
+            ` : ''}
           </div>
           ${nextQueue.length ? `
             <aside class="remote-next-queue" aria-label="Next players in queue">

@@ -2385,3 +2385,95 @@ body.player-picker-open { overflow: hidden; overscroll-behavior: none; }
     font-size: clamp(4rem, min(12vw, 25dvh), 9rem);
   }
 }
+
+/* v39: distance-readable current-server marker and stronger serving-side emphasis on ?watch=. */
+.remote-scoreboard:not(.is-final) .remote-grid {
+  position: relative;
+}
+
+.remote-server-number {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  width: clamp(78px, min(10vw, 16dvh), 150px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  place-items: center;
+  align-content: center;
+  gap: clamp(1px, .5vh, 5px);
+  padding: clamp(9px, 1.2vw, 16px);
+  border: clamp(2px, .25vw, 4px) solid rgb(255 255 255 / 20%);
+  border-radius: clamp(18px, 2.2vw, 30px);
+  color: #f8faf8;
+  background: #080b09;
+  box-shadow: 0 10px 34px rgb(0 0 0 / 48%), inset 0 0 0 1px rgb(255 255 255 / 6%);
+  pointer-events: none;
+}
+
+.remote-server-number span {
+  align-self: end;
+  color: #aeb7b0;
+  font-size: clamp(.62rem, 1.1vw, .9rem);
+  font-weight: 900;
+  letter-spacing: .14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.remote-server-number strong {
+  align-self: start;
+  font: 950 clamp(3.2rem, min(7.5vw, 12dvh), 7rem)/.88 ui-monospace, monospace;
+  letter-spacing: -.08em;
+  transform: translateX(-.04em);
+}
+
+.remote-scoreboard:not(.is-final) .remote-team.serving {
+  z-index: 1;
+  border-width: clamp(2px, .24vw, 4px);
+}
+
+.remote-scoreboard:not(.is-final) .remote-team.serving.team-a {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--team-a) 24%, #141915), #141915 68%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--team-a) 28%, transparent), 0 0 34px color-mix(in srgb, var(--team-a) 13%, transparent);
+}
+
+.remote-scoreboard:not(.is-final) .remote-team.serving.team-b {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--team-b) 24%, #141915), #141915 68%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--team-b) 28%, transparent), 0 0 34px color-mix(in srgb, var(--team-b) 13%, transparent);
+}
+
+.remote-scoreboard:not(.is-final) .remote-team.serving > strong {
+  padding: .035em .11em .075em .055em;
+  border-radius: .16em;
+  color: #f8faf8;
+  background: #080b09;
+  box-shadow: 0 .04em .16em rgb(0 0 0 / 38%), inset 0 0 0 1px rgb(255 255 255 / 7%);
+}
+
+@media (max-width: 700px) {
+  .remote-server-number {
+    width: clamp(70px, min(18vw, 14dvh), 108px);
+    border-radius: 18px;
+  }
+  .remote-server-number strong {
+    font-size: clamp(2.8rem, min(13vw, 10dvh), 4.8rem);
+  }
+}
+
+@media (max-height: 430px) {
+  .remote-server-number {
+    width: clamp(64px, 17dvh, 90px);
+    padding: 7px;
+    border-radius: 16px;
+  }
+  .remote-server-number span {
+    font-size: .55rem;
+  }
+  .remote-server-number strong {
+    font-size: clamp(2.5rem, 10dvh, 4rem);
+  }
+}
+
