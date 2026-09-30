@@ -31,8 +31,8 @@
       .slice(0, 8);
   }
 
-  function generateRoomCode(length = 8, randomSource) {
-    const size = Math.max(4, Math.min(8, Number(length) || 8));
+  function generateRoomCode(length = 4, randomSource) {
+    const size = Math.max(4, Math.min(8, Number(length) || 4));
     const getRandom = randomSource || (() => {
       if (!root.crypto || !root.crypto.getRandomValues) {
         throw new Error('Secure random generator unavailable.');

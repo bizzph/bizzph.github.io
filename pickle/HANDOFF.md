@@ -1,3 +1,54 @@
+# PicklePulse v45 Turnover / Handoff
+
+## v45 update - compact mobile player controls
+
+- On mobile (`max-width: 640px`), the **Swap sides** control keeps its swap icon while its text label is hidden.
+- On mobile, `.player-slot-hint` is hidden.
+- Desktop presentation remains unchanged.
+- Stylesheet cache-busting and the service-worker cache were bumped to v45.
+
+
+## v44 update - compact queue help and mobile config layout
+
+- Moved the active queue-type explanation into a native **(?)** help disclosure instead of displaying the paragraph permanently.
+- Reworked `.queue-config-card` so mobile uses a full-width Queue Type row and a compact Queue Courts row with help/reset actions alongside it.
+- The queue help opens as a small anchored popover and remains available in compact landscape layouts.
+- Cache-busting asset URLs and service-worker cache bumped to v44.
+
+## v43 update - roster and court assignment UI
+
+- Removed the roster helper copy under the Roster title.
+- Add Player input and submit button remain side-by-side on mobile.
+- Court player assignment is now tap-only in the UI; drag handles/instructions were removed.
+- Added a Randomize action to assign the four court players randomly across Team A/B and Right/Left slots.
+- Court action labels are hidden on screens up to 480px so the action row is icon-only on mobile, with aria-label/title text retained.
+- Cache-busting asset URLs and service-worker cache bumped to v43.
+
+## v42 update - roster Remove All
+
+- Added a visible **Remove All** button to the Roster Players header.
+- The action requires confirmation before deleting the roster.
+- Removing all players also clears the active queue/session references, while completed game records keep their stored player names.
+- Existing per-player add, edit, queue, voice preview, and delete controls are unchanged.
+- Cache-busting asset URLs and service-worker cache bumped to v42.
+
+---
+
+## v41 update - cleaner match toolbar
+
+- Removed the `.tool-btn.live-tool` Live Display/share button from `.game-toolbar`.
+- Live Display/share logic and other access points are unchanged.
+- Cache-busting asset URLs and service-worker cache bumped to v41.
+
+## v40 update - shorter Live Display room codes
+
+- Newly created Live Display rooms now use exactly 4-character cryptographically generated codes for faster entry and easier reading from another device.
+- Existing/restored 4-8 character room codes remain accepted so older active rooms and saved state stay compatible.
+- `?watch=` links continue to use the same room code with no change to the viewer/controller flow.
+- Cache-busting asset URLs and service-worker cache bumped to v40.
+
+---
+
 # PicklePulse v39 Turnover / Handoff
 
 

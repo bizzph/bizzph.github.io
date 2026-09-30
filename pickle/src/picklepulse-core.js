@@ -1369,7 +1369,7 @@
 
   const Engine = globalThis.PickleEngine;
   let Live = globalThis.PickleLive || null;
-  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=35';
+  const LIVE_SCRIPT_URL = 'src/live-sync.js?v=40';
   let liveLoadPromise = null;
   const Players = globalThis.PicklePlayers;
   const STORAGE_KEY = 'picklepulse-state-v1';
@@ -4427,6 +4427,26 @@ No completed games in this range.`;
         this.render();
         return;
       }
+      if (action === 'court-randomize') {
+        const courtIndex = Number(target.dataset.court);
+        const next = Players.normalizeQueue(this.state.queue, this.state.players);
+        const court = next.courts[courtIndex];
+        if (!court || court.players.length !== 4) return;
+        const shuffled = court.players.slice();
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        court.slots = shuffled;
+        court.teams = [shuffled.slice(0, 2), shuffled.slice(2, 4)];
+        this.state.queue = Players.normalizeQueue(next, this.state.players);
+        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
       if (action === 'court-new-game') {
         const courtIndex = Number(target.dataset.court);
         const court = this.state.queue.courts[courtIndex];
@@ -4864,6 +4884,19 @@ No completed games in this range.`;
         if (confirm(`Remove ${player.name} from the local player list? Completed games will keep their name.`)) {
           this.state.players = this.state.players.filter((item) => item.id !== player.id);
           this.state.queue = Players.removePlayerEverywhere(this.state.queue, player.id, this.state.players);
+          this.persist();
+          if (this.liveController) this.liveController.broadcast();
+          this.render();
+        }
+        return;
+      }
+      if (action === 'remove-all-players') {
+        const count = this.state.players.length;
+        if (!count) return;
+        if (confirm(`Remove all ${count} players from the local roster? The queue will also be cleared. Completed games will keep player names.`)) {
+          this.state.players = [];
+          this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
+          this.editingPlayerId = '';
           this.persist();
           if (this.liveController) this.liveController.broadcast();
           this.render();
@@ -5586,7 +5619,7 @@ No completed games in this range.`;
       return `
         <section class="players-view roster-view">
           <div class="section-head">
-            <div><h1>Roster</h1><p>Reusable player list for games and queue sessions.</p></div>
+            <div><h1>Roster</h1></div>
             <div>
               <button class="icon-btn" type="button" data-action="share-roster" ${this.state.players.length ? '' : 'disabled'} aria-label="Share roster code or QR" title="Share roster">${icon('share')}</button>
               <button class="icon-btn" type="button" data-action="open-roster-import" aria-label="Import roster" title="Import roster">${icon('copy')}</button>
@@ -5599,7 +5632,13 @@ No completed games in this range.`;
             <button class="icon-only" type="submit" aria-label="Add player" title="Add player">${icon('plus')}</button>
           </form>
           <section class="roster-card">
-            <header><h2>Players</h2><span>${this.state.players.length}</span></header>
+            <header>
+              <h2>Players</h2>
+              <div class="roster-header-actions">
+                <button class="roster-remove-all" type="button" data-action="remove-all-players" ${this.state.players.length ? '' : 'disabled'} aria-label="Remove all players" title="Remove all players">${icon('trash')} Remove All</button>
+                <span class="roster-count">${this.state.players.length}</span>
+              </div>
+            </header>
             ${this.state.players.length ? `<div class="roster-list">${this.state.players.map((player) => `
               <article class="roster-row">
                 <span class="player-avatar">${escapeHtml(player.name.slice(0, 1).toUpperCase())}</span>
@@ -5644,21 +5683,22 @@ No completed games in this range.`;
           <div class="court-player-list" aria-label="Court ${index + 1} players">
             ${court.players.map((id) => {
               const selected = selectedId === id;
-              return `<button type="button" class="court-player-chip ${selected ? 'is-selected' : ''}" draggable="true" data-action="court-select-player" data-court="${index}" data-player="${escapeHtml(id)}" data-court-drag-player="${escapeHtml(id)}" aria-pressed="${selected}" aria-label="${escapeHtml(this.playerName(id))}, ${escapeHtml(positionFor(id))}. Select to assign team and side"><span class="court-player-chip-grip">${icon('grip')}</span><span><b>${escapeHtml(this.playerName(id))}</b><small>${escapeHtml(positionFor(id))}</small></span></button>`;
+              return `<button type="button" class="court-player-chip ${selected ? 'is-selected' : ''}" data-action="court-select-player" data-court="${index}" data-player="${escapeHtml(id)}" aria-pressed="${selected}" aria-label="${escapeHtml(this.playerName(id))}, ${escapeHtml(positionFor(id))}. Select to assign team and side"><span><b>${escapeHtml(this.playerName(id))}</b><small>${escapeHtml(positionFor(id))}</small></span></button>`;
             }).join('')}
           </div>
-          <div class="court-assign-hint"><span>${icon('swap')}</span><span>${selectedId ? `Now choose a side for ${escapeHtml(this.playerName(selectedId))}` : 'Tap a player, then a side · or drag a player into a side'}</span></div>
+          <div class="court-assign-hint"><span>${icon('swap')}</span><span>${selectedId ? `Now choose a side for ${escapeHtml(this.playerName(selectedId))}` : 'Tap a player, then a side'}</span></div>
           <div class="court-position-grid" aria-label="Assign Court ${index + 1} team and starting side">
             ${slots.map((id, slot) => {
               const team = slot < 2 ? 'A' : 'B';
               const side = slot % 2 === 0 ? 'Right' : 'Left';
-              return `<button type="button" class="court-position-slot ${id ? 'has-player' : ''} ${this.courtDropSlot === slot && this.draggedCourtIndex === index ? 'is-drop-target' : ''}" data-action="court-assign-slot" data-court="${index}" data-slot="${slot}" data-court-slot="${slot}" aria-label="Team ${team} ${side}${id ? `, ${escapeHtml(this.playerName(id))}` : ', empty'}"><span class="court-position-label"><b>Team ${team}</b><small>${side}</small></span><span class="court-position-player">${id ? escapeHtml(this.playerName(id)) : 'Drop / tap'}</span></button>`;
+              return `<button type="button" class="court-position-slot ${id ? 'has-player' : ''}" data-action="court-assign-slot" data-court="${index}" data-slot="${slot}" aria-label="Team ${team} ${side}${id ? `, ${escapeHtml(this.playerName(id))}` : ', empty'}"><span class="court-position-label"><b>Team ${team}</b><small>${side}</small></span><span class="court-position-player">${id ? escapeHtml(this.playerName(id)) : 'Tap to assign'}</span></button>`;
             }).join('')}
           </div>
           <div class="court-actions court-assignment-actions">
-            <button type="button" class="court-new-game" data-action="court-new-game" data-court="${index}" ${complete ? '' : 'disabled'}>${icon('play')} New game</button>
-            <button type="button" class="court-done" data-action="court-done" data-court="${index}">${icon('check')} Done</button>
-            <button type="button" class="court-cancel" data-action="court-cancel" data-court="${index}">${icon('x')} Cancel</button>
+            <button type="button" class="court-randomize" data-action="court-randomize" data-court="${index}" aria-label="Randomly assign all four players" title="Randomize teams and sides">${icon('swap')}<span class="court-action-label">Randomize</span></button>
+            <button type="button" class="court-new-game" data-action="court-new-game" data-court="${index}" ${complete ? '' : 'disabled'} aria-label="New game" title="New game">${icon('play')}<span class="court-action-label">New game</span></button>
+            <button type="button" class="court-done" data-action="court-done" data-court="${index}" aria-label="Done" title="Done">${icon('check')}<span class="court-action-label">Done</span></button>
+            <button type="button" class="court-cancel" data-action="court-cancel" data-court="${index}" aria-label="Cancel" title="Cancel">${icon('x')}<span class="court-action-label">Cancel</span></button>
           </div>
         </article>
       `;
@@ -5684,13 +5724,16 @@ No completed games in this range.`;
               <option value="winners-split" ${queue.queueType === 'winners-split' ? 'selected' : ''}>Winners Stay + Split</option>
             </select></label>
             <label><span>Queue courts</span><select id="queue-court-count" aria-label="Number of courts used for queueing">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${queue.courtCount === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
-            <p class="queue-type-help">${queue.queueType === 'fifo'
-              ? 'Strict paddle-rack order: the next four waiting go on, and completed players return to the back.'
-              : queue.queueType === 'social'
-                ? 'Fair-play priority, but the next groups can reach slightly deeper in line to reduce repeat player combinations.'
-                : queue.queueType === 'winners-split'
-                  ? 'On scored games, the winning pair stays but splits onto opposite teams; the next two waiting join them. Queue-only courts without a recorded result rotate all four off.'
-                  : 'Fewest queue turns first, then longest waiting. This is the existing PicklePulse fair-rotation behavior.'}</p>
+            <details class="queue-type-help">
+              <summary aria-label="Queue type help" title="Queue type help">?</summary>
+              <div class="queue-type-help-popover">${queue.queueType === 'fifo'
+                ? 'Strict paddle-rack order: the next four waiting go on, and completed players return to the back.'
+                : queue.queueType === 'social'
+                  ? 'Fair-play priority, but the next groups can reach slightly deeper in line to reduce repeat player combinations.'
+                  : queue.queueType === 'winners-split'
+                    ? 'On scored games, the winning pair stays but splits onto opposite teams; the next two waiting join them. Queue-only courts without a recorded result rotate all four off.'
+                    : 'Fewest queue turns first, then longest waiting. This is the existing PicklePulse fair-rotation behavior.'}</div>
+            </details>
             <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
           </section>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
@@ -5911,7 +5954,6 @@ No completed games in this range.`;
               <button class="tool-btn ${settings.watchScoreboardSwapped ? 'active' : ''}" type="button" data-action="swap-watch-scoreboard" aria-label="Swap live display scoreboard sides" title="Swap ?watch= scoreboard">${icon('displaySwap')}</button>
               <button class="tool-btn ${serverFocused ? 'active' : ''}" type="button" data-action="toggle-server-focus" aria-label="${serverFocused ? 'Make scoreboard large' : 'Make current server large'}" title="${serverFocused ? 'Scoreboard focus' : 'Current server focus'}">${icon('serverFocus')}</button>
               <button class="tool-btn" type="button" data-action="reset-game" ${game.status === 'complete' ? 'disabled' : ''} aria-label="Reset game" title="Reset game">${icon('reset')}</button>
-              <button class="tool-btn live-tool ${this.liveController ? 'active' : ''}" type="button" data-action="share" aria-label="${this.liveController ? `Share live room ${escapeHtml(this.live.room)}` : 'Start or share live display'}" title="${this.liveController ? `Room ${escapeHtml(this.live.room)}` : 'Live'}">${icon('radio')}</button>
               ${game.status === 'complete'
                 ? `<button class="tool-btn" type="button" data-action="new" aria-label="New game" title="New game">${icon('plus')}</button>`
                 : `<button class="tool-btn" type="button" data-action="end" aria-label="End game" title="End game">${icon('trophy')}</button>`}
