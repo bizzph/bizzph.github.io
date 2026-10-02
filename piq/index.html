@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14251d">
+  <title>Pickleball Queue</title>
+  <meta name="description" content="Live pickleball open-play queue and court board.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="ball" aria-hidden="true">●</span><span>Pickleball Queue</span></div>
+    <div id="connection" class="connection">Not connected</div>
+  </header>
+
+  <main class="shell">
+    <section id="setup" class="panel setup-panel" hidden>
+      <h1>Connect your queue</h1>
+      <p>This static app runs on GitHub Pages. Enter the WordPress site that has the Pickleball Queue plugin installed.</p>
+      <form id="backend-form" class="stack">
+        <label>WordPress site URL<input id="backend-url" type="url" required placeholder="https://example.com"></label>
+        <button class="btn primary">Save backend</button>
+      </form>
+      <p class="small">You only do this once on each device. The URL is stored in this browser.</p>
+    </section>
+
+    <section id="session-entry" class="panel hero">
+      <div>
+        <p class="eyebrow">OPEN PLAY</p>
+        <h1>Know when you’re up.</h1>
+        <p class="lede">Join the live queue, see every court, and follow the rotation without crowding around a paddle rack.</p>
+      </div>
+      <form id="session-form" class="join-code">
+        <label>Session code<input id="session-code" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="ABC123" required></label>
+        <button class="btn primary">Open queue</button>
+      </form>
+    </section>
+
+    <section id="live" hidden>
+      <div class="session-head">
+        <div><p class="eyebrow" id="session-mode"></p><h1 id="session-name"></h1><p id="session-meta" class="muted"></p></div>
+        <div class="head-actions"><button id="change-session" class="btn ghost">Change session</button><button id="join-toggle" class="btn primary">Join queue</button></div>
+      </div>
+
+      <div id="my-card" class="panel my-card" hidden></div>
+
+      <div class="stats-row">
+        <div class="stat"><span id="stat-waiting" class="big">0</span><span>waiting</span></div>
+        <div class="stat"><span id="stat-courts" class="big">0</span><span>courts</span></div>
+        <div class="stat"><span id="stat-estimate" class="big">0m</span><span>new-player wait</span></div>
+      </div>
+
+      <section class="section-block"><div class="section-title"><h2>Courts</h2><span class="muted">Live</span></div><div id="courts" class="courts"></div></section>
+      <section class="section-block"><div class="section-title"><h2>Queue</h2><span id="last-updated" class="muted"></span></div><div id="queue-notices"></div><div id="queue" class="queue"></div></section>
+    </section>
+  </main>
+
+  <dialog id="join-dialog">
+    <form id="join-form" method="dialog" class="dialog-card">
+      <button type="button" class="icon-close" id="close-join" aria-label="Close">×</button>
+      <p class="eyebrow">JOIN OPEN PLAY</p><h2>Add your paddle</h2>
+      <label>Name or nickname<input name="name" maxlength="40" required autocomplete="name"></label>
+      <label>Skill level<select name="skill" id="skill-select"></select></label>
+      <p class="small">Use the level your organizer expects. It helps balanced mode create closer games.</p>
+      <button class="btn primary wide">Join queue</button>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
