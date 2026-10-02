@@ -1,9 +1,0 @@
-{
-  "name": "Pickleball Queue",
-  "short_name": "PB Queue",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#f4f6f1",
-  "theme_color": "#14251d",
-  "icons": []
-}

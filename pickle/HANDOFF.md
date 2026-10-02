@@ -1,3 +1,79 @@
+# PicklePulse v49 Turnover / Handoff
+
+## v49 fix - fresh court assignment after Done -> Fill Court
+
+- Fixed a recycled court appearing with Team A / Team B positions already selected after recording **Done** and then pressing **Fill court**.
+- Court fill now dispatches only the four players. It always initializes `teams` and `slots` empty so team/side assignment starts fresh on every fill.
+- Winners Stay + Split still pins the recorded winners to their completed physical court and selects the next two eligible challengers; the queue no longer writes that suggested split into the visible team/position state.
+- Both single-court and Fill Courts actions now defensively clear transient selected-player/result-panel state before rerendering.
+- Core/style cache-busting and the service-worker cache were bumped to v49.
+
+## v49 validation
+
+- Core JavaScript syntax: PASS.
+- Done -> quick result -> Fill Court fresh-team-state regression: PASS.
+- Winners Stay + Split same-court player dispatch remains intact: PASS.
+- Service-worker/cache version check: PASS.
+
+
+# PicklePulse v48 Turnover / Handoff
+
+## v48 update - quick result score defaults
+
+- Unassigned-court quick result forms now default **Winner score** to `11` and **Opponent score** to `0`.
+- Values remain editable before saving.
+- Core/style cache-busting and the service-worker cache were bumped to v48 so installed copies receive the update.
+
+## v48 validation
+
+- Core JavaScript syntax: PASS.
+- Winner score default render check (`11`): PASS.
+- Opponent score default render check (`0`): PASS.
+
+
+# PicklePulse v47 Turnover / Handoff
+
+## v47 update - queue controls, court reveal, and rotation correctness
+
+- Queue **New Session** now uses the delete/trash SVG instead of the reset/refresh SVG.
+- Added a one-step **Undo** button on the Queue page. It restores the previous queue state for queue edits/fills/cancels/session reset; when undoing a quick **Done** result it also removes that just-created completed game so Standings roll back with it.
+- Court Team A/B + Right/Left `.court-position-grid` is hidden initially. It opens only after the manager taps a player on that court, then remains available while assigning that court.
+- Open `.court-card.is-open` cards now have their own **Fill court** action. On mobile its text label is hidden and only the play icon remains.
+- Player names are normalized so the first character is capitalized when added/imported/loaded.
+- Queue rotation behavior was re-audited against current open-play guidance:
+  - **Paddle Stack / FIFO** remains strict queue order; all four rotate off and rejoin at the back. Wins/standings do not reorder the rack.
+  - **Fair Play** uses fewest session court turns first, then longest waiting; overall win/loss standings do not change queue priority.
+  - **Social Mix** keeps Fair Play eligibility first and uses repeat-combination history only within otherwise eligible players.
+  - **Winners Stay + Split** now records incumbents per physical court, reserves those winners from other court fills, splits the two winners onto opposite teams, and pulls the next two eligible waiting players into that same court. This fixes multi-court winner routing.
+- Winners Stay + Split quick-result courts now auto-carry the split teams into the next court assignment, so the next scored result can use Team A / Team B directly.
+- Root state schema bumped to **v10** for the per-court winners state and persisted Queue Undo checkpoint.
+- Stylesheet/core cache-busting and the service-worker cache were bumped to v47.
+
+## v47 validation
+
+- Core JavaScript syntax: PASS.
+- FIFO rack-order + all-four-to-back regression: PASS.
+- Fair Play fewest-turn priority regression: PASS.
+- Winners Stay + Split same-court winner pinning and opposite-team split: PASS.
+- Winners Stay + Split multi-court winner isolation: PASS.
+- Challenge court fill priority over unrelated open courts when only enough challengers exist for one court: PASS.
+- Court-position grid hidden-before-player-tap render check: PASS.
+- Per-court Fill court render check: PASS.
+- Player first-letter capitalization regression: PASS.
+
+
+# PicklePulse v46 Turnover / Handoff
+
+## v46 update - quick court results from Done
+
+- Clicking **Done** on an occupied queue court now opens a result overlay inside that `.court-card` instead of immediately clearing the court.
+- If all four `.court-position-grid` slots were assigned, the manager selects **Team A** or **Team B** as the winner and enters both team scores.
+- If team/side positions were not fully assigned, the position grid is disregarded for the result: the manager selects exactly **two winning players** from a 2x2 player grid, and the other two players become the opposing team.
+- **OK** saves a completed doubles game into Games, updates Standings through the existing completed-game calculation, records queue fairness/pairing completion, and supports Winners Stay + Split using the recorded winners.
+- **Cancel** closes the result overlay without changing the court or queue.
+- Stylesheet/core cache-busting and the service-worker cache were bumped to v46.
+
+
 # PicklePulse v45 Turnover / Handoff
 
 ## v45 update - compact mobile player controls

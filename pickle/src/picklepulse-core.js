@@ -506,7 +506,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 9;
+  const ROOT_SCHEMA_VERSION = 10;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -516,7 +516,8 @@
   }
 
   function cleanName(value) {
-    return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    const clean = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    return clean ? `${clean.charAt(0).toLocaleUpperCase()}${clean.slice(1)}` : '';
   }
 
   function cleanPronunciation(value) {
@@ -703,6 +704,16 @@
     const challengeWinners = queueType === 'winners-split'
       ? safe(source.challengeWinners, 2).filter((id) => waiting.includes(id))
       : [];
+    const sourceByCourt = source.challengeWinnersByCourt && typeof source.challengeWinnersByCourt === 'object'
+      ? source.challengeWinnersByCourt
+      : {};
+    const challengeWinnersByCourt = {};
+    if (queueType === 'winners-split') {
+      courts.forEach((court) => {
+        const winners = safe(sourceByCourt[court.id], 2).filter((id) => waiting.includes(id));
+        if (winners.length === 2) challengeWinnersByCourt[court.id] = winners;
+      });
+    }
     const next = {
       waiting,
       pending,
@@ -712,6 +723,7 @@
       courtCount,
       queueType,
       challengeWinners,
+      challengeWinnersByCourt,
       courts,
       stats,
       pairCounts: normalizeCountMap(source.pairCounts),
@@ -719,7 +731,16 @@
       sequence,
       sessionSeed: String(source.sessionSeed || makeId('queue')).slice(0, 120)
     };
-    const challengeRank = new Map(next.challengeWinners.map((id, index) => [id, index]));
+    const challengeRank = new Map();
+    let challengeIndex = 0;
+    next.challengeWinners.forEach((id) => {
+      if (!challengeRank.has(id)) challengeRank.set(id, challengeIndex++);
+    });
+    next.courts.forEach((court) => {
+      (next.challengeWinnersByCourt[court.id] || []).forEach((id) => {
+        if (!challengeRank.has(id)) challengeRank.set(id, challengeIndex++);
+      });
+    });
     next.waiting.sort((a, b) => {
       if (next.queueType === 'winners-split') {
         const aRank = challengeRank.has(a) ? challengeRank.get(a) : Number.MAX_SAFE_INTEGER;
@@ -739,17 +760,18 @@
     });
     if (next.pending.length) {
       const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
+      const courtIncumbents = new Set(Object.values(next.challengeWinnersByCourt || {}).flat());
       if (next.queueType === 'winners-split' && next.challengeWinners.length === 2) {
         const winners = next.challengeWinners.filter((id) => eligible.includes(id));
-        const newcomers = eligible.filter((id) => !winners.includes(id)).slice(0, 2);
+        const newcomers = eligible.filter((id) => !winners.includes(id) && !courtIncumbents.has(id)).slice(0, 2);
         next.pending = winners.length === 2 && newcomers.length === 2
           ? [winners[0], newcomers[0], winners[1], newcomers[1]]
-          : (eligible.length >= 4 ? eligible.slice(0, 4) : []);
+          : eligible.filter((id) => !courtIncumbents.has(id)).slice(0, 4);
       } else if (next.queueType === 'social') {
         const group = selectedQueueGroups(next)[0] || [];
         next.pending = group.length === 4 ? group : [];
       } else {
-        next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+        next.pending = eligible.filter((id) => !courtIncumbents.has(id)).slice(0, 4);
       }
     }
     return next;
@@ -770,44 +792,97 @@
     return chooseCourtGroup(next, window);
   }
 
-  function selectedQueueGroups(queue) {
+  function selectedQueueAssignments(queue, requestedCourtIndex = null) {
     const next = queue && typeof queue === 'object' ? queue : {};
     const batchSize = nextQueueBatchSize(next);
     if (!batchSize) return [];
     const deferred = new Set(Array.isArray(next.deferred) ? next.deferred : []);
     const eligible = (Array.isArray(next.waiting) ? next.waiting : []).filter((id) => !deferred.has(id));
-    const groupCount = Math.floor(batchSize / 4);
-    if (!groupCount) return [];
+    const maxGroups = Math.floor(batchSize / 4);
+    if (!maxGroups) return [];
 
-    if (normalizeQueueType(next.queueType) === 'social') {
-      const groups = [];
-      let remaining = eligible.slice();
-      for (let index = 0; index < groupCount && remaining.length >= 4; index += 1) {
-        const group = socialGroup(next, remaining);
-        if (group.length !== 4) break;
-        groups.push(group);
+    const courts = Array.isArray(next.courts) ? next.courts : [];
+    let courtIndexes = courts.map((court, index) => court && Array.isArray(court.players) && !court.players.length ? index : -1).filter((index) => index >= 0);
+    if (requestedCourtIndex !== null && requestedCourtIndex !== undefined && Number.isInteger(Number(requestedCourtIndex))) {
+      const index = Number(requestedCourtIndex);
+      courtIndexes = courtIndexes.includes(index) ? [index] : [];
+    } else if (!courtIndexes.length) {
+      // Keep next-up previews / Score Next 4 useful even when every queue court is occupied.
+      courtIndexes = [-1];
+    }
+    if (!courtIndexes.length) return [];
+
+    const mode = normalizeQueueType(next.queueType);
+    const byCourt = next.challengeWinnersByCourt && typeof next.challengeWinnersByCourt === 'object'
+      ? next.challengeWinnersByCourt
+      : {};
+    const globalWinners = mode === 'winners-split' && Array.isArray(next.challengeWinners)
+      ? next.challengeWinners.filter((id) => eligible.includes(id)).slice(0, 2)
+      : [];
+    const courtWinnerIds = new Set(Object.values(byCourt).flat().filter((id) => eligible.includes(id)));
+    const reservedWinnerIds = new Set([...courtWinnerIds, ...globalWinners]);
+
+    if (mode === 'winners-split' && requestedCourtIndex == null) {
+      // A completed court with incumbents gets first claim on challengers so "stay" really means stay.
+      courtIndexes.sort((a, b) => {
+        const aCourt = a >= 0 ? courts[a] : null;
+        const bCourt = b >= 0 ? courts[b] : null;
+        const aPinned = aCourt && Array.isArray(byCourt[aCourt.id]) && byCourt[aCourt.id].length === 2 ? 0 : 1;
+        const bPinned = bCourt && Array.isArray(byCourt[bCourt.id]) && byCourt[bCourt.id].length === 2 ? 0 : 1;
+        return aPinned - bPinned || a - b;
+      });
+    }
+
+    const assignments = [];
+    let remaining = eligible.slice();
+    let globalUsed = false;
+
+    for (const courtIndex of courtIndexes) {
+      if (assignments.length >= maxGroups) break;
+      const court = courtIndex >= 0 ? courts[courtIndex] : null;
+      const courtId = court ? String(court.id || `court-${courtIndex + 1}`) : '';
+      let winners = mode === 'winners-split' && courtId && Array.isArray(byCourt[courtId])
+        ? byCourt[courtId].filter((id) => remaining.includes(id)).slice(0, 2)
+        : [];
+      let winnerSource = winners.length === 2 ? 'court' : '';
+
+      if (mode === 'winners-split' && winners.length !== 2 && !globalUsed && globalWinners.length === 2
+        && globalWinners.every((id) => remaining.includes(id))) {
+        winners = globalWinners.slice();
+        winnerSource = 'global';
+      }
+
+      if (mode === 'winners-split' && winners.length === 2) {
+        const challengers = remaining
+          .filter((id) => !winners.includes(id) && !reservedWinnerIds.has(id))
+          .slice(0, 2);
+        if (challengers.length < 2) continue;
+        const group = [winners[0], challengers[0], winners[1], challengers[1]];
+        assignments.push({ courtIndex, group, teams: [[group[0], group[1]], [group[2], group[3]]], winnerSource });
         remaining = remaining.filter((id) => !group.includes(id));
+        if (winnerSource === 'global') globalUsed = true;
+        continue;
       }
-      return groups;
+
+      const candidates = mode === 'winners-split'
+        ? remaining.filter((id) => !reservedWinnerIds.has(id))
+        : remaining.slice();
+      if (candidates.length < 4) continue;
+      const group = mode === 'social' ? socialGroup(next, candidates) : candidates.slice(0, 4);
+      if (group.length !== 4) continue;
+      assignments.push({ courtIndex, group, teams: [[], []], winnerSource: '' });
+      remaining = remaining.filter((id) => !group.includes(id));
     }
 
-    if (normalizeQueueType(next.queueType) === 'winners-split' && Array.isArray(next.challengeWinners) && next.challengeWinners.length === 2) {
-      const winners = next.challengeWinners.filter((id) => eligible.includes(id));
-      const newcomers = eligible.filter((id) => !winners.includes(id));
-      const groups = [];
-      if (winners.length === 2 && newcomers.length >= 2) {
-        groups.push([winners[0], newcomers[0], winners[1], newcomers[1]]);
-        const used = new Set(groups[0]);
-        const rest = eligible.filter((id) => !used.has(id));
-        for (let index = 1; index < groupCount; index += 1) {
-          const group = rest.slice((index - 1) * 4, index * 4);
-          if (group.length === 4) groups.push(group);
-        }
-        return groups;
-      }
-    }
+    return assignments;
+  }
 
-    return Array.from({ length: groupCount }, (_, index) => eligible.slice(index * 4, index * 4 + 4)).filter((group) => group.length === 4);
+  function selectedQueueGroups(queue) {
+    return selectedQueueAssignments(queue).map((assignment) => assignment.group);
+  }
+
+  function canFillCourt(queue, courtIndex) {
+    return selectedQueueAssignments(queue, Number(courtIndex)).length > 0;
   }
 
   function nextQueueBatchPlayers(queue) {
@@ -951,17 +1026,19 @@
   function prepareNextFour(queue, players) {
     const next = normalizeQueue(queue, players);
     const eligible = next.waiting.filter((id) => !next.deferred.includes(id));
+    const courtIncumbents = new Set(Object.values(next.challengeWinnersByCourt || {}).flat());
+    const available = eligible.filter((id) => !courtIncumbents.has(id));
     if (next.queueType === 'winners-split' && next.challengeWinners.length === 2) {
-      const winners = next.challengeWinners.filter((id) => eligible.includes(id));
-      const newcomers = eligible.filter((id) => !winners.includes(id)).slice(0, 2);
+      const winners = next.challengeWinners.filter((id) => available.includes(id));
+      const newcomers = available.filter((id) => !winners.includes(id)).slice(0, 2);
       next.pending = winners.length === 2 && newcomers.length === 2
         ? [winners[0], newcomers[0], winners[1], newcomers[1]]
-        : (eligible.length >= 4 ? eligible.slice(0, 4) : []);
+        : (available.length >= 4 ? available.slice(0, 4) : []);
     } else if (next.queueType === 'social') {
-      const group = selectedQueueGroups({ ...next, courts: [{ id: 'court-1', players: [] }] })[0] || [];
+      const group = available.length >= 4 ? socialGroup(next, available) : [];
       next.pending = group.length === 4 ? group : [];
     } else {
-      next.pending = eligible.length >= 4 ? eligible.slice(0, 4) : [];
+      next.pending = available.length >= 4 ? available.slice(0, 4) : [];
     }
     return next;
   }
@@ -1033,6 +1110,7 @@
     next.queueType = queueType;
     next.pending = [];
     next.challengeWinners = [];
+    next.challengeWinnersByCourt = {};
     return normalizeQueue(next, players);
   }
 
@@ -1065,25 +1143,45 @@
     next.deferred = next.deferred.filter((id) => next.waiting.indexOf(id) > frontier);
   }
 
-  function fillOpenCourts(queue, players, now = Date.now()) {
-    const next = normalizeQueue(queue, players);
-    const openIndexes = next.courts.map((court, index) => court.players.length ? -1 : index).filter((index) => index >= 0);
-    const groups = selectedQueueGroups(next).slice(0, openIndexes.length);
-    if (!groups.length) return next;
-    const selected = groups.flat();
+  function applyQueueAssignments(next, assignments, players, now = Date.now()) {
+    const valid = (Array.isArray(assignments) ? assignments : []).filter((assignment) => assignment && assignment.group && assignment.group.length === 4);
+    if (!valid.length) return next;
+    const selected = valid.flatMap((assignment) => assignment.group);
     consumeDeferralsPassedByDispatch(next, selected);
     next.waiting = next.waiting.filter((id) => !selected.includes(id));
-    groups.forEach((group, i) => {
-      next.courts[openIndexes[i]] = {
-        id: `court-${openIndexes[i] + 1}`,
-        players: group,
+
+    valid.forEach((assignment) => {
+      const index = Number(assignment.courtIndex);
+      if (!Number.isInteger(index) || index < 0 || index >= next.courts.length) return;
+      // Filling a court should only dispatch players. Team/side assignment is a
+      // manager action, so a recycled court must never reopen with stale or
+      // queue-suggested selections already applied.
+      next.courts[index] = {
+        id: `court-${index + 1}`,
+        players: assignment.group.slice(),
         teams: [[], []],
         slots: ['', '', '', ''],
         assignedAt: now
       };
+      if (next.challengeWinnersByCourt) delete next.challengeWinnersByCourt[`court-${index + 1}`];
+      if (assignment.winnerSource === 'global') next.challengeWinners = [];
     });
     next.pending = [];
     return normalizeQueue(next, players);
+  }
+
+  function fillOpenCourts(queue, players, now = Date.now()) {
+    const next = normalizeQueue(queue, players);
+    return applyQueueAssignments(next, selectedQueueAssignments(next), players, now);
+  }
+
+  function fillCourt(queue, courtIndex, players, now = Date.now()) {
+    const next = normalizeQueue(queue, players);
+    const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
+    const court = next.courts[index];
+    if (!court || court.players.length) return next;
+    const assignments = selectedQueueAssignments(next, index);
+    return applyQueueAssignments(next, assignments, players, now);
   }
 
   function assignCourtSlot(queue, courtIndex, playerId, slotIndex, players) {
@@ -1145,13 +1243,38 @@
     }
   }
 
-  function completeCourt(queue, courtIndex, players, now = Date.now()) {
+  function completeCourt(queue, courtIndex, players, now = Date.now(), completedGame = null) {
     const next = normalizeQueue(queue, players);
     const index = Math.max(0, Math.min(next.courts.length - 1, Number(courtIndex) || 0));
     const court = next.courts[index];
     if (!court || court.players.length !== 4) return next;
-    if (next.queueType === 'winners-split' && next.challengeWinners.some((id) => court.players.includes(id))) next.challengeWinners = [];
-    recordCompletedGroup(next, court.players, court.teams, now);
+
+    const gameTeams = completedGame && Array.isArray(completedGame.teams) && completedGame.teams.length === 2
+      ? completedGame.teams.map((team) => (Array.isArray(team && team.playerIds) ? team.playerIds : [])
+        .map(String)
+        .filter((id) => court.players.includes(id))
+        .slice(0, 2))
+      : [[], []];
+    const hasScoredTeams = gameTeams[0].length === 2 && gameTeams[1].length === 2
+      && samePlayers([...gameTeams[0], ...gameTeams[1]], court.players);
+    const rotationTeams = hasScoredTeams ? gameTeams : court.teams;
+
+    if (next.queueType === 'winners-split') {
+      if (next.challengeWinners.some((id) => court.players.includes(id))) next.challengeWinners = [];
+      if (!next.challengeWinnersByCourt || typeof next.challengeWinnersByCourt !== 'object') next.challengeWinnersByCourt = {};
+      delete next.challengeWinnersByCourt[court.id];
+    }
+    recordCompletedGroup(next, court.players, rotationTeams, now);
+
+    if (next.queueType === 'winners-split' && completedGame && Array.isArray(completedGame.teams) && completedGame.teams.length === 2) {
+      const scores = completedGame.teams.map((team) => Number(team && team.score) || 0);
+      if (scores[0] !== scores[1]) {
+        const winnerIndex = scores[0] > scores[1] ? 0 : 1;
+        const winners = gameTeams[winnerIndex] || [];
+        if (winners.length === 2) next.challengeWinnersByCourt[court.id] = winners.slice();
+      }
+    }
+
     next.courts[index] = { id: `court-${index + 1}`, players: [], teams: [[], []], slots: ['', '', '', ''], assignedAt: 0 };
     next.pending = [];
     return normalizeQueue(next, players);
@@ -1343,12 +1466,14 @@
     reorderQueue,
     nextQueueBatchSize,
     nextQueueBatchPlayers,
+    canFillCourt,
     toggleDeferNext,
     prepareNextFour,
     cancelPending,
     setQueueType,
     setCourtCount,
     fillOpenCourts,
+    fillCourt,
     assignCourtSlot,
     startCourtGame,
     completeCourt,
@@ -1914,6 +2039,8 @@
       this.queuePointerId = null;
       this.courtGameDraft = null;
       this.selectedCourtPlayer = { court: -1, id: '' };
+      this.openCourtPositionIndex = -1;
+      this.courtResultCourtIndex = -1;
       this.draggedCourtPlayerId = '';
       this.draggedCourtIndex = -1;
       this.courtDropSlot = -1;
@@ -2026,6 +2153,7 @@
         players: fallbackPlayers,
         queue: Players.normalizeQueue({}, fallbackPlayers),
         queueCompletionCheckpoint: null,
+        queueUndoCheckpoint: null,
         settings: normalizeSettings(DEFAULT_SETTINGS),
         liveRoom: '',
         lastSavedAt: null,
@@ -2053,6 +2181,15 @@
             queue: Players.normalizeQueue(rawCheckpoint.queue, players)
           };
         }
+        let queueUndoCheckpoint = null;
+        const rawUndo = parsed.queueUndoCheckpoint;
+        if (rawUndo && typeof rawUndo === 'object' && rawUndo.queue) {
+          queueUndoCheckpoint = {
+            label: String(rawUndo.label || 'Queue change').slice(0, 80),
+            queue: Players.normalizeQueue(rawUndo.queue, players),
+            createdGameId: String(rawUndo.createdGameId || '')
+          };
+        }
         return {
           schemaVersion: Players.ROOT_SCHEMA_VERSION,
           currentGame,
@@ -2060,6 +2197,7 @@
           players,
           queue: Players.normalizeQueue(parsed.queue, players),
           queueCompletionCheckpoint,
+          queueUndoCheckpoint,
           settings: normalizeSettings(parsed.settings),
           liveRoom: normalizeRoomCode(parsed.liveRoom),
           lastSavedAt: parsed.lastSavedAt || null,
@@ -3384,6 +3522,38 @@ No completed games in this range.`;
       }, 2600);
     }
 
+    checkpointQueueUndo(label, queueSnapshot = null) {
+      const source = queueSnapshot || this.state.queue;
+      this.state.queueUndoCheckpoint = {
+        label: String(label || 'Queue change').slice(0, 80),
+        queue: JSON.parse(JSON.stringify(source)),
+        createdGameId: ''
+      };
+    }
+
+    markQueueUndoCreatedGame(gameId) {
+      if (!this.state.queueUndoCheckpoint) return;
+      this.state.queueUndoCheckpoint.createdGameId = String(gameId || '');
+    }
+
+    undoQueueAction() {
+      const checkpoint = this.state.queueUndoCheckpoint;
+      if (!checkpoint || !checkpoint.queue) return false;
+      this.state.queue = Players.normalizeQueue(checkpoint.queue, this.state.players);
+      if (checkpoint.createdGameId) this.removeHistoryGame(checkpoint.createdGameId);
+      const label = checkpoint.label || 'Queue change';
+      this.state.queueUndoCheckpoint = null;
+      this.courtGameDraft = null;
+      this.selectedCourtPlayer = { court: -1, id: '' };
+      this.openCourtPositionIndex = -1;
+      this.courtResultCourtIndex = -1;
+      this.persist();
+      if (this.liveController) this.liveController.broadcast();
+      this.render();
+      this.showToast(`Undid ${label.toLocaleLowerCase()}`);
+      return true;
+    }
+
     removeHistoryGame(gameId) {
       const id = String(gameId || '');
       if (!id) return;
@@ -3418,6 +3588,7 @@ No completed games in this range.`;
           this.state.queueCompletionCheckpoint = null;
         }
         this.state.queue = Players.finishQueuedGame(this.state.queue, normalizedNext.id, this.state.players, normalizedNext);
+        this.state.queueUndoCheckpoint = null;
       } else if (reopenedNow) {
         this.removeHistoryGame(normalizedNext.id);
         const checkpoint = this.state.queueCompletionCheckpoint;
@@ -3818,6 +3989,102 @@ No completed games in this range.`;
         return;
       }
 
+      if (form.id === 'court-result-form') {
+        event.preventDefault();
+        const courtIndex = Number(form.dataset.court);
+        const court = this.state.queue.courts[courtIndex];
+        if (!court || court.players.length !== 4) {
+          this.courtResultCourtIndex = -1;
+          this.render();
+          return;
+        }
+
+        const data = new FormData(form);
+        const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4).map(String) : [];
+        const assignedTeams = slots.length === 4 && slots.every(Boolean) && new Set(slots).size === 4 && Players.samePlayers(slots, court.players);
+        let teamAIds = [];
+        let teamBIds = [];
+        let scoreA = 0;
+        let scoreB = 0;
+
+        if (assignedTeams) {
+          const winnerTeam = String(data.get('winnerTeam') || '');
+          if (!['A', 'B'].includes(winnerTeam)) {
+            this.showToast('Select the winning team');
+            return;
+          }
+          teamAIds = slots.slice(0, 2);
+          teamBIds = slots.slice(2, 4);
+          scoreA = Math.max(0, Math.min(999, Math.trunc(Number(data.get('scoreA')) || 0)));
+          scoreB = Math.max(0, Math.min(999, Math.trunc(Number(data.get('scoreB')) || 0)));
+          if (scoreA === scoreB || (winnerTeam === 'A' && scoreA <= scoreB) || (winnerTeam === 'B' && scoreB <= scoreA)) {
+            this.showToast('The selected winning team must have the higher score');
+            return;
+          }
+        } else {
+          const winnerIds = data.getAll('winnerPlayer').map(String).filter((id) => court.players.includes(id));
+          if (winnerIds.length !== 2 || new Set(winnerIds).size !== 2) {
+            this.showToast('Select exactly two winning players');
+            return;
+          }
+          teamAIds = winnerIds;
+          teamBIds = court.players.filter((id) => !winnerIds.includes(id));
+          scoreA = Math.max(0, Math.min(999, Math.trunc(Number(data.get('winnerScore')) || 0)));
+          scoreB = Math.max(0, Math.min(999, Math.trunc(Number(data.get('opponentScore')) || 0)));
+          if (scoreA <= scoreB) {
+            this.showToast('Winner score must be higher than opponent score');
+            return;
+          }
+        }
+
+        const selectedIds = [...teamAIds, ...teamBIds];
+        if (selectedIds.length !== 4 || new Set(selectedIds).size !== 4 || !Players.samePlayers(selectedIds, court.players)) {
+          this.showToast('Court players could not be matched');
+          return;
+        }
+
+        const now = Date.now();
+        const winningScore = Math.max(scoreA, scoreB);
+        const target = winningScore >= 21 ? 21 : winningScore >= 15 ? 15 : 11;
+        let game = Engine.createGame({
+          format: 'doubles',
+          target,
+          teamAName: '',
+          teamAPlayer1: this.playerName(teamAIds[0]),
+          teamAPlayer1Id: teamAIds[0],
+          teamAPlayer2: this.playerName(teamAIds[1]),
+          teamAPlayer2Id: teamAIds[1],
+          teamBName: '',
+          teamBPlayer1: this.playerName(teamBIds[0]),
+          teamBPlayer1Id: teamBIds[0],
+          teamBPlayer2: this.playerName(teamBIds[1]),
+          teamBPlayer2Id: teamBIds[1],
+          startingTeam: 0,
+          durationMinutes: 15,
+          now
+        });
+        game.teams[0].score = scoreA;
+        game.teams[1].score = scoreB;
+        game = Engine.endGame(game, now);
+        game.timer.elapsedMs = 0;
+        game.timer.running = false;
+        game.timer.startedAt = null;
+
+        this.checkpointQueueUndo(`record Court ${courtIndex + 1} result`);
+        this.upsertCompletedGame(game, now);
+        this.markQueueUndoCreatedGame(game.id);
+        this.state.queue = Players.completeCourt(this.state.queue, courtIndex, this.state.players, now, game);
+        this.courtResultCourtIndex = -1;
+        if (Number(this.openCourtPositionIndex) === courtIndex) this.openCourtPositionIndex = -1;
+        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
+        if (this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex) this.selectedCourtPlayer = { court: -1, id: '' };
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        this.showToast('Game saved and standings updated');
+        return;
+      }
+
       if (form.id !== 'new-game-form') return;
       event.preventDefault();
       const data = new FormData(form);
@@ -3888,6 +4155,7 @@ No completed games in this range.`;
       } else {
         this.state.queue = Players.startQueuedGame(this.state.queue, selectedIds, game.id, this.state.players);
       }
+      this.state.queueUndoCheckpoint = null;
       this.editingGame = false;
       this.showGameReset = false;
       this.view = 'game';
@@ -3934,11 +4202,13 @@ No completed games in this range.`;
         this.resetQueueDrag();
         return;
       }
+      const previousQueue = JSON.parse(JSON.stringify(this.state.queue));
       const previous = this.state.queue.waiting.join('|');
       this.state.queue = Players.reorderQueue(this.state.queue, sourceId, targetId, placeAfter, this.state.players);
       const changed = this.state.queue.waiting.join('|') !== previous;
       this.resetQueueDrag();
       if (changed) {
+        this.checkpointQueueUndo('reorder queue', previousQueue);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -3962,6 +4232,7 @@ No completed games in this range.`;
         this.resetCourtDrag();
         return;
       }
+      this.checkpointQueueUndo('court position');
       this.state.queue = Players.assignCourtSlot(this.state.queue, courtIndex, playerId, slot, this.state.players);
       if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
       this.selectedCourtPlayer = { court: -1, id: '' };
@@ -4140,23 +4411,38 @@ No completed games in this range.`;
         this.updateMiniPlayerUi();
         return;
       }
+      if (event.target.name === 'winnerPlayer') {
+        const form = event.target.closest('#court-result-form');
+        if (form) {
+          const choices = [...form.querySelectorAll('input[name="winnerPlayer"]')];
+          const checked = choices.filter((choice) => choice.checked);
+          choices.forEach((choice) => { choice.disabled = checked.length >= 2 && !choice.checked; });
+        }
+        return;
+      }
       if (event.target.name === 'format') {
         const doubles = event.target.value === 'doubles';
         this.querySelectorAll('.doubles-only').forEach((element) => { element.hidden = !doubles; });
       }
       if (event.target.id === 'queue-type') {
+        this.checkpointQueueUndo('queue type');
         this.state.queue = Players.setQueueType(this.state.queue, event.target.value, this.state.players);
         this.courtGameDraft = null;
+        this.openCourtPositionIndex = -1;
         this.selectedCourtPlayer = { court: -1, id: '' };
+        this.courtResultCourtIndex = -1;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
       if (event.target.id === 'queue-court-count') {
+        this.checkpointQueueUndo('court count');
         this.state.queue = Players.setCourtCount(this.state.queue, Number(event.target.value), this.state.players);
         this.courtGameDraft = null;
+        this.openCourtPositionIndex = -1;
         this.selectedCourtPlayer = { court: -1, id: '' };
+        this.courtResultCourtIndex = -1;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4401,6 +4687,7 @@ No completed games in this range.`;
         const court = this.state.queue.courts[courtIndex];
         if (!court || !court.players.includes(playerId)) return;
         const isSame = this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex && this.selectedCourtPlayer.id === playerId;
+        this.openCourtPositionIndex = courtIndex;
         this.selectedCourtPlayer = isSame ? { court: -1, id: '' } : { court: courtIndex, id: playerId };
         this.render();
         return;
@@ -4419,6 +4706,7 @@ No completed games in this range.`;
           }
           return;
         }
+        this.checkpointQueueUndo('court position');
         this.state.queue = Players.assignCourtSlot(this.state.queue, courtIndex, selected, slot, this.state.players);
         if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
         this.selectedCourtPlayer = { court: -1, id: '' };
@@ -4437,6 +4725,7 @@ No completed games in this range.`;
           const j = Math.floor(Math.random() * (i + 1));
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
+        this.checkpointQueueUndo('randomize court');
         court.slots = shuffled;
         court.teams = [shuffled.slice(0, 2), shuffled.slice(2, 4)];
         this.state.queue = Players.normalizeQueue(next, this.state.players);
@@ -4473,14 +4762,41 @@ No completed games in this range.`;
         return;
       }
       if (action === 'queue-defer-next') {
+        this.checkpointQueueUndo('queue skip');
         this.state.queue = Players.toggleDeferNext(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
         return;
       }
+      if (action === 'queue-undo') {
+        this.undoQueueAction();
+        return;
+      }
+      if (action === 'court-fill') {
+        const courtIndex = Number(target.dataset.court);
+        const before = JSON.stringify(this.state.queue);
+        this.checkpointQueueUndo(`fill Court ${courtIndex + 1}`);
+        this.state.queue = Players.fillCourt(this.state.queue, courtIndex, this.state.players, Date.now());
+        if (JSON.stringify(this.state.queue) === before) {
+          this.state.queueUndoCheckpoint = null;
+          this.showToast('Need enough eligible players to fill this court');
+          return;
+        }
+        this.openCourtPositionIndex = -1;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.courtResultCourtIndex = -1;
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.render();
+        return;
+      }
       if (action === 'queue-fill-courts') {
+        this.checkpointQueueUndo('fill courts');
         this.state.queue = Players.fillOpenCourts(this.state.queue, this.state.players, Date.now());
+        this.openCourtPositionIndex = -1;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.courtResultCourtIndex = -1;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4488,16 +4804,23 @@ No completed games in this range.`;
       }
       if (action === 'court-done') {
         const courtIndex = Number(target.dataset.court);
-        this.state.queue = Players.completeCourt(this.state.queue, courtIndex, this.state.players, Date.now());
-        if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
-        if (this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex) this.selectedCourtPlayer = { court: -1, id: '' };
-        this.persist();
-        if (this.liveController) this.liveController.broadcast();
+        const court = this.state.queue.courts[courtIndex];
+        if (!court || court.players.length !== 4) return;
+        this.courtResultCourtIndex = courtIndex;
+        this.selectedCourtPlayer = { court: -1, id: '' };
+        this.render();
+        return;
+      }
+      if (action === 'court-result-cancel') {
+        this.courtResultCourtIndex = -1;
         this.render();
         return;
       }
       if (action === 'court-cancel') {
         const courtIndex = Number(target.dataset.court);
+        this.checkpointQueueUndo('cancel court');
+        if (Number(this.courtResultCourtIndex) === courtIndex) this.courtResultCourtIndex = -1;
+        if (Number(this.openCourtPositionIndex) === courtIndex) this.openCourtPositionIndex = -1;
         this.state.queue = Players.cancelCourt(this.state.queue, courtIndex, this.state.players, Date.now());
         if (this.courtGameDraft && Number(this.courtGameDraft.courtIndex) === courtIndex) this.courtGameDraft = null;
         if (this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === courtIndex) this.selectedCourtPlayer = { court: -1, id: '' };
@@ -4508,9 +4831,12 @@ No completed games in this range.`;
       }
       if (action === 'queue-new-session') {
         if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Completed games and the roster stay intact.')) return;
+        this.checkpointQueueUndo('new queue session');
         this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
         this.courtGameDraft = null;
+        this.openCourtPositionIndex = -1;
         this.selectedCourtPlayer = { court: -1, id: '' };
+        this.courtResultCourtIndex = -1;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
@@ -4814,6 +5140,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'queue-add') {
+        this.checkpointQueueUndo('add player');
         this.state.queue = Players.addToQueue(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
@@ -4822,14 +5149,17 @@ No completed games in this range.`;
       }
       if (action === 'queue-add-all') {
         const before = this.state.queue.waiting.length;
+        this.checkpointQueueUndo('add all players');
         this.state.queue = Players.addAllToQueue(this.state.queue, this.state.players);
         const added = this.state.queue.waiting.length - before;
+        if (!added) this.state.queueUndoCheckpoint = null;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.showToast(added ? `${added} player${added === 1 ? '' : 's'} added to queue` : 'All players are already queued');
         return;
       }
       if (action === 'queue-remove') {
+        this.checkpointQueueUndo('remove player');
         this.state.queue = Players.removeFromQueue(this.state.queue, target.dataset.player, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
@@ -4837,6 +5167,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'queue-up' || action === 'queue-down') {
+        this.checkpointQueueUndo('move player');
         this.state.queue = Players.moveInQueue(this.state.queue, target.dataset.player, action === 'queue-up' ? -1 : 1, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
@@ -4844,8 +5175,10 @@ No completed games in this range.`;
         return;
       }
       if (action === 'prepare-next') {
+        this.checkpointQueueUndo('prepare next four');
         this.state.queue = Players.prepareNextFour(this.state.queue, this.state.players);
         if (this.state.queue.pending.length < 4) {
+          this.state.queueUndoCheckpoint = null;
           this.showToast('Add at least four players to the queue');
           return;
         }
@@ -4856,6 +5189,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'cancel-pending') {
+        this.checkpointQueueUndo('cancel next four');
         this.state.queue = Players.cancelPending(this.state.queue, this.state.players);
         this.persist();
         if (this.liveController) this.liveController.broadcast();
@@ -5032,6 +5366,7 @@ No completed games in this range.`;
         this.state.queue = nextQueue;
         this.state.currentGame = nextCurrentGame;
         this.state.queueCompletionCheckpoint = null;
+        this.state.queueUndoCheckpoint = null;
         if (payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
         if (payload.settings) this.state.settings = normalizeSettings(payload.settings);
         this.persist();
@@ -5664,9 +5999,50 @@ No completed games in this range.`;
       return `${Math.floor(minutes / 60)}h ${minutes % 60}m waiting`;
     }
 
+    renderCourtResultOverlay(court, index) {
+      if (Number(this.courtResultCourtIndex) !== index || !court || court.players.length !== 4) return '';
+      const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4).map(String) : [];
+      const assignedTeams = slots.length === 4 && slots.every(Boolean) && new Set(slots).size === 4 && Players.samePlayers(slots, court.players);
+      const scoreInput = (name, label, value = '') => `<label class="court-result-score"><span>${label}</span><input type="number" name="${name}" min="0" max="999" inputmode="numeric" value="${value}" required></label>`;
+
+      return `
+        <form id="court-result-form" class="court-result-overlay" data-court="${index}" aria-label="Record Court ${index + 1} result">
+          <div class="court-result-head"><div><b>Record result</b><span>${assignedTeams ? 'Select the winning team' : 'Select the 2 winning players'}</span></div></div>
+          ${assignedTeams ? `
+            <div class="court-result-team-grid" role="radiogroup" aria-label="Winning team">
+              ${[0, 1].map((teamIndex) => {
+                const letter = teamIndex === 0 ? 'A' : 'B';
+                const ids = teamIndex === 0 ? slots.slice(0, 2) : slots.slice(2, 4);
+                return `<label class="court-result-choice team-choice"><input type="radio" name="winnerTeam" value="${letter}" required><span><strong>Team ${letter}</strong><small>${ids.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</small></span></label>`;
+              }).join('')}
+            </div>
+            <div class="court-result-score-grid">${scoreInput('scoreA', 'Team A score')}${scoreInput('scoreB', 'Team B score')}</div>
+          ` : `
+            <div class="court-result-player-grid" aria-label="Winning players">
+              ${court.players.map((id) => `<label class="court-result-choice player-choice"><input type="checkbox" name="winnerPlayer" value="${escapeHtml(id)}"><span><strong>${escapeHtml(this.playerName(id))}</strong><small>Winner</small></span></label>`).join('')}
+            </div>
+            <div class="court-result-score-grid">${scoreInput('winnerScore', 'Winner score', 11)}${scoreInput('opponentScore', 'Opponent score', 0)}</div>
+          `}
+          <div class="court-result-actions">
+            <button type="button" data-action="court-result-cancel">Cancel</button>
+            <button type="submit" class="primary">OK</button>
+          </div>
+        </form>
+      `;
+    }
+
     renderQueueCourt(court, index) {
       if (!court.players.length) {
-        return `<article class="court-card is-open"><header><b>Court ${index + 1}</b><span>Open</span></header><div class="court-open-mark">${icon('ball')}<span>Waiting for 4</span></div></article>`;
+        const canFillCourt = Players.canFillCourt(this.state.queue, index);
+        const pinned = this.state.queue.queueType === 'winners-split'
+          && this.state.queue.challengeWinnersByCourt
+          && Array.isArray(this.state.queue.challengeWinnersByCourt[court.id])
+          ? this.state.queue.challengeWinnersByCourt[court.id]
+          : [];
+        const openCopy = pinned.length === 2
+          ? `${pinned.map((id) => escapeHtml(this.playerName(id))).join(' · ')} stay · next 2`
+          : 'Waiting for 4';
+        return `<article class="court-card is-open"><header><b>Court ${index + 1}</b><span>Open</span></header><div class="court-open-mark">${icon('ball')}<span>${openCopy}</span></div><div class="court-open-actions"><button type="button" class="court-fill" data-action="court-fill" data-court="${index}" ${canFillCourt ? '' : 'disabled'} aria-label="Fill Court ${index + 1}" title="Fill court">${icon('play')}<span>Fill court</span></button></div></article>`;
       }
       const slots = Array.isArray(court.slots) ? court.slots.slice(0, 4) : ['', '', '', ''];
       while (slots.length < 4) slots.push('');
@@ -5677,8 +6053,9 @@ No completed games in this range.`;
       };
       const complete = slots.every(Boolean) && new Set(slots).size === 4;
       const selectedId = this.selectedCourtPlayer && Number(this.selectedCourtPlayer.court) === index ? String(this.selectedCourtPlayer.id || '') : '';
+      const showPositionGrid = Number(this.openCourtPositionIndex) === index;
       return `
-        <article class="court-card is-active court-assignment-card" data-court-card="${index}">
+        <article class="court-card is-active court-assignment-card ${Number(this.courtResultCourtIndex) === index ? 'is-result-open' : ''}" data-court-card="${index}">
           <header><b>Court ${index + 1}</b><span>${complete ? 'Ready' : '4 players'}</span></header>
           <div class="court-player-list" aria-label="Court ${index + 1} players">
             ${court.players.map((id) => {
@@ -5686,20 +6063,21 @@ No completed games in this range.`;
               return `<button type="button" class="court-player-chip ${selected ? 'is-selected' : ''}" data-action="court-select-player" data-court="${index}" data-player="${escapeHtml(id)}" aria-pressed="${selected}" aria-label="${escapeHtml(this.playerName(id))}, ${escapeHtml(positionFor(id))}. Select to assign team and side"><span><b>${escapeHtml(this.playerName(id))}</b><small>${escapeHtml(positionFor(id))}</small></span></button>`;
             }).join('')}
           </div>
-          <div class="court-assign-hint"><span>${icon('swap')}</span><span>${selectedId ? `Now choose a side for ${escapeHtml(this.playerName(selectedId))}` : 'Tap a player, then a side'}</span></div>
-          <div class="court-position-grid" aria-label="Assign Court ${index + 1} team and starting side">
+          <div class="court-assign-hint"><span>${icon('swap')}</span><span>${selectedId ? `Now choose a side for ${escapeHtml(this.playerName(selectedId))}` : showPositionGrid ? 'Tap a player, then choose another side' : 'Tap a player to assign team and side'}</span></div>
+          ${showPositionGrid ? `<div class="court-position-grid" aria-label="Assign Court ${index + 1} team and starting side">
             ${slots.map((id, slot) => {
               const team = slot < 2 ? 'A' : 'B';
               const side = slot % 2 === 0 ? 'Right' : 'Left';
               return `<button type="button" class="court-position-slot ${id ? 'has-player' : ''}" data-action="court-assign-slot" data-court="${index}" data-slot="${slot}" aria-label="Team ${team} ${side}${id ? `, ${escapeHtml(this.playerName(id))}` : ', empty'}"><span class="court-position-label"><b>Team ${team}</b><small>${side}</small></span><span class="court-position-player">${id ? escapeHtml(this.playerName(id)) : 'Tap to assign'}</span></button>`;
             }).join('')}
-          </div>
+          </div>` : ''}
           <div class="court-actions court-assignment-actions">
             <button type="button" class="court-randomize" data-action="court-randomize" data-court="${index}" aria-label="Randomly assign all four players" title="Randomize teams and sides">${icon('swap')}<span class="court-action-label">Randomize</span></button>
             <button type="button" class="court-new-game" data-action="court-new-game" data-court="${index}" ${complete ? '' : 'disabled'} aria-label="New game" title="New game">${icon('play')}<span class="court-action-label">New game</span></button>
             <button type="button" class="court-done" data-action="court-done" data-court="${index}" aria-label="Done" title="Done">${icon('check')}<span class="court-action-label">Done</span></button>
             <button type="button" class="court-cancel" data-action="court-cancel" data-court="${index}" aria-label="Cancel" title="Cancel">${icon('x')}<span class="court-action-label">Cancel</span></button>
           </div>
+          ${this.renderCourtResultOverlay(court, index)}
         </article>
       `;
     }
@@ -5710,7 +6088,7 @@ No completed games in this range.`;
       const availableCount = this.state.players.filter((player) => !occupied.has(player.id)).length;
       const openCourts = queue.courts.filter((court) => !court.players.length).length;
       const eligibleWaiting = queue.waiting.filter((id) => !(queue.deferred || []).includes(id)).length;
-      const canFill = openCourts > 0 && eligibleWaiting >= 4;
+      const canFill = openCourts > 0 && Players.nextQueueBatchPlayers(queue).length >= 4;
       const batchSize = Players.nextQueueBatchSize(queue);
       const batchPlayers = new Set(Players.nextQueueBatchPlayers(queue));
       const deferred = new Set(queue.deferred || []);
@@ -5727,14 +6105,15 @@ No completed games in this range.`;
             <details class="queue-type-help">
               <summary aria-label="Queue type help" title="Queue type help">?</summary>
               <div class="queue-type-help-popover">${queue.queueType === 'fifo'
-                ? 'Strict paddle-rack order: the next four waiting go on, and completed players return to the back.'
+                ? 'Traditional paddle stack: strict first-in/first-out. The next four waiting take the next court; after the game all four go to the back. Wins and standings never move the line.'
                 : queue.queueType === 'social'
-                  ? 'Fair-play priority, but the next groups can reach slightly deeper in line to reduce repeat player combinations.'
+                  ? 'Fair-play priority first, then the scheduler can reach slightly deeper among equally due players to reduce repeat combinations.'
                   : queue.queueType === 'winners-split'
-                    ? 'On scored games, the winning pair stays but splits onto opposite teams; the next two waiting join them. Queue-only courts without a recorded result rotate all four off.'
-                    : 'Fewest queue turns first, then longest waiting. This is the existing PicklePulse fair-rotation behavior.'}</div>
+                    ? 'The two winners stay with that same court, split onto opposite teams, and the next two waiting players join them. The recorded result—not overall standings—decides who stays.'
+                    : 'Fewest session court turns first, then longest waiting. Wins and standings do not change queue priority.'}</div>
             </details>
-            <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('reset')}</button>
+            <button class="icon-btn queue-undo" type="button" data-action="queue-undo" ${this.state.queueUndoCheckpoint ? '' : 'disabled'} aria-label="Undo last queue change" title="${this.state.queueUndoCheckpoint ? `Undo ${escapeHtml(this.state.queueUndoCheckpoint.label || 'queue change')}` : 'Nothing to undo'}">${icon('undo')}</button>
+            <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('trash')}</button>
           </section>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
           ${queue.onCourt.length ? `<div class="on-court scoring-queue"><span title="Scored game">${icon('radio')}<span class="sr-only">Scored game</span></span><b>Scorekeeper · ${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
@@ -5751,9 +6130,10 @@ No completed games in this range.`;
             ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
               const stat = queue.stats[id] || { gamesPlayed: 0 };
               const isDeferred = deferred.has(id);
-              const isChallengeWinner = queue.queueType === 'winners-split' && Array.isArray(queue.challengeWinners) && queue.challengeWinners.includes(id);
+              const isChallengeWinner = queue.queueType === 'winners-split' && ((Array.isArray(queue.challengeWinners) && queue.challengeWinners.includes(id))
+                || Object.values(queue.challengeWinnersByCourt || {}).some((ids) => Array.isArray(ids) && ids.includes(id)));
               const isNextBatch = batchPlayers.has(id);
-              const canDefer = isNextBatch && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
+              const canDefer = !isChallengeWinner && isNextBatch && queue.waiting.filter((item) => item !== id && !deferred.has(item)).length >= batchSize;
               const showDefer = isDeferred || isNextBatch;
               const rowClasses = [isNextBatch ? 'is-next-batch' : '', isDeferred ? 'is-deferred' : ''].filter(Boolean).join(' ');
               return `
