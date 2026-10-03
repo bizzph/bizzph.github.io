@@ -2014,6 +2014,7 @@
       this.availableVoices = [];
       this.voiceProfiles = { english1: null, english2: null };
       this.playerNameDraft = '';
+      this.showQueueAddPlayer = false;
       this.audioContext = null;
       this.localTracks = [];
       this.localAudioDbPromise = null;
@@ -2187,7 +2188,8 @@
           queueUndoCheckpoint = {
             label: String(rawUndo.label || 'Queue change').slice(0, 80),
             queue: Players.normalizeQueue(rawUndo.queue, players),
-            createdGameId: String(rawUndo.createdGameId || '')
+            createdGameId: String(rawUndo.createdGameId || ''),
+            createdPlayerId: String(rawUndo.createdPlayerId || '')
           };
         }
         return {
@@ -3527,7 +3529,8 @@ No completed games in this range.`;
       this.state.queueUndoCheckpoint = {
         label: String(label || 'Queue change').slice(0, 80),
         queue: JSON.parse(JSON.stringify(source)),
-        createdGameId: ''
+        createdGameId: '',
+        createdPlayerId: ''
       };
     }
 
@@ -3536,9 +3539,18 @@ No completed games in this range.`;
       this.state.queueUndoCheckpoint.createdGameId = String(gameId || '');
     }
 
+    markQueueUndoCreatedPlayer(playerId) {
+      if (!this.state.queueUndoCheckpoint) return;
+      this.state.queueUndoCheckpoint.createdPlayerId = String(playerId || '');
+    }
+
     undoQueueAction() {
       const checkpoint = this.state.queueUndoCheckpoint;
       if (!checkpoint || !checkpoint.queue) return false;
+      if (checkpoint.createdPlayerId) {
+        const createdPlayerId = String(checkpoint.createdPlayerId);
+        this.state.players = this.state.players.filter((player) => String(player.id || '') !== createdPlayerId);
+      }
       this.state.queue = Players.normalizeQueue(checkpoint.queue, this.state.players);
       if (checkpoint.createdGameId) this.removeHistoryGame(checkpoint.createdGameId);
       const label = checkpoint.label || 'Queue change';
@@ -3880,7 +3892,7 @@ No completed games in this range.`;
       }
     }
 
-    addPlayer(name) {
+    addPlayer(name, options = {}) {
       const clean = Players.cleanName(name);
       if (!clean) {
         this.showToast('Enter a player name');
@@ -3894,8 +3906,8 @@ No completed games in this range.`;
       this.state.players.push(player);
       this.state.players = Players.normalizePlayers(this.state.players);
       this.playerNameDraft = '';
-      this.persist();
-      this.render();
+      if (options.persist !== false) this.persist();
+      if (options.render !== false) this.render();
       return player;
     }
 
@@ -3946,6 +3958,21 @@ No completed games in this range.`;
         const data = new FormData(form);
         const player = this.addPlayer(data.get('playerName'));
         if (player) this.showToast(`${player.name} added`);
+        return;
+      }
+
+      if (form.id === 'queue-add-player-form') {
+        event.preventDefault();
+        const data = new FormData(form);
+        const player = this.addPlayer(data.get('playerName'), { persist: false, render: false });
+        if (!player) return;
+        this.checkpointQueueUndo('add new player to queue');
+        this.markQueueUndoCreatedPlayer(player.id);
+        this.state.queue = Players.addToQueue(this.state.queue, player.id, this.state.players);
+        this.showQueueAddPlayer = false;
+        this.persist();
+        if (this.liveController) this.liveController.broadcast();
+        this.showToast(`${player.name} added to roster and queue`);
         return;
       }
 
@@ -5139,6 +5166,22 @@ No completed games in this range.`;
         await this.copyText(liveDisplayUrl(this.live.room), 'Display link copied');
         return;
       }
+      if (action === 'queue-toggle-add-player') {
+        this.showQueueAddPlayer = !this.showQueueAddPlayer;
+        if (!this.showQueueAddPlayer) this.playerNameDraft = '';
+        this.render();
+        if (this.showQueueAddPlayer) {
+          const input = this.querySelector('#queue-add-player-form input[name="playerName"]');
+          if (input && typeof input.focus === 'function') input.focus();
+        }
+        return;
+      }
+      if (action === 'queue-cancel-add-player') {
+        this.showQueueAddPlayer = false;
+        this.playerNameDraft = '';
+        this.render();
+        return;
+      }
       if (action === 'queue-add') {
         this.checkpointQueueUndo('add player');
         this.state.queue = Players.addToQueue(this.state.queue, target.dataset.player, this.state.players);
@@ -6121,11 +6164,19 @@ No completed games in this range.`;
             <header>
               <div><h2>Waiting</h2><p>${queue.waiting.length} player${queue.waiting.length === 1 ? '' : 's'}${batchPlayers.size ? ` · ${batchPlayers.size} next up` : ''}</p></div>
               <div class="queue-header-actions">
+                <button type="button" class="queue-add-player" data-action="queue-toggle-add-player" aria-label="Add a new player to roster and queue" title="Add new player">${icon(this.showQueueAddPlayer ? 'x' : 'plus')}</button>
                 <button type="button" class="queue-add-all" data-action="queue-add-all" ${availableCount ? '' : 'disabled'} aria-label="Add all available roster players" title="Add all available">${icon('userPlus')}</button>
                 <button type="button" class="fill-courts-btn" data-action="queue-fill-courts" ${canFill ? '' : 'disabled'} aria-label="Fill open courts" title="Fill open courts">${icon('play')}<span>Fill courts</span></button>
                 <button type="button" class="queue-next" data-action="prepare-next" ${queue.waiting.length >= 4 && !queue.onCourt.length ? '' : 'disabled'} aria-label="Use next four in scorekeeper" title="Score next 4">${icon('radio')}<span class="button-count">4</span></button>
               </div>
             </header>
+            ${this.showQueueAddPlayer ? `
+              <form id="queue-add-player-form" class="add-player-form queue-add-player-form" aria-label="Add a new player to roster and queue">
+                <label><span class="sr-only">Player name</span><input name="playerName" maxlength="60" placeholder="New player name" autocomplete="off" value="${escapeHtml(this.playerNameDraft)}" required></label>
+                <button class="queue-add-player-submit" type="submit" aria-label="Add player to roster and queue" title="Add player">${icon('plus')}<span>Add</span></button>
+                <button class="queue-add-player-cancel" type="button" data-action="queue-cancel-add-player" aria-label="Cancel adding player" title="Cancel">${icon('x')}</button>
+              </form>
+            ` : ''}
             ${queue.pending.length === 4 ? `<div class="queue-ready"><span title="Ready to score">${icon('users')}<span class="sr-only">Ready to score</span></span><b>${queue.pending.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b><button class="icon-btn compact" type="button" data-action="view" data-view="setup" aria-label="Set teams" title="Set teams">${icon('play')}</button></div>` : ''}
             ${queue.waiting.length ? `<ol class="queue-list fair-queue-list" aria-label="Player queue">${queue.waiting.map((id, index) => {
               const stat = queue.stats[id] || { gamesPlayed: 0 };
@@ -6150,7 +6201,7 @@ No completed games in this range.`;
                   </span>
                 </li>
               `;
-            }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add players from the roster or use Add all.</p></div>`}
+            }).join('')}</ol>` : `<div class="queue-empty"><span>${icon('users')}</span><p>Add a new player here, add players from the roster, or use Add all.</p></div>`}
           </section>
         </section>
       `;

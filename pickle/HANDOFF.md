@@ -1,3 +1,24 @@
+# PicklePulse v50 Turnover / Handoff
+
+## v50 update - add a new player directly from Queue
+
+- Added a dedicated **Add new player** (+) button to the Queue Waiting header.
+- The button opens a compact inline name form without leaving the Queue page.
+- Submitting the form creates the player in the Roster and immediately adds that new player to the Waiting list.
+- Duplicate/empty-name validation continues to use the existing roster rules, including first-letter capitalization.
+- Queue Undo treats this as one combined action: undoing it removes the just-created player from both Waiting and the Roster.
+- Live queue broadcasts and local persistence run after the combined roster + queue update.
+- Core/style cache-busting and the service-worker cache were bumped to v50.
+
+## v50 validation
+
+- Core JavaScript syntax: PASS.
+- New-player registration + immediate Waiting insertion: PASS.
+- First-letter capitalization through the Queue add flow: PASS.
+- Queue Undo removes the newly-created player from both Queue and Roster: PASS.
+- Service-worker/cache version check: PASS.
+
+
 # PicklePulse v49 Turnover / Handoff
 
 ## v49 fix - fresh court assignment after Done -> Fill Court
