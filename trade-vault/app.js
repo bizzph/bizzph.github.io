@@ -20,6 +20,10 @@ const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
 const MAX_BACKUP_RECORDS = 100000;
 const MAX_RECORD_CIPHER_BYTES = 256 * 1024;
 const MAX_RECEIPT_TEXT_LENGTH = 100000;
+const MAX_RECEIPT_IMAGE_BYTES = 20 * 1024 * 1024;
+const RECEIPT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const OCR_VENDOR_VERSION = '7.0.0';
+const OCR_VENDOR_PATH = `./vendor/tesseract-${OCR_VENDOR_VERSION}`;
 const MIN_ACCEPTED_KDF_ITERATIONS = 1;
 const MAX_ACCEPTED_KDF_ITERATIONS = 2000000;
 const PURPOSE_LABELS = { TRADE: 'Trading', HOLD: 'Long-term' };
@@ -36,7 +40,7 @@ const MARKET_INITIAL_QUOTE_TIMEOUT_MS = 10000;
 const MARKET_PING_INTERVAL_MS = 4 * 60 * 1000;
 const THEME_STORAGE_KEY = 'trade-vault-theme';
 const THEME_COLORS = { dark: '#080b12', light: '#f5f7fa' };
-const APP_BUILD = '2026.09.29.6';
+const APP_BUILD = '2026.10.03.1';
 const BUILD_RELOAD_KEY = `trade-vault-build-reload:${APP_BUILD}`;
 
 let db;
@@ -66,6 +70,8 @@ let marketWatchdogTimer = null;
 let marketRenderTimer = null;
 let marketLastMessageAt = 0;
 let marketStatusText = 'Live pricing off';
+let receiptOcrLibraryPromise = null;
+let receiptOcrWorkerPromise = null;
 
 const $ = id => document.getElementById(id);
 const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -2118,11 +2124,11 @@ function ensureManualDefaults(form = $('manualForm')) {
 }
 
 function dateToInputValue(value) {
-  const match = String(value || '').match(/^(\d{4}-\d{1,2}-\d{1,2})[ T](\d{1,2}:\d{2})/);
+  const match = String(value || '').match(/^(\d{4}-\d{1,2}-\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (!match) return localDateTimeInputValue();
   const [y, m, d] = match[1].split('-');
-  const [hh, mm] = match[2].split(':');
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  const hh = match[2], mm = match[3], ss = match[4] || '00';
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 
 function updateManualSoldField(form = $('manualForm')) {
@@ -2146,6 +2152,8 @@ function setManualMode(tx = null) {
   form.reset();
   setManualStatus('');
   if ($('receiptTextInput')) $('receiptTextInput').value = '';
+  if ($('receiptImageInput')) $('receiptImageInput').value = '';
+  setOcrStatus('');
   editingRecordKey = tx?._recordKey || null;
   $('manualEyebrow').textContent = 'TRANSACTION';
   $('manualTitle').textContent = tx ? 'Edit transaction' : 'Add transaction';
@@ -2363,36 +2371,67 @@ function parseOrderText(rawText) {
   const orderId = orderIdValue.match(/\b([A-Z0-9-]{6,})\b/i);
   if (orderId) result.id = orderId[1];
 
-  for (const line of lines) {
-    const parsedDate = parseImportedDateTime(line);
-    if (parsedDate) {
-      result.date = parsedDate;
-      break;
-    }
-  }
-
-  // Google Lens may output the Date / Price / Amount table as three headers,
-  // followed by the date row, price, and amount on separate lines. Use that
-  // table only as a fallback so Average price / Filled Amount always win.
-  const dateHeaderIndex = lines.findIndex(line => /^Date$/i.test(line));
-  if (dateHeaderIndex >= 0) {
-    let rowDateIndex = -1;
-    for (let index = dateHeaderIndex + 1; index < Math.min(lines.length, dateHeaderIndex + 8); index += 1) {
-      if (parseImportedDateTime(lines[index])) {
-        rowDateIndex = index;
-        if (!result.date) result.date = parseImportedDateTime(lines[index]);
+  // Prefer the execution timestamp shown under Trade details / Transaction
+  // details. Coins.ph can show an earlier order-created timestamp near the top;
+  // that is not the transaction date we want to store.
+  let detailsDate = '';
+  let detailsDateIndex = -1;
+  const detailsHeadingIndex = lines.findIndex(line => /^(?:Trade|Transaction)\s+details\b/i.test(line));
+  if (detailsHeadingIndex >= 0) {
+    for (let index = detailsHeadingIndex + 1; index < lines.length; index += 1) {
+      const parsedDate = parseImportedDateTime(lines[index]);
+      if (parsedDate) {
+        detailsDate = parsedDate;
+        detailsDateIndex = index;
         break;
       }
     }
-    if (rowDateIndex >= 0) {
-      if (!result.price) {
-        const tablePrice = parseNumberAsset(lines[rowDateIndex + 1] || '');
-        if (tablePrice) result.price = tablePrice.number;
+  }
+
+  // OCR tools may omit the section heading but preserve the Date / Price /
+  // Amount table header. Accept either a standalone Date header or a combined
+  // "Date Price Amount" line, then use the first timestamp beneath it.
+  let dateHeaderIndex = lines.findIndex(line => /^Date$/i.test(line));
+  if (dateHeaderIndex < 0) {
+    dateHeaderIndex = lines.findIndex(line => /\bDate\b/i.test(line) && /\bPrice\b/i.test(line) && /\bAmount\b/i.test(line));
+  }
+  let rowDateIndex = detailsDateIndex;
+  if (!detailsDate && dateHeaderIndex >= 0) {
+    for (let index = dateHeaderIndex + 1; index < Math.min(lines.length, dateHeaderIndex + 10); index += 1) {
+      const parsedDate = parseImportedDateTime(lines[index]);
+      if (parsedDate) {
+        detailsDate = parsedDate;
+        rowDateIndex = index;
+        break;
       }
-      if (!result.executed) {
-        const tableAmount = parseNumberAsset(lines[rowDateIndex + 2] || '');
-        if (tableAmount) result.executed = tableAmount.number;
+    }
+  }
+
+  if (detailsDate) {
+    result.date = detailsDate;
+  } else {
+    for (const line of lines) {
+      const parsedDate = parseImportedDateTime(line);
+      if (parsedDate) {
+        result.date = parsedDate;
+        break;
       }
+    }
+  }
+
+  // Google Lens can emit the table values on separate lines. Average price and
+  // Filled / Amount remain authoritative, so table values are fallbacks only.
+  if (rowDateIndex >= 0) {
+    if (!result.price) {
+      const sameRowTail = lines[rowDateIndex].replace(/.*?\b(?:20\d{2}|\d{1,2}\/\d{1,2}\/20\d{2})[^ ]*\s+\d{1,2}:\d{2}(?::\d{2})?\s*/, '');
+      const sameRowPrice = parseNumberAsset(sameRowTail);
+      const nextLinePrice = parseNumberAsset(lines[rowDateIndex + 1] || '');
+      const tablePrice = sameRowPrice || nextLinePrice;
+      if (tablePrice) result.price = tablePrice.number;
+    }
+    if (!result.executed && rowDateIndex + 2 < lines.length) {
+      const tableAmount = parseNumberAsset(lines[rowDateIndex + 2] || '');
+      if (tableAmount) result.executed = tableAmount.number;
     }
   }
 
@@ -2419,6 +2458,119 @@ function applyParsedOrderToManualForm(parsed, sourceLabel = 'copied text') {
   updateManualCalculations(form);
   if (!found.length) throw new Error('No supported transaction fields were found. Paste the full copied trade details and try again.');
   setManualStatus(`Filled ${found.join(', ')} from ${sourceLabel}. Review everything before saving.`, 'info');
+}
+
+
+function setOcrStatus(message = '', kind = '') {
+  const el = $('ocrStatus');
+  if (!el) return;
+  el.textContent = message;
+  el.className = `scan-progress${kind ? ` ${kind}` : ''}`;
+}
+
+function localAssetUrl(path) {
+  return new URL(path, document.baseURI).href;
+}
+
+function loadLocalOcrLibrary() {
+  if (window.Tesseract?.createWorker) return Promise.resolve(window.Tesseract);
+  if (receiptOcrLibraryPromise) return receiptOcrLibraryPromise;
+
+  receiptOcrLibraryPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = localAssetUrl(`${OCR_VENDOR_PATH}/tesseract.min.js`);
+    script.async = true;
+    script.referrerPolicy = 'no-referrer';
+    script.addEventListener('load', () => {
+      if (window.Tesseract?.createWorker) resolve(window.Tesseract);
+      else reject(new Error('The bundled OCR library did not initialize.'));
+    }, { once: true });
+    script.addEventListener('error', () => reject(new Error('The bundled OCR files are missing or could not be loaded.')), { once: true });
+    document.head.append(script);
+  }).catch(error => {
+    receiptOcrLibraryPromise = null;
+    throw error;
+  });
+
+  return receiptOcrLibraryPromise;
+}
+
+async function getReceiptOcrWorker() {
+  if (receiptOcrWorkerPromise) return receiptOcrWorkerPromise;
+  receiptOcrWorkerPromise = (async () => {
+    const Tesseract = await loadLocalOcrLibrary();
+    const base = localAssetUrl(`${OCR_VENDOR_PATH}/`);
+    const worker = await Tesseract.createWorker('eng', 1, {
+      workerPath: new URL('worker.min.js', base).href,
+      corePath: new URL('core/', base).href.replace(/\/$/, ''),
+      langPath: new URL('lang/', base).href.replace(/\/$/, ''),
+      workerBlobURL: false,
+      gzip: true,
+      cacheMethod: 'none',
+      logger: message => {
+        const progress = Number.isFinite(message?.progress) ? ` ${Math.round(message.progress * 100)}%` : '';
+        const status = String(message?.status || 'Processing').replace(/_/g, ' ');
+        setOcrStatus(`${status}${progress}`);
+      },
+      errorHandler: error => console.error('Local OCR worker error:', error)
+    });
+    try {
+      await worker.setParameters({
+        tessedit_pageseg_mode: Tesseract.PSM?.SINGLE_BLOCK || '6',
+        preserve_interword_spaces: '1'
+      });
+    } catch (error) {
+      console.warn('Could not apply OCR tuning parameters:', error);
+    }
+    return worker;
+  })().catch(error => {
+    receiptOcrWorkerPromise = null;
+    throw error;
+  });
+  return receiptOcrWorkerPromise;
+}
+
+async function releaseReceiptOcrWorker() {
+  const pending = receiptOcrWorkerPromise;
+  receiptOcrWorkerPromise = null;
+  if (!pending) return;
+  try {
+    const worker = await pending;
+    await worker.terminate();
+  } catch {}
+}
+
+async function readTradeScreenshot(file) {
+  if (!(file instanceof File)) throw new Error('Choose a screenshot first.');
+  if (!RECEIPT_IMAGE_TYPES.has(file.type)) throw new Error('Use a PNG, JPEG, or WebP screenshot.');
+  if (!file.size || file.size > MAX_RECEIPT_IMAGE_BYTES) throw new Error('Screenshot must be 20 MB or smaller.');
+
+  const input = $('receiptImageInput');
+  const button = $('receiptImageButton');
+  if (input) input.disabled = true;
+  button?.classList.add('is-busy');
+  setOcrStatus('Starting local OCR…');
+
+  try {
+    const worker = await getReceiptOcrWorker();
+    const result = await worker.recognize(file, { rotateAuto: true }, { text: true });
+    const text = String(result?.data?.text || '').trim();
+    if (!text) throw new Error('No readable text was found in that screenshot.');
+    if (text.length > MAX_RECEIPT_TEXT_LENGTH) throw new Error('OCR output is unexpectedly large.');
+
+    const textInput = $('receiptTextInput');
+    if (textInput) textInput.value = text;
+    const parsed = parseOrderText(text);
+    applyParsedOrderToManualForm(parsed, 'local screenshot OCR');
+    setOcrStatus('Screenshot read locally. Image was not uploaded or stored.');
+  } finally {
+    if (input) {
+      input.value = '';
+      input.disabled = false;
+    }
+    button?.classList.remove('is-busy');
+    await releaseReceiptOcrWorker();
+  }
 }
 
 function autocorrectLeadingDecimalInput(input) {
@@ -2906,12 +3058,23 @@ async function init() {
       setManualStatus(error.message || 'Could not parse copied trade text.', 'error');
     }
   };
+  $('receiptImageInput')?.addEventListener('change', async event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    try {
+      await readTradeScreenshot(file);
+    } catch (error) {
+      console.error(error);
+      setOcrStatus(error.message || 'Could not read that screenshot.', 'error');
+    }
+  });
   $('parseReceiptTextBtn')?.addEventListener('click', () => fillManualFormFromReceiptText('copied text'));
   $('clearReceiptTextBtn')?.addEventListener('click', () => {
     const input = $('receiptTextInput');
     if (!input) return;
     input.value = '';
     setManualStatus('');
+    setOcrStatus('');
     input.focus();
   });
   $('receiptTextInput')?.addEventListener('paste', () => {

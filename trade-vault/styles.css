@@ -332,8 +332,13 @@ tbody tr:hover { background: var(--row-hover); }
 .scan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .scan-button { display: inline-flex; width: auto; min-height: 38px; align-items: center; justify-content: center; gap: 7px; margin: 0; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--control-bg); color: var(--text); font-size: 11px; font-weight: 800; }
 .scan-button svg { width: 16px; height: 16px; }
+.scan-file-button { position: relative; cursor: pointer; }
+.scan-file-button.is-busy { opacity: .68; cursor: progress; pointer-events: none; }
 #receiptTextWrap { margin-top: 9px; }
 .parse-text-button { margin-top: 0; }
+.scan-progress { min-height: 15px; margin-top: 8px; color: var(--note-text); font-size: 10px; line-height: 1.45; }
+.scan-progress.error { color: var(--danger-text); }
+.scan-privacy { margin-top: 7px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 dialog { width: min(680px, calc(100% - 22px)); max-height: min(760px, calc(100dvh - 28px)); overflow: auto; padding: 0; border: 1px solid var(--line); border-radius: 21px; background: var(--dialog-bg); color: var(--text); box-shadow: var(--shadow); }
 dialog::backdrop { background: var(--dialog-backdrop); backdrop-filter: blur(5px); }
 dialog form { padding: 21px; }

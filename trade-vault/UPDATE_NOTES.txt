@@ -1,0 +1,36 @@
+TRADE VAULT UPDATE — 2026.10.03.1
+
+Changes
+- Added "Read screenshot" to Add transaction.
+- Screenshot OCR feeds the existing trade-text parser and fills the form for review.
+- Trade date now prioritizes the execution timestamp under "Trade details" or
+  "Transaction details" (and the Date / Price / Amount table) instead of the
+  order-created timestamp shown near the top of the screenshot.
+- Date/time input now preserves seconds.
+- OCR accepts PNG, JPEG, and WebP up to 20 MB.
+
+Validated against the supplied XAUT/PHP screenshot
+- Pair: XAUT/PHP
+- Side/type: BUY / LIMIT
+- Price: 259000.0
+- Quantity: 0.00038
+- Fee: 0.00000038 XAUT
+- Total: 98.420000
+- Stored trade date: 2026-10-02 23:45:15
+
+Privacy/security hardening
+- OCR paths are same-origin/local only; no OCR CDN fallback is configured.
+- CSP permits scripts/workers only from 'self'.
+- WebAssembly is enabled with 'wasm-unsafe-eval' rather than the broader
+  'unsafe-eval'.
+- workerBlobURL is disabled.
+- OCR does not write the selected screenshot to Trade Vault storage.
+- OCR worker is terminated after each scan.
+- Tesseract versions are pinned; local vendor script generates SHA-256 checksums.
+- Existing optional Coins.ph price WebSocket is unchanged.
+
+Important packaging note
+This package contains the local-only OCR integration and vendoring script, but not
+third-party Tesseract binary/data files. Run the one-time commands in OCR_SETUP.txt
+before deploying if you want screenshot OCR enabled. Pasted-text import works
+without that step.

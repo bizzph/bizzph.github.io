@@ -1,0 +1,14 @@
+{
+  "name": "trade-vault-local-ocr-vendor",
+  "private": true,
+  "version": "2026.10.03.1",
+  "description": "Pinned build-time dependencies used only to vendor Trade Vault's local OCR files.",
+  "scripts": {
+    "vendor:ocr": "node tools/vendor-ocr.mjs"
+  },
+  "devDependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0"
+  }
+}

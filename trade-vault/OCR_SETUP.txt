@@ -1,0 +1,40 @@
+TRADE VAULT — LOCAL OCR SETUP
+Build: 2026.10.03.1
+
+Trade Vault is wired to use Tesseract.js only from files hosted with the app.
+No OCR CDN is configured at runtime.
+
+Pinned versions:
+  tesseract.js                  7.0.0
+  tesseract.js-core             7.0.0
+  @tesseract.js-data/eng        1.0.0
+
+ONE-TIME VENDORING STEP (run from this app folder before deployment)
+
+  npm install --ignore-scripts --no-audit --no-fund
+  npm run vendor:ocr
+
+Then deploy the whole app folder, including:
+  vendor/tesseract-7.0.0/
+
+Why --ignore-scripts?
+It prevents dependency lifecycle scripts from running during this one-time install.
+Trade Vault only needs the static files copied by tools/vendor-ocr.mjs.
+
+The vendor script:
+- copies only the browser OCR files Trade Vault needs;
+- copies available license/readme notices;
+- generates vendor/tesseract-7.0.0/SHA256SUMS.txt;
+- uses exact versions pinned in package.json;
+- does not alter the application source.
+
+RUNTIME PRIVACY / NETWORK MODEL
+- The selected screenshot is supplied directly to the local browser OCR worker.
+- The screenshot is not uploaded by the OCR feature and is not saved to Trade Vault.
+- OCR worker/core/language files are loaded from the same origin as Trade Vault.
+- The app Content Security Policy does not permit third-party script/CDN origins.
+- The existing optional Coins.ph live-price WebSocket remains the only explicitly
+  allowed third-party network endpoint in the CSP.
+
+If the vendor files are absent, the rest of Trade Vault still works and screenshot
+OCR displays a local-files-missing error. Pasted/copied-text import still works.

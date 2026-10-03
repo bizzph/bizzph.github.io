@@ -6,16 +6,16 @@
   <meta name="theme-color" content="#080b12">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <meta name="trade-vault-build" content="2026.09.29.6">
+  <meta name="trade-vault-build" content="2026.10.03.1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trade Vault">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss://wsapi.pro.coins.ph; script-src-attr 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; worker-src 'self'; manifest-src 'self'">
   <title>Trade Vault</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260929.6">
+  <link rel="manifest" href="manifest.webmanifest?v=20261003.1">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-  <link rel="stylesheet" href="styles.css?v=20260929.6" integrity="sha384-6PGfZH8aOROkS2L5LXERl1N3nZm1q8v5G/8zhp9bPXsj2X6J/kCxqeOuSD9E4ULN">
+  <link rel="stylesheet" href="styles.css?v=20261003.1" integrity="sha384-nDnef7SlS6/Dxb+Pj3bxDbJcDmJzE81L5P17+zD0rbKMAUwM01tczd3H11zHAeq7">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -295,16 +295,23 @@
       </div>
       <div class="form-grid">
         <div id="scanImport" class="scan-import span-2">
-          <div class="scan-import-head"><div><strong>Fill from copied trade text</strong><span>Use Google Lens, iOS Live Text, or another device text-copy feature, then paste below. Trade Vault fills the fields automatically and parses everything locally.</span></div></div>
+          <div class="scan-import-head"><div><strong>Fill from screenshot or copied trade text</strong><span>Choose a trade screenshot or paste copied text. Screenshot OCR runs in your browser with bundled local files; the image is not uploaded.</span></div></div>
           <div id="receiptTextWrap">
-            <textarea id="receiptTextInput" rows="7" maxlength="100000" placeholder="Paste copied trade details here…"></textarea>
+            <textarea id="receiptTextInput" rows="7" maxlength="100000" placeholder="OCR text appears here, or paste copied trade details…"></textarea>
             <div class="scan-actions">
+              <label id="receiptImageButton" class="scan-button scan-file-button" for="receiptImageInput">
+                <svg aria-hidden="true"><use href="#i-upload"/></svg>
+                <span>Read screenshot</span>
+                <input id="receiptImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+              </label>
               <button id="parseReceiptTextBtn" class="scan-button parse-text-button" type="button">Re-fill fields</button>
               <button id="clearReceiptTextBtn" class="scan-button" type="button">Clear text</button>
             </div>
+            <div id="ocrStatus" class="scan-progress" role="status" aria-live="polite"></div>
+            <div class="scan-privacy">Local-only OCR: the selected image is processed in memory and is not saved to the vault. Review parsed values before saving.</div>
           </div>
         </div>
-        <label>Date<input name="date" required type="datetime-local"></label>
+        <label>Date<input name="date" required type="datetime-local" step="1"></label>
         <label>ID <span class="auto-tag">AUTO</span><input name="id" readonly type="text" placeholder="Generated"></label>
         <label>Pair<input name="pair" required type="text" value="BTC/PHP" placeholder="BTC/PHP"></label>
         <label>Type<select name="type"><option>LIMIT</option><option>MARKET</option><option>OTHER</option></select></label>
@@ -331,6 +338,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20260929.6" integrity="sha384-C1pPhLWqb88f1F55+X3Ya2wS+wWI4P2/sPzJmB7ze7DqAMc+E5pOvuexVX63+eBz" defer></script>
+  <script src="app.js?v=20261003.1" integrity="sha384-1aZtUB7CY35kj8PfaTtb+RB85bmB0XOfZKKnkVuY50tp+Zvv4eZLImd27U1sCfL/" defer></script>
 </body>
 </html>

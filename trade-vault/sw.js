@@ -1,5 +1,5 @@
-const BUILD = '20260929.6';
-const CACHE = 'trade-vault-shell-v36';
+const BUILD = '20261003.1';
+const CACHE = 'trade-vault-shell-v37';
 const INDEX_PATH = `./index.html?tvbuild=${BUILD}`;
 const SHELL = [
   INDEX_PATH,
@@ -10,6 +10,22 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+
+// OCR is deliberately self-hosted. These files are optional during service
+// worker installation so an incomplete deployment does not break the rest of
+// Trade Vault. Once vendored, they are cached from this same origin only.
+const OCR_ASSETS = [
+  './vendor/tesseract-7.0.0/tesseract.min.js',
+  './vendor/tesseract-7.0.0/worker.min.js',
+  './vendor/tesseract-7.0.0/lang/eng.traineddata.gz',
+  './vendor/tesseract-7.0.0/core/tesseract-core-lstm.wasm.js',
+  './vendor/tesseract-7.0.0/core/tesseract-core-lstm.wasm',
+  './vendor/tesseract-7.0.0/core/tesseract-core-simd-lstm.wasm.js',
+  './vendor/tesseract-7.0.0/core/tesseract-core-simd-lstm.wasm',
+  './vendor/tesseract-7.0.0/core/tesseract-core-relaxedsimd-lstm.wasm.js',
+  './vendor/tesseract-7.0.0/core/tesseract-core-relaxedsimd-lstm.wasm'
+];
+
 const NETWORK_TIMEOUT_MS = 3500;
 const INSTALL_TIMEOUT_MS = 12000;
 
@@ -33,8 +49,18 @@ async function fetchFresh(path, timeoutMs = INSTALL_TIMEOUT_MS) {
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
+
+    // The normal app shell remains mandatory.
     const resources = await Promise.all(SHELL.map(path => fetchFresh(path)));
     await Promise.all(resources.map(({ request, response }) => cache.put(request, response)));
+
+    // OCR assets are best-effort here. If they have not been vendored yet, the
+    // app still installs; screenshot OCR will give a clear local-files error.
+    await Promise.allSettled(OCR_ASSETS.map(async path => {
+      const { request, response } = await fetchFresh(path);
+      await cache.put(request, response);
+    }));
+
     await self.skipWaiting();
   })());
 });
@@ -137,8 +163,8 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  const shellUrls = new Set(SHELL.map(path => new URL(path, scope).href));
-  if (!shellUrls.has(request.url)) return;
+  const cacheableUrls = new Set([...SHELL, ...OCR_ASSETS].map(path => new URL(path, scope).href));
+  if (!cacheableUrls.has(request.url)) return;
 
   event.respondWith((async () => {
     const cached = await caches.match(request);
@@ -147,7 +173,7 @@ self.addEventListener('fetch', event => {
       const response = await fetchWithTimeout(request, { cache: 'reload', credentials: 'same-origin' }, INSTALL_TIMEOUT_MS);
       return await cacheResponse(request, response);
     } catch {
-      return new Response('', { status: 504, statusText: 'App shell resource unavailable' });
+      return new Response('', { status: 504, statusText: 'Local app resource unavailable' });
     }
   })());
 });
