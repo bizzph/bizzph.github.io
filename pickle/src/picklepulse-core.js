@@ -506,7 +506,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createPicklePlayers() {
   'use strict';
 
-  const ROOT_SCHEMA_VERSION = 10;
+  const ROOT_SCHEMA_VERSION = 11;
 
   function makeId(prefix = 'player') {
     const random = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1502,6 +1502,7 @@
   const MAX_IMPORT_PLAYERS = 500;
   const MAX_IMPORT_GAMES = 5000;
   const MAX_ROSTER_IMPORT_CHARS = 100000;
+  const MAX_SESSIONS = 100;
   const AUDIO_DB_NAME = 'picklepulse-audio-v1';
   const AUDIO_DB_VERSION = 2;
   const AUDIO_STORE_NAME = 'tracks';
@@ -2145,14 +2146,119 @@
       if (this.viewer) this.viewer.stop();
     }
 
-    loadState() {
-      const fallbackPlayers = [];
-      const fallback = {
-        schemaVersion: Players.ROOT_SCHEMA_VERSION,
+    sessionDefaultName(value = new Date().toISOString()) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return 'New Session';
+      try {
+        return `Session ${date.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+      } catch (_error) {
+        return `Session ${date.toISOString().slice(0, 16).replace('T', ' ')}`;
+      }
+    }
+
+    cleanSessionName(value, fallbackDate = new Date().toISOString()) {
+      const clean = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      return clean || this.sessionDefaultName(fallbackDate);
+    }
+
+    emptySessionSnapshot(options = {}) {
+      const createdAt = String(options.createdAt || new Date().toISOString());
+      const queueType = Players.normalizeQueueType(options.queueType || 'fair');
+      const courtCount = Math.min(12, Math.max(1, Number(options.courtCount) || 1));
+      const players = [];
+      return {
+        id: String(options.id || Players.makeId('session')).slice(0, 160),
+        name: this.cleanSessionName(options.name, createdAt),
+        createdAt,
+        updatedAt: createdAt,
         currentGame: null,
         games: [],
-        players: fallbackPlayers,
-        queue: Players.normalizeQueue({}, fallbackPlayers),
+        players,
+        queue: Players.normalizeQueue({ queueType, courtCount }, players),
+        queueCompletionCheckpoint: null,
+        queueUndoCheckpoint: null
+      };
+    }
+
+    normalizeSessionSnapshot(value) {
+      const source = value && typeof value === 'object' ? value : {};
+      const now = new Date().toISOString();
+      const createdAt = String(source.createdAt || source.lastSavedAt || source.updatedAt || now);
+      const updatedAt = String(source.updatedAt || source.lastSavedAt || createdAt);
+      const storedPlayers = Array.isArray(source.players) ? source.players.slice(0, MAX_IMPORT_PLAYERS) : [];
+      const storedGames = Array.isArray(source.games) ? source.games.slice(0, MAX_IMPORT_GAMES) : [];
+      const players = Players.normalizePlayers(storedPlayers);
+      const currentGame = source.currentGame ? Engine.normalizeGame(source.currentGame) : null;
+      let games = Players.dedupeGames(storedGames.map((game) => Engine.normalizeGame(game)))
+        .filter((game) => game.status === 'complete');
+      if (currentGame && currentGame.status === 'active') {
+        games = games.filter((game) => String(game.id || '') !== String(currentGame.id || ''));
+      }
+      games.sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
+
+      let queueCompletionCheckpoint = null;
+      const rawCheckpoint = source.queueCompletionCheckpoint;
+      if (currentGame && currentGame.status === 'complete' && rawCheckpoint && typeof rawCheckpoint === 'object'
+        && String(rawCheckpoint.gameId || '') === String(currentGame.id || '') && rawCheckpoint.queue) {
+        queueCompletionCheckpoint = {
+          gameId: String(currentGame.id || ''),
+          queue: Players.normalizeQueue(rawCheckpoint.queue, players)
+        };
+      }
+
+      let queueUndoCheckpoint = null;
+      const rawUndo = source.queueUndoCheckpoint;
+      if (rawUndo && typeof rawUndo === 'object' && rawUndo.queue) {
+        queueUndoCheckpoint = {
+          label: String(rawUndo.label || 'Queue change').slice(0, 80),
+          queue: Players.normalizeQueue(rawUndo.queue, players),
+          createdGameId: String(rawUndo.createdGameId || ''),
+          createdPlayerId: String(rawUndo.createdPlayerId || '')
+        };
+      }
+
+      return {
+        id: String(source.id || source.sessionId || Players.makeId('session')).slice(0, 160),
+        name: this.cleanSessionName(source.name || source.sessionName, createdAt),
+        createdAt,
+        updatedAt,
+        currentGame,
+        games,
+        players,
+        queue: Players.normalizeQueue(source.queue, players),
+        queueCompletionCheckpoint,
+        queueUndoCheckpoint
+      };
+    }
+
+    sessionSnapshotFromState(updatedAt = new Date().toISOString()) {
+      return this.normalizeSessionSnapshot({
+        id: this.state.sessionId,
+        name: this.state.sessionName,
+        createdAt: this.state.sessionCreatedAt,
+        updatedAt,
+        currentGame: this.state.currentGame,
+        games: this.state.games,
+        players: this.state.players,
+        queue: this.state.queue,
+        queueCompletionCheckpoint: this.state.queueCompletionCheckpoint,
+        queueUndoCheckpoint: this.state.queueUndoCheckpoint
+      });
+    }
+
+    loadState() {
+      const fallbackSession = this.emptySessionSnapshot();
+      const fallback = {
+        schemaVersion: Players.ROOT_SCHEMA_VERSION,
+        sessionId: fallbackSession.id,
+        sessionName: fallbackSession.name,
+        sessionCreatedAt: fallbackSession.createdAt,
+        sessionUpdatedAt: fallbackSession.updatedAt,
+        sessions: [fallbackSession],
+        currentGame: fallbackSession.currentGame,
+        games: fallbackSession.games,
+        players: fallbackSession.players,
+        queue: fallbackSession.queue,
         queueCompletionCheckpoint: null,
         queueUndoCheckpoint: null,
         settings: normalizeSettings(DEFAULT_SETTINGS),
@@ -2163,43 +2269,43 @@
       try {
         const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
         if (!parsed || typeof parsed !== 'object') return fallback;
-        const storedPlayers = Array.isArray(parsed.players) ? parsed.players.slice(0, MAX_IMPORT_PLAYERS) : [];
-        const storedGames = Array.isArray(parsed.games) ? parsed.games.slice(0, MAX_IMPORT_GAMES) : [];
-        const players = Players.normalizePlayers(storedPlayers);
-        const currentGame = parsed.currentGame ? Engine.normalizeGame(parsed.currentGame) : null;
-        let games = Players.dedupeGames(storedGames.map((game) => Engine.normalizeGame(game)))
-          .filter((game) => game.status === 'complete');
-        if (currentGame && currentGame.status === 'active') {
-          games = games.filter((game) => String(game.id || '') !== String(currentGame.id || ''));
+
+        let sessions = [];
+        if (Array.isArray(parsed.sessions) && parsed.sessions.length) {
+          const seen = new Set();
+          parsed.sessions.slice(0, MAX_SESSIONS).forEach((raw) => {
+            const session = this.normalizeSessionSnapshot(raw);
+            if (seen.has(session.id)) session.id = Players.makeId('session');
+            seen.add(session.id);
+            sessions.push(session);
+          });
+        } else {
+          // v50 and earlier stored one flat workspace. Migrate it into the first saved session.
+          sessions = [this.normalizeSessionSnapshot({
+            ...parsed,
+            id: parsed.sessionId || Players.makeId('session'),
+            name: parsed.sessionName || this.sessionDefaultName(parsed.lastSavedAt || new Date().toISOString()),
+            createdAt: parsed.sessionCreatedAt || parsed.lastSavedAt || new Date().toISOString(),
+            updatedAt: parsed.lastSavedAt || new Date().toISOString()
+          })];
         }
-        games.sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
-        let queueCompletionCheckpoint = null;
-        const rawCheckpoint = parsed.queueCompletionCheckpoint;
-        if (currentGame && currentGame.status === 'complete' && rawCheckpoint && typeof rawCheckpoint === 'object'
-          && String(rawCheckpoint.gameId || '') === String(currentGame.id || '') && rawCheckpoint.queue) {
-          queueCompletionCheckpoint = {
-            gameId: String(currentGame.id || ''),
-            queue: Players.normalizeQueue(rawCheckpoint.queue, players)
-          };
-        }
-        let queueUndoCheckpoint = null;
-        const rawUndo = parsed.queueUndoCheckpoint;
-        if (rawUndo && typeof rawUndo === 'object' && rawUndo.queue) {
-          queueUndoCheckpoint = {
-            label: String(rawUndo.label || 'Queue change').slice(0, 80),
-            queue: Players.normalizeQueue(rawUndo.queue, players),
-            createdGameId: String(rawUndo.createdGameId || ''),
-            createdPlayerId: String(rawUndo.createdPlayerId || '')
-          };
-        }
+        if (!sessions.length) sessions = [fallbackSession];
+        const requestedId = String(parsed.activeSessionId || parsed.sessionId || '');
+        const active = sessions.find((session) => session.id === requestedId) || sessions[0];
+
         return {
           schemaVersion: Players.ROOT_SCHEMA_VERSION,
-          currentGame,
-          games,
-          players,
-          queue: Players.normalizeQueue(parsed.queue, players),
-          queueCompletionCheckpoint,
-          queueUndoCheckpoint,
+          sessionId: active.id,
+          sessionName: active.name,
+          sessionCreatedAt: active.createdAt,
+          sessionUpdatedAt: active.updatedAt,
+          sessions,
+          currentGame: active.currentGame,
+          games: active.games,
+          players: active.players,
+          queue: active.queue,
+          queueCompletionCheckpoint: active.queueCompletionCheckpoint,
+          queueUndoCheckpoint: active.queueUndoCheckpoint,
           settings: normalizeSettings(parsed.settings),
           liveRoom: normalizeRoomCode(parsed.liveRoom),
           lastSavedAt: parsed.lastSavedAt || null,
@@ -2223,11 +2329,116 @@
         }
         this.state.games.sort((a, b) => resultTimestamp(b) - resultTimestamp(a));
         this.state.settings = normalizeSettings(this.state.settings);
-        this.state.lastSavedAt = new Date().toISOString();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+        const savedAt = new Date().toISOString();
+        this.state.lastSavedAt = savedAt;
+        if (!this.state.sessionId) this.state.sessionId = Players.makeId('session');
+        if (!this.state.sessionCreatedAt) this.state.sessionCreatedAt = savedAt;
+        this.state.sessionName = this.cleanSessionName(this.state.sessionName, this.state.sessionCreatedAt);
+        this.state.sessionUpdatedAt = savedAt;
+
+        const activeSession = this.sessionSnapshotFromState(savedAt);
+        const others = (Array.isArray(this.state.sessions) ? this.state.sessions : [])
+          .filter((session) => session && String(session.id || '') !== activeSession.id)
+          .slice(0, MAX_SESSIONS - 1)
+          .map((session) => this.normalizeSessionSnapshot(session));
+        this.state.sessions = [activeSession, ...others]
+          .sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
+
+        const persisted = {
+          app: 'PicklePulse',
+          schemaVersion: Players.ROOT_SCHEMA_VERSION,
+          activeSessionId: activeSession.id,
+          sessions: this.state.sessions,
+          settings: this.state.settings,
+          appearance: normalizeAppearance(this.state.appearance),
+          liveRoom: normalizeRoomCode(this.state.liveRoom),
+          lastSavedAt: savedAt
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
       } catch (error) {
         this.showToast(`Save failed: ${error.message}`);
       }
+    }
+
+    activateSession(snapshot) {
+      const session = this.normalizeSessionSnapshot(snapshot);
+      if (this.liveController) this.liveController.stop();
+      this.liveController = null;
+      this.live = { phase: 'off', room: '', viewers: 0, detail: '' };
+      this.state.sessionId = session.id;
+      this.state.sessionName = session.name;
+      this.state.sessionCreatedAt = session.createdAt;
+      this.state.sessionUpdatedAt = session.updatedAt;
+      this.state.currentGame = session.currentGame;
+      this.state.games = session.games;
+      this.state.players = session.players;
+      this.state.queue = session.queue;
+      this.state.queueCompletionCheckpoint = session.queueCompletionCheckpoint;
+      this.state.queueUndoCheckpoint = session.queueUndoCheckpoint;
+      this.state.liveRoom = '';
+      this.courtGameDraft = null;
+      this.openCourtPositionIndex = -1;
+      this.selectedCourtPlayer = { court: -1, id: '' };
+      this.courtResultCourtIndex = -1;
+      this.playerPickerField = '';
+      this.editingPlayerId = '';
+      this.showQueueAddPlayer = false;
+      this.showRosterShare = false;
+      this.showRosterImport = false;
+      this.showResultsShare = false;
+      this._playerMapSource = null;
+      this._playerMap = new Map();
+      this.lastVoiceSignature = this.state.currentGame ? voiceSignature(this.state.currentGame) : '';
+    }
+
+    startNewSession() {
+      this.persist();
+      if ((this.state.sessions || []).length >= MAX_SESSIONS) {
+        this.showToast(`Session limit reached (${MAX_SESSIONS}). Delete an older session first.`);
+        return;
+      }
+      const previousQueue = Players.normalizeQueue(this.state.queue, this.state.players);
+      const session = this.emptySessionSnapshot({
+        queueType: previousQueue.queueType,
+        courtCount: previousQueue.courtCount
+      });
+      this.state.sessions = [session, ...(this.state.sessions || [])];
+      this.activateSession(session);
+      this.view = 'queue';
+      this.persist();
+      this.render();
+      this.showToast('New session started');
+    }
+
+    openSession(sessionId) {
+      const id = String(sessionId || '');
+      if (!id || id === String(this.state.sessionId || '')) return;
+      this.persist();
+      const session = (this.state.sessions || []).find((item) => String(item.id || '') === id);
+      if (!session) {
+        this.showToast('Session not found');
+        return;
+      }
+      this.activateSession(session);
+      this.view = this.state.currentGame ? 'game' : 'queue';
+      this.persist();
+      this.render();
+      this.showToast(`${this.state.sessionName} opened`);
+    }
+
+    deleteSession(sessionId) {
+      const id = String(sessionId || '');
+      if (!id || id === String(this.state.sessionId || '')) {
+        this.showToast('Start or open another session before deleting this one');
+        return;
+      }
+      const session = (this.state.sessions || []).find((item) => String(item.id || '') === id);
+      if (!session) return;
+      if (!confirm(`Delete “${session.name}”? Its roster, queue, games and standings will be removed from this device.`)) return;
+      this.state.sessions = (this.state.sessions || []).filter((item) => String(item.id || '') !== id);
+      this.persist();
+      this.render();
+      this.showToast('Session deleted');
     }
 
     consumeRosterShare() {
@@ -3953,6 +4164,16 @@ No completed games in this range.`;
       const form = event.target.closest('form');
       if (!form) return;
 
+      if (form.id === 'session-name-form') {
+        event.preventDefault();
+        const data = new FormData(form);
+        this.state.sessionName = this.cleanSessionName(data.get('sessionName'), this.state.sessionCreatedAt);
+        this.persist();
+        this.render();
+        this.showToast('Session name saved');
+        return;
+      }
+
       if (form.id === 'add-player-form' || form.id === 'quick-add-player-form') {
         event.preventDefault();
         const data = new FormData(form);
@@ -4857,7 +5078,7 @@ No completed games in this range.`;
         return;
       }
       if (action === 'queue-new-session') {
-        if (!confirm('Start a new queue session? This clears the waiting list, queue-only courts, and queue fairness history. Completed games and the roster stay intact.')) return;
+        if (!confirm('Reset this session’s queue? This clears the waiting list, queue-only courts, and queue fairness history. Completed games and the roster stay intact.')) return;
         this.checkpointQueueUndo('new queue session');
         this.state.queue = Players.resetQueueSession(this.state.queue, this.state.players);
         this.courtGameDraft = null;
@@ -4867,6 +5088,27 @@ No completed games in this range.`;
         this.persist();
         if (this.liveController) this.liveController.broadcast();
         this.render();
+        return;
+      }
+
+      if (action === 'session-save') {
+        this.persist();
+        this.render();
+        this.showToast('Session saved on this device');
+        return;
+      }
+      if (action === 'session-new') {
+        if (this.state.currentGame && this.state.currentGame.status === 'active'
+          && !confirm('Start a new session? The current score and session will stay saved and can be reopened later.')) return;
+        this.startNewSession();
+        return;
+      }
+      if (action === 'session-open') {
+        this.openSession(target.dataset.session);
+        return;
+      }
+      if (action === 'session-delete') {
+        this.deleteSession(target.dataset.session);
         return;
       }
 
@@ -5316,10 +5558,14 @@ No completed games in this range.`;
     }
 
     exportJson() {
+      this.persist();
       const payload = {
         app: 'PicklePulse',
         schemaVersion: Players.ROOT_SCHEMA_VERSION,
         exportedAt: new Date().toISOString(),
+        activeSessionId: this.state.sessionId,
+        sessions: this.state.sessions,
+        // Keep the active-session fields for compatibility with older PicklePulse imports.
         players: this.state.players,
         queue: this.state.queue,
         currentGame: this.state.currentGame,
@@ -5334,7 +5580,7 @@ No completed games in this range.`;
       link.download = `picklepulse-${filenameDate()}.json`;
       link.click();
       URL.revokeObjectURL(url);
-      this.showToast('Backup exported');
+      this.showToast('All sessions exported');
     }
 
     async importJson(file) {
@@ -5345,6 +5591,36 @@ No completed games in this range.`;
         if (text.length > MAX_BACKUP_BYTES) throw new Error('Backup is too large (5 MB maximum).');
         const payload = JSON.parse(text);
         if (!payload || typeof payload !== 'object') throw new Error('The JSON file is not an object.');
+
+        if (Array.isArray(payload.sessions) && payload.sessions.length) {
+          if (payload.sessions.length > MAX_SESSIONS) throw new Error(`Backup has too many sessions (${MAX_SESSIONS} maximum).`);
+          const importedSessions = [];
+          const seenIds = new Set();
+          for (const rawSession of payload.sessions) {
+            const rawPlayers = Array.isArray(rawSession && rawSession.players) ? rawSession.players : [];
+            const rawGames = Array.isArray(rawSession && rawSession.games) ? rawSession.games : [];
+            if (rawPlayers.length > MAX_IMPORT_PLAYERS) throw new Error(`A session has too many players (${MAX_IMPORT_PLAYERS} maximum).`);
+            if (rawGames.length > MAX_IMPORT_GAMES) throw new Error(`A session has too many games (${MAX_IMPORT_GAMES} maximum).`);
+            if (rawGames.length) Engine.validateImport({ games: rawGames });
+            if (rawSession && rawSession.currentGame) Engine.validateImport({ games: [rawSession.currentGame] });
+            const session = this.normalizeSessionSnapshot(rawSession);
+            if (seenIds.has(session.id)) session.id = Players.makeId('session');
+            seenIds.add(session.id);
+            importedSessions.push(session);
+          }
+          if (!confirm(`Restore ${importedSessions.length} saved session${importedSessions.length === 1 ? '' : 's'} from this backup? This replaces the sessions currently stored on this device.`)) return;
+          const requestedId = String(payload.activeSessionId || '');
+          const active = importedSessions.find((session) => session.id === requestedId) || importedSessions[0];
+          this.state.sessions = importedSessions;
+          if (payload.appearance) this.state.appearance = normalizeAppearance(payload.appearance);
+          if (payload.settings) this.state.settings = normalizeSettings(payload.settings);
+          this.activateSession(active);
+          this.view = 'sessions';
+          this.persist();
+          this.render();
+          this.showToast(`${importedSessions.length} session${importedSessions.length === 1 ? '' : 's'} restored`);
+          return;
+        }
 
         const rawPlayers = Array.isArray(payload.players) ? payload.players : [];
         if (rawPlayers.length > MAX_IMPORT_PLAYERS) throw new Error(`Backup has too many players (${MAX_IMPORT_PLAYERS} maximum).`);
@@ -5445,7 +5721,7 @@ No completed games in this range.`;
           ${this.showResultsShare ? this.renderResultsShare() : ''}
           ${this.showLeaveWarning ? this.renderLeaveWarning() : ''}
           <main class="main-content">
-            ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
+            ${this.view === 'setup' ? this.renderSetup() : ['queue', 'roster', 'standings', 'games', 'sessions'].includes(this.view) ? this.renderQueueRosterHistory() : this.renderGame()}
           </main>
           ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
           <input id="import-file" type="file" accept="application/json,.json" hidden />
@@ -5476,7 +5752,7 @@ No completed games in this range.`;
             ${game ? `<button class="icon-btn ${liveActive ? 'is-live' : ''}" type="button" data-action="live" aria-label="${liveActive ? 'Stop live display' : 'Start live display'}" title="${liveActive ? 'Stop live' : 'Go live'}">${icon(liveActive ? 'x' : 'radio')}</button>` : ''}
             <button class="icon-btn fullscreen-controller ${this.isFullscreen() ? 'active' : ''}" type="button" data-action="toggle-fullscreen" aria-label="${this.isFullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'}" title="${this.isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}">${icon(this.isFullscreen() ? 'fullscreenExit' : 'fullscreen')}</button>
             <button class="icon-btn ${this.showColors ? 'active' : ''}" type="button" data-action="toggle-colors" aria-label="Score colors" title="Score colors">${icon('palette')}</button>
-            <button class="icon-btn ${['queue', 'roster', 'standings', 'games'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster, standings and games" title="Queue, roster, standings and games">${icon('queue')}</button>
+            <button class="icon-btn ${['queue', 'roster', 'standings', 'games', 'sessions'].includes(this.view) ? 'active' : ''}" type="button" data-action="view" data-view="${['queue', 'roster', 'standings', 'games', 'sessions'].includes(this.view) ? this.view : 'queue'}" aria-label="Queue, roster, standings, games and sessions" title="Queue, roster, standings, games and sessions">${icon('queue')}</button>
             <button class="icon-btn ${this.view === 'setup' ? 'active' : ''}" type="button" data-action="view" data-view="setup" aria-label="New game" title="New game">${icon('plus')}</button>
           </div>
         </header>
@@ -5977,16 +6253,17 @@ No completed games in this range.`;
     }
 
     renderQueueRosterHistory() {
-      const current = ['queue', 'roster', 'standings', 'games'].includes(this.view) ? this.view : 'queue';
+      const current = ['queue', 'roster', 'standings', 'games', 'sessions'].includes(this.view) ? this.view : 'queue';
       return `
         <section class="queue-roster-history">
-          <nav class="subpage-tabs" aria-label="Queue, roster, standings and games">
+          <nav class="subpage-tabs" aria-label="Queue, roster, standings, games and sessions">
             <button type="button" class="${current === 'queue' ? 'active' : ''}" data-action="view" data-view="queue">${icon('queue')}<span>Queue</span></button>
             <button type="button" class="${current === 'roster' ? 'active' : ''}" data-action="view" data-view="roster">${icon('users')}<span>Roster</span></button>
             <button type="button" class="${current === 'standings' ? 'active' : ''}" data-action="view" data-view="standings">${icon('trophy')}<span>Standings</span></button>
             <button type="button" class="${current === 'games' ? 'active' : ''}" data-action="view" data-view="games">${icon('history')}<span>Games</span></button>
+            <button type="button" class="${current === 'sessions' ? 'active' : ''}" data-action="view" data-view="sessions">${icon('sessions')}<span>Sessions</span></button>
           </nav>
-          ${current === 'queue' ? this.renderQueue() : current === 'roster' ? this.renderRoster() : current === 'standings' ? this.renderStandingsPage() : this.renderGamesPage()}
+          ${current === 'queue' ? this.renderQueue() : current === 'roster' ? this.renderRoster() : current === 'standings' ? this.renderStandingsPage() : current === 'games' ? this.renderGamesPage() : this.renderSessionsPage()}
         </section>
       `;
     }
@@ -6156,7 +6433,7 @@ No completed games in this range.`;
                     : 'Fewest session court turns first, then longest waiting. Wins and standings do not change queue priority.'}</div>
             </details>
             <button class="icon-btn queue-undo" type="button" data-action="queue-undo" ${this.state.queueUndoCheckpoint ? '' : 'disabled'} aria-label="Undo last queue change" title="${this.state.queueUndoCheckpoint ? `Undo ${escapeHtml(this.state.queueUndoCheckpoint.label || 'queue change')}` : 'Nothing to undo'}">${icon('undo')}</button>
-            <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Start a new queue session" title="New queue session">${icon('trash')}</button>
+            <button class="icon-btn danger queue-session-reset" type="button" data-action="queue-new-session" aria-label="Reset this session queue" title="Reset queue">${icon('trash')}</button>
           </section>
           <div class="court-grid">${queue.courts.map((court, index) => this.renderQueueCourt(court, index)).join('')}</div>
           ${queue.onCourt.length ? `<div class="on-court scoring-queue"><span title="Scored game">${icon('radio')}<span class="sr-only">Scored game</span></span><b>Scorekeeper · ${queue.onCourt.map((id) => escapeHtml(this.playerName(id))).join(' · ')}</b></div>` : ''}
@@ -6428,6 +6705,76 @@ No completed games in this range.`;
           <span class="team-score">${team.score}</span>
           <span class="score-action">${icon('plus')} ${actionLabel}</span>
         </button>
+      `;
+    }
+
+    sessionDateLabel(value) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return 'Unknown time';
+      try {
+        return date.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+      } catch (_error) {
+        return date.toISOString().slice(0, 16).replace('T', ' ');
+      }
+    }
+
+    renderSessionsPage() {
+      const sessions = (Array.isArray(this.state.sessions) ? this.state.sessions : [])
+        .map((session) => this.normalizeSessionSnapshot(session))
+        .sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
+      const activeId = String(this.state.sessionId || '');
+      const queue = Players.normalizeQueue(this.state.queue, this.state.players);
+      const activeCourtPlayers = queue.courts.reduce((count, court) => count + (Array.isArray(court.players) ? court.players.length : 0), 0) + queue.onCourt.length;
+      return `
+        <section class="sessions-view">
+          <div class="section-head sessions-head">
+            <div><h1>Sessions</h1><p>Each session keeps its own roster, queue, games and standings.</p></div>
+            <div>
+              <button class="icon-btn" type="button" data-action="session-save" aria-label="Save session now" title="Save session">${icon('check')}</button>
+              <button class="icon-btn session-new-btn" type="button" data-action="session-new" aria-label="Start new session" title="New session">${icon('plus')}</button>
+            </div>
+          </div>
+          <section class="session-active-card">
+            <div class="session-active-kicker"><span class="session-status-dot"></span>Active session <em>Autosaved</em></div>
+            <form id="session-name-form" class="session-name-form">
+              <label><span class="sr-only">Session name</span><input name="sessionName" maxlength="80" value="${escapeHtml(this.state.sessionName || '')}" placeholder="Session name" required></label>
+              <button type="submit">Save name</button>
+            </form>
+            <div class="session-metrics" aria-label="Active session summary">
+              <span><b>${this.state.players.length}</b><small>Players</small></span>
+              <span><b>${this.state.games.length}</b><small>Games</small></span>
+              <span><b>${queue.waiting.length}</b><small>Waiting</small></span>
+              <span><b>${activeCourtPlayers}</b><small>On court</small></span>
+            </div>
+            <p class="session-autosave-note">Changes save automatically on this device. “Save session” is available as a manual checkpoint, but you do not need to press it after every game.</p>
+          </section>
+          <div class="sessions-list-head"><h2>Saved sessions</h2><span>${sessions.length}</span></div>
+          <div class="sessions-list">
+            ${sessions.map((session) => {
+              const isActive = session.id === activeId;
+              const sessionQueue = Players.normalizeQueue(session.queue, session.players);
+              const playing = sessionQueue.courts.reduce((count, court) => count + (Array.isArray(court.players) ? court.players.length : 0), 0) + sessionQueue.onCourt.length;
+              return `
+                <article class="session-card ${isActive ? 'is-active' : ''}">
+                  <div class="session-card-main">
+                    <div class="session-card-title"><b>${escapeHtml(session.name)}</b>${isActive ? '<em>Active</em>' : ''}</div>
+                    <small>${escapeHtml(this.sessionDateLabel(session.updatedAt))}</small>
+                    <div class="session-card-stats">
+                      <span>${session.players.length} player${session.players.length === 1 ? '' : 's'}</span>
+                      <span>${session.games.length} game${session.games.length === 1 ? '' : 's'}</span>
+                      <span>${sessionQueue.waiting.length} waiting</span>
+                      ${playing ? `<span>${playing} on court</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="session-card-actions">
+                    <button type="button" class="session-open" data-action="session-open" data-session="${escapeHtml(session.id)}" ${isActive ? 'disabled' : ''}>${isActive ? 'Open' : 'Open'}</button>
+                    <button type="button" class="icon-btn danger compact" data-action="session-delete" data-session="${escapeHtml(session.id)}" ${isActive ? 'disabled' : ''} aria-label="Delete ${escapeHtml(session.name)}" title="Delete session">${icon('trash')}</button>
+                  </div>
+                </article>
+              `;
+            }).join('')}
+          </div>
+        </section>
       `;
     }
 

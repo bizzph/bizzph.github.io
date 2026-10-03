@@ -1,3 +1,31 @@
+# PicklePulse v51 Turnover / Handoff
+
+## v51 update - session-first app state
+
+- Added a dedicated **Sessions** tab.
+- PicklePulse now treats a play session as the top-level unit of work: each saved session owns its own **Roster, Queue/Courts, Games, Standings inputs, active Scorekeeper game, and Queue Undo state**.
+- Standings remain derived from that session's games + roster, so opening another session immediately shows only that session's standings.
+- Session changes are **autosaved locally**. A visible Save Session action is also provided as a manual checkpoint/reassurance action.
+- **New Session** automatically saves the current session, then starts a clean roster/games/queue workspace. Queue type and court count are copied only as starting defaults; subsequent queue state is independent.
+- Sessions can be renamed, reopened, and deleted (the currently active session cannot be deleted until another session is opened/created).
+- Reopening a saved session restores its roster, queue/courts, game history, standings source data, current scorekeeper game, and queue undo checkpoint.
+- Theme/audio/appearance remain app-wide preferences rather than being duplicated per session.
+- Existing v50-and-earlier flat local state is automatically migrated into the first saved session on load.
+- Full JSON backup now exports **all sessions** plus app-wide preferences; importing a v51 multi-session backup restores the session library after confirmation. Legacy backups still import into the active session using the previous merge behavior.
+- Renamed the previous Queue **New Session** trash action in the UI to **Reset queue** so it only resets this session's queue/fairness state and is not confused with a full app session.
+- Root state schema bumped to **v11**. Core/style cache-busting and service-worker cache bumped to v51.
+
+## v51 validation
+
+- Core JavaScript syntax: PASS.
+- v50 flat-state -> v51 first-session migration: PASS.
+- New-session isolation for roster/games/queue: PASS.
+- Reopen/switch restores each session's independent state: PASS.
+- Persisted root stores one session library without duplicating active roster/games/queue at root: PASS.
+- Sessions UI render: PASS.
+- Full multi-session backup restore: PASS.
+- Service-worker/cache version check: PASS.
+
 # PicklePulse v50 Turnover / Handoff
 
 ## v50 update - add a new player directly from Queue
